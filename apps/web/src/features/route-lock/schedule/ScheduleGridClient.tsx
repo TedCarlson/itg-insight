@@ -1,3 +1,7 @@
+// RUN THIS
+// Replace the entire file:
+// apps/web/src/features/route-lock/schedule/ScheduleGridClient.tsx
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -59,8 +63,6 @@ export type ScheduleTotals = {
   totalUnits: number;
 };
 
-export type QuotaWeekdayHours = Partial<Record<DayKey, number>>;
-
 function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -68,32 +70,6 @@ function cls(...parts: Array<string | false | undefined>) {
 function techSortKey(techId: string) {
   const n = Number(techId);
   return Number.isFinite(n) ? n : techId;
-}
-
-function n0(v: unknown): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-// Calendar-style conversion: quota_hours -> required route-days (tech-days)
-function quotaRoutesFromHours(qh: number): number {
-  if (!qh) return 0;
-  // 8 hours per route-day (tech-day). Match calendar approach (ceil).
-  return Math.ceil(qh / 8);
-}
-
-function pillClassForDelta(delta: number | null) {
-  if (delta === null) return "bg-[var(--to-surface-2)] border-[var(--to-border)]";
-  if (delta === 0) return "bg-[var(--to-surface-2)] border-[var(--to-border)]";
-  if (delta >= 1 && delta <= 2) return "bg-[rgba(16,185,129,0.16)] border-[rgba(16,185,129,0.35)]";
-  if (delta > 2) return "bg-[rgba(234,179,8,0.18)] border-[rgba(234,179,8,0.40)]";
-  return "bg-[rgba(239,68,68,0.20)] border-[rgba(239,68,68,0.45)]";
-}
-
-function fmtSigned(n: number | null) {
-  if (n === null) return "—";
-  if (n === 0) return "0";
-  return n > 0 ? `+${n}` : String(n);
 }
 
 function DayToggle({
@@ -123,22 +99,33 @@ function DayToggle({
   );
 }
 
+/**
+ * IMPORTANT:
+ * - If NO persisted baseline row exists for this tech in this fiscal month,
+ *   we default to OFF (all days false) so "next month empty until seed" is respected
+ *   and so missing hydration doesn't silently appear as "all scheduled".
+ */
 function normalizeFromBaselineRow(s?: ScheduleBaselineRow) {
+  const hasRow = !!s;
+
   return {
     routeId: String(s?.default_route_id ?? ""),
     days: {
-      sun: Boolean(s?.sun ?? false),
-      mon: Boolean(s?.mon ?? false),
-      tue: Boolean(s?.tue ?? false),
-      wed: Boolean(s?.wed ?? false),
-      thu: Boolean(s?.thu ?? false),
-      fri: Boolean(s?.fri ?? false),
-      sat: Boolean(s?.sat ?? false),
+      sun: hasRow ? !!s?.sun : false,
+      mon: hasRow ? !!s?.mon : false,
+      tue: hasRow ? !!s?.tue : false,
+      wed: hasRow ? !!s?.wed : false,
+      thu: hasRow ? !!s?.thu : false,
+      fri: hasRow ? !!s?.fri : false,
+      sat: hasRow ? !!s?.sat : false,
     } as Record<DayKey, boolean>,
   };
 }
 
-function buildRows(technicians: Technician[], scheduleByAssignment: Record<string, ScheduleBaselineRow>): RowState[] {
+function buildRows(
+  technicians: Technician[],
+  scheduleByAssignment: Record<string, ScheduleBaselineRow>
+): RowState[] {
   const sorted = [...technicians].sort((a, b) => {
     const ak = techSortKey(String(a.tech_id ?? ""));
     const bk = techSortKey(String(b.tech_id ?? ""));
@@ -171,13 +158,28 @@ function rowsEqual(a: RowState, b: { routeId: string; days: Record<DayKey, boole
   return true;
 }
 
+function fmtInt(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.trunc(n)) : "0";
+}
+
+function allDaysOff(days: Record<DayKey, boolean>): boolean {
+  for (const d of DAYS) {
+    if (days[d.key]) return false;
+  }
+  return true;
+}
+
+function setAllDays(next: boolean): Record<DayKey, boolean> {
+  return { sun: next, mon: next, tue: next, wed: next, thu: next, fri: next, sat: next };
+}
+
 export function ScheduleGridClient({
   technicians,
   routes,
   scheduleByAssignment,
   fiscalMonthId,
   defaults,
-  quotaWeekdayHours,
   onTotalsChange,
 }: {
   technicians: Technician[];
@@ -185,14 +187,12 @@ export function ScheduleGridClient({
   scheduleByAssignment: Record<string, ScheduleBaselineRow>;
   fiscalMonthId: string;
   defaults: { unitsPerHour: number; hoursPerDay: number };
-  quotaWeekdayHours?: QuotaWeekdayHours;
   onTotalsChange?: (t: ScheduleTotals) => void;
 }) {
   const router = useRouter();
   const toast = useToast();
 
   const [search, setSearch] = useState<string>("");
-  const [routeFilter, setRouteFilter] = useState<string>("__ALL__"); // __ALL__ | __UNSET__ | route_id
   const [rows, setRows] = useState<RowState[]>(() => buildRows(technicians, scheduleByAssignment));
 
   // Baseline snapshot used for dirty detection
@@ -242,40 +242,18 @@ export function ScheduleGridClient({
     const totalHours = totalDaysOn * defaults.hoursPerDay;
     const totalUnits = totalHours * defaults.unitsPerHour;
 
-    return { techs: rows.length, perDay, totalDaysOn, totalHours, totalUnits };
+    return {
+      techs: rows.length,
+      perDay,
+      totalDaysOn,
+      totalHours,
+      totalUnits,
+    };
   }, [rows, defaults.hoursPerDay, defaults.unitsPerHour]);
 
   useEffect(() => {
     onTotalsChange?.(totals);
   }, [totals, onTotalsChange]);
-
-  const quotaRoutesByDay = useMemo(() => {
-    const out: Record<DayKey, number> = { sun: 0, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0 };
-    if (!quotaWeekdayHours) return out;
-    for (const d of DAYS) {
-      out[d.key] = quotaRoutesFromHours(n0(quotaWeekdayHours[d.key]));
-    }
-    return out;
-  }, [quotaWeekdayHours]);
-
-  const varianceByDay = useMemo(() => {
-    const out: Record<DayKey, number | null> = { sun: null, mon: null, tue: null, wed: null, thu: null, fri: null, sat: null };
-    for (const d of DAYS) {
-      const q = quotaRoutesByDay[d.key];
-      // If quotaWeekdayHours missing entirely, show —
-      if (!quotaWeekdayHours) {
-        out[d.key] = null;
-        continue;
-      }
-      // If quota is 0, treat as missing target -> null variance
-      if (!q) {
-        out[d.key] = null;
-        continue;
-      }
-      out[d.key] = totals.perDay[d.key] - q;
-    }
-    return out;
-  }, [totals.perDay, quotaRoutesByDay, quotaWeekdayHours]);
 
   const dirtyRows = useMemo(() => {
     const base = baselineRef.current ?? {};
@@ -322,24 +300,38 @@ export function ScheduleGridClient({
         return;
       }
 
-      // Update baseline to match committed state
-      const nextBase: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
-      for (const r of rows) nextBase[r.assignmentId] = { routeId: r.routeId, days: { ...r.days } };
-      baselineRef.current = nextBase;
+      // Stats (API may return different keys depending on implementation)
+      const inserted = fmtInt(json?.inserted ?? json?.rows_inserted ?? json?.baseline_inserted);
+      const updated = fmtInt(json?.updated ?? json?.rows_updated ?? json?.baseline_updated);
 
-      const inserted = n0(json?.inserted);
-      const updated = n0(json?.updated);
-      const rowsUpserted = n0(json?.sweep?.rows_upserted);
-      const rowsDeleted = n0(json?.sweep?.rows_deleted);
+      const sweepUp = fmtInt(
+        json?.sweep?.rows_upserted ??
+          json?.sweep_rows_upserted ??
+          json?.rows_upserted ??
+          json?.sweep_upserted
+      );
+      const sweepDel = fmtInt(
+        json?.sweep?.rows_deleted ??
+          json?.sweep_rows_deleted ??
+          json?.rows_deleted ??
+          json?.sweep_deleted
+      );
+
+      // Update baseline snapshot immediately to clear "dirty" state
+      const nextBase: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
+      for (const r of rows) {
+        nextBase[r.assignmentId] = { routeId: r.routeId, days: { ...r.days } };
+      }
+      baselineRef.current = nextBase;
 
       toast.push({
         variant: "success",
         title: "Schedule saved",
-        message: `Baseline: +${inserted} inserted • ${updated} updated • Sweep: ${rowsUpserted} upserted • ${rowsDeleted} deleted`,
-        durationMs: 2200,
+        message: `Baseline: +${inserted} inserted, ${updated} updated • Sweep: ${sweepUp} upserted, ${sweepDel} deleted`,
+        durationMs: 2600,
       });
 
-      // Rehydrate from persisted baselines (server refresh)
+      // Critical: refresh so server props rehydrate from persisted baselines
       router.refresh();
     } catch (e: any) {
       const msg = String(e?.message ?? "Commit failed");
@@ -350,9 +342,11 @@ export function ScheduleGridClient({
     }
   }
 
+  // Columns:
+  // TechId | Name | Add/Remove | Route | 7 Days | Stats
   const gridStyle: CSSProperties = useMemo(
     () => ({
-      gridTemplateColumns: "6rem minmax(14rem,1fr) 11rem repeat(7, 5.25rem) minmax(16rem, 0.9fr) 5.25rem",
+      gridTemplateColumns: "6rem minmax(14rem,1fr) 5.75rem 11rem repeat(7, 5.25rem) minmax(16rem, 0.9fr)",
     }),
     []
   );
@@ -367,14 +361,15 @@ export function ScheduleGridClient({
     );
   }
 
-  function clearRow(assignmentId: string) {
+  function toggleAllDays(assignmentId: string) {
     setRows((prev) =>
       prev.map((r) => {
         if (r.assignmentId !== assignmentId) return r;
+        const isAllOff = allDaysOff(r.days);
         return {
           ...r,
-          routeId: "",
-          days: { sun: false, mon: false, tue: false, wed: false, thu: false, fri: false, sat: false },
+          // Keep route as-is. This is a schedule utility button (days only).
+          days: setAllDays(isAllOff ? true : false),
         };
       })
     );
@@ -382,8 +377,7 @@ export function ScheduleGridClient({
 
   const viewRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-
-    let filtered = !q
+    const filtered = !q
       ? rows
       : rows.filter((r) => {
           const tech = String(r.techId ?? "").toLowerCase();
@@ -391,13 +385,6 @@ export function ScheduleGridClient({
           const co = String(r.coName ?? "").toLowerCase();
           return tech.includes(q) || name.includes(q) || co.includes(q);
         });
-
-    // Route filter
-    if (routeFilter === "__UNSET__") {
-      filtered = filtered.filter((r) => !r.routeId);
-    } else if (routeFilter !== "__ALL__") {
-      filtered = filtered.filter((r) => r.routeId === routeFilter);
-    }
 
     return [...filtered].sort((a, b) => {
       const ak = techSortKey(String(a.techId ?? ""));
@@ -408,7 +395,7 @@ export function ScheduleGridClient({
       if (ak > bk) return 1;
       return String(a.name ?? "").localeCompare(String(b.name ?? ""));
     });
-  }, [rows, search, routeFilter]);
+  }, [rows, search]);
 
   return (
     <Card>
@@ -429,19 +416,6 @@ export function ScheduleGridClient({
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <div className="text-xs text-[var(--to-ink-muted)]">Route</div>
-            <select className="to-select h-8 text-xs w-[min(240px,55vw)]" value={routeFilter} onChange={(e) => setRouteFilter(e.target.value)}>
-              <option value="__ALL__">All routes</option>
-              <option value="__UNSET__">(unset)</option>
-              {routes.map((rt) => (
-                <option key={rt.route_id} value={rt.route_id}>
-                  {rt.route_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
@@ -456,39 +430,12 @@ export function ScheduleGridClient({
         </div>
 
         {saveMsg ? <div className="text-sm text-[var(--to-ink-muted)]">{saveMsg}</div> : null}
-
-        {/* Quota + variance strip */}
-        {quotaWeekdayHours ? (
-          <div className="mt-1 rounded-xl border border-[var(--to-border)] bg-[var(--to-surface-2)] p-2">
-            <div className="grid gap-2" style={{ gridTemplateColumns: "11rem repeat(7, 5.25rem)" }}>
-              <div className="text-xs text-[var(--to-ink-muted)] leading-6">Quota (routes/day)</div>
-              {DAYS.map((d) => (
-                <div key={d.key} className="text-center text-xs font-semibold tabular-nums leading-6">
-                  {quotaRoutesByDay[d.key] ? quotaRoutesByDay[d.key] : "—"}
-                </div>
-              ))}
-
-              <div className="text-xs text-[var(--to-ink-muted)] leading-6">Variance (On − Quota)</div>
-              {DAYS.map((d) => {
-                const v = varianceByDay[d.key];
-                const klass = pillClassForDelta(v);
-                return (
-                  <div key={d.key} className="flex justify-center">
-                    <span className={cls("inline-flex items-center justify-center rounded-full px-2 h-6 text-xs tabular-nums border", klass)}>
-                      {fmtSigned(v)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
       </div>
 
-      {/* Scheduled totals row */}
       <DataTableRow gridStyle={gridStyle} className="items-center">
         <div className="whitespace-nowrap font-medium"></div>
         <div className="min-w-0 font-medium"></div>
+        <div className="whitespace-nowrap font-medium"></div>
         <div className="min-w-0 font-medium">Scheduled Totals</div>
 
         {DAYS.map((d) => (
@@ -498,13 +445,13 @@ export function ScheduleGridClient({
         ))}
 
         <div />
-        <div />
       </DataTableRow>
 
       <DataTable layout="fixed" gridStyle={gridStyle}>
         <DataTableHeader gridStyle={gridStyle}>
           <div className="whitespace-nowrap">Tech Id</div>
           <div className="min-w-0">Name</div>
+          <div className="whitespace-nowrap text-center"> </div>
           <div className="whitespace-nowrap">Route</div>
           {DAYS.map((d) => (
             <div key={d.key} className="text-center whitespace-nowrap">
@@ -512,11 +459,13 @@ export function ScheduleGridClient({
             </div>
           ))}
           <div className="whitespace-nowrap">Stats</div>
-          <div className="whitespace-nowrap text-right"> </div>
         </DataTableHeader>
 
         <DataTableBody zebra>
           {viewRows.map((r) => {
+            const isAllOff = allDaysOff(r.days);
+            const btnLabel = isAllOff ? "Add" : "Remove";
+
             const daysOn = Object.values(r.days).reduce((acc, v) => acc + (v ? 1 : 0), 0);
             const hours = daysOn * defaults.hoursPerDay;
             const units = hours * defaults.unitsPerHour;
@@ -528,6 +477,17 @@ export function ScheduleGridClient({
                 <div className="min-w-0">
                   <div className="truncate">{r.name}</div>
                   {r.coName ? <div className="truncate text-xs text-[var(--to-ink-muted)]">{r.coName}</div> : null}
+                </div>
+
+                <div className="flex items-center justify-center">
+                  <button
+                    type="button"
+                    className="to-btn to-btn--secondary h-7 px-2 text-xs"
+                    onClick={() => toggleAllDays(r.assignmentId)}
+                    title={isAllOff ? "Add all 7 days" : "Remove all 7 days"}
+                  >
+                    {btnLabel}
+                  </button>
                 </div>
 
                 <div className="flex items-center">
@@ -553,17 +513,6 @@ export function ScheduleGridClient({
 
                 <div className="whitespace-nowrap text-sm">
                   {daysOn} days • {Math.round(units)} units • {hours.toFixed(0)} hours
-                </div>
-
-                <div className="flex items-center justify-end">
-                  <button
-                    type="button"
-                    className="to-btn to-btn--secondary h-7 px-2 text-xs"
-                    onClick={() => clearRow(r.assignmentId)}
-                    title="Clear schedule (route + all days off)"
-                  >
-                    Remove
-                  </button>
                 </div>
               </DataTableRow>
             );
