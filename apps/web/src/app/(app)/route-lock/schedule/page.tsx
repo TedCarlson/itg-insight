@@ -1,26 +1,21 @@
-// apps/web/src/app/(app)/route-lock/schedule/page.tsx
-
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { unstable_noStore as noStore } from "next/cache";
 
-import { PageShell } from "@/components/ui/PageShell";
+import { PageShell, PageHeader } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
-import { Toolbar } from "@/components/ui/Toolbar";
 
-import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { requireSelectedPcOrgServer } from "@/shared/lib/auth/requireSelectedPcOrg.server";
 
-import { todayInNY } from "@/features/route-lock/calendar/lib/fiscalMonth";
+import { todayInNY, weekdayKey } from "@/features/route-lock/calendar/lib/fiscalMonth";
 import { ScheduleGridClient } from "@/features/route-lock/schedule/ScheduleGridClient";
+import { SeedNextMonthButton } from "@/features/route-lock/schedule/SeedNextMonthButton";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-type SearchParams = { month?: string };
-type Props = { searchParams?: Promise<SearchParams> };
-
-type FiscalMonth = { fiscal_month_id: string; start_date: string; end_date: string; label: string | null };
+type FiscalMonth = {
+  fiscal_month_id: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+};
 
 type Technician = {
   assignment_id: string;
@@ -33,9 +28,10 @@ type RouteRow = { route_id: string; route_name: string };
 
 type ScheduleBaselineRow = {
   schedule_baseline_month_id?: string;
-  assignment_id: string;
+  assignment_id: string | null;
   tech_id: string;
   default_route_id: string | null;
+
   sun: boolean | null;
   mon: boolean | null;
   tue: boolean | null;
@@ -45,136 +41,85 @@ type ScheduleBaselineRow = {
   sat: boolean | null;
 };
 
-function cls(...parts: Array<string | false | undefined>) {
-  return parts.filter(Boolean).join(" ");
+type DayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+
+function fmtRange(fm: FiscalMonth) {
+  return `${fm.start_date} → ${fm.end_date}`;
 }
 
-async function resolveFiscalMonthForDate(sb: any, anchorISO: string): Promise<FiscalMonth | null> {
+async function resolveFiscalMonthForDate(sb: Awaited<ReturnType<typeof supabaseServer>>, iso: string) {
   const { data, error } = await sb
     .from("fiscal_month_dim")
-    .select("fiscal_month_id,start_date,end_date,label")
-    .lte("start_date", anchorISO)
-    .gte("end_date", anchorISO)
-    .maybeSingle();
+    .select("fiscal_month_id,start_date,end_date")
+    .lte("start_date", iso)
+    .gte("end_date", iso)
+    .order("start_date", { ascending: false })
+    .limit(1);
 
-  if (error || !data?.fiscal_month_id) return null;
-  return {
-    fiscal_month_id: String(data.fiscal_month_id),
-    start_date: String(data.start_date),
-    end_date: String(data.end_date),
-    label: (data.label as string | null) ?? null,
-  };
+  if (error) throw new Error(error.message);
+  const fm = (data ?? [])[0] as FiscalMonth | undefined;
+  if (!fm) throw new Error(`No fiscal month found for date ${iso}`);
+  return fm;
 }
 
-async function resolveNextFiscalMonth(sb: any, currentEndISO: string): Promise<FiscalMonth | null> {
+async function resolveNextFiscalMonth(sb: Awaited<ReturnType<typeof supabaseServer>>, current: FiscalMonth) {
   const { data, error } = await sb
     .from("fiscal_month_dim")
-    .select("fiscal_month_id,start_date,end_date,label")
-    .gt("start_date", currentEndISO)
+    .select("fiscal_month_id,start_date,end_date")
+    .gt("start_date", current.end_date)
     .order("start_date", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
-  if (error || !data?.fiscal_month_id) return null;
-  return {
-    fiscal_month_id: String(data.fiscal_month_id),
-    start_date: String(data.start_date),
-    end_date: String(data.end_date),
-    label: (data.label as string | null) ?? null,
-  };
+  if (error) throw new Error(error.message);
+  return (data ?? [])[0] as FiscalMonth | undefined;
 }
 
-function MonthToggle({
-  active,
-  currentHref,
-  nextHref,
-  currentLabel,
-  nextLabel,
-}: {
-  active: "current" | "next";
-  currentHref: string;
-  nextHref: string;
-  currentLabel: string;
-  nextLabel: string;
-}) {
-  return (
-    <Card variant="subtle">
-      <Toolbar
-        left={
-          <div className="min-w-0 flex items-center gap-2">
-            <Link href="/route-lock" className="to-btn to-btn--secondary h-8 px-3 text-xs inline-flex items-center">
-              Back
-            </Link>
-            <div className="min-w-0">
-              <div className="text-sm font-medium truncate">Schedule</div>
-              <div className="text-xs text-[var(--to-ink-muted)] truncate">
-                Planning baseline • commit paints schedule_day_fact forward-only
-              </div>
-            </div>
-          </div>
-        }
-        right={
-          <div className="flex items-center gap-2">
-            <Link
-              href={currentHref}
-              className={cls("to-btn h-8 px-3 text-xs", active === "current" ? "to-btn--primary" : "to-btn--secondary")}
-            >
-              Current • {currentLabel}
-            </Link>
-            <Link
-              href={nextHref}
-              className={cls("to-btn h-8 px-3 text-xs", active === "next" ? "to-btn--primary" : "to-btn--secondary")}
-            >
-              Next • {nextLabel}
-            </Link>
-          </div>
-        }
-      />
-    </Card>
-  );
-}
-
-export default async function RouteLockSchedulePage({ searchParams }: Props) {
-  noStore();
-
+// Next 16 typed PageProps: searchParams is a Promise in generated types
+export default async function SchedulePage(props: { searchParams?: Promise<{ month?: string }> }) {
   const scope = await requireSelectedPcOrgServer();
   if (!scope.ok) redirect("/home");
+
+  const sp = (await props.searchParams) ?? {};
+  const monthParam = String(sp.month ?? "current");
 
   const sb = await supabaseServer();
   const pc_org_id = scope.selected_pc_org_id;
 
   const today = todayInNY();
-  const fmCurrent = await resolveFiscalMonthForDate(sb, today);
-  if (!fmCurrent) {
+  const currentFm = await resolveFiscalMonthForDate(sb, today);
+  const nextFm = await resolveNextFiscalMonth(sb, currentFm);
+
+  const isNextView = monthParam === "next";
+  const selectedBounds = isNextView ? nextFm ?? currentFm : currentFm;
+  const fiscal_month_id = selectedBounds.fiscal_month_id;
+
+  // Route-lock roster (TECHS only) — you already confirmed this trims correctly
+  const { data: techs, error: techErr } = await sb
+    .from("route_lock_roster_tech_v")
+    .select("assignment_id,tech_id,full_name,co_name")
+    .eq("pc_org_id", pc_org_id)
+    .order("tech_id", { ascending: true });
+
+  if (techErr) {
     return (
       <PageShell>
+        <PageHeader title="Schedule" subtitle="Unable to load roster for this org." />
         <Card>
-          <div className="text-sm text-[var(--to-warning)]">Could not resolve current fiscal month (fiscal_month_dim).</div>
+          <div className="text-sm text-[var(--to-ink-muted)]">Error: {techErr.message}</div>
         </Card>
       </PageShell>
     );
   }
 
-  const fmNext = await resolveNextFiscalMonth(sb, fmCurrent.end_date);
-  if (!fmNext) {
-    return (
-      <PageShell>
-        <Card>
-          <div className="text-sm text-[var(--to-warning)]">Could not resolve next fiscal month (fiscal_month_dim).</div>
-        </Card>
-      </PageShell>
-    );
-  }
+  const technicians: Technician[] = (techs ?? []).map((t: any) => ({
+    assignment_id: String(t.assignment_id),
+    tech_id: String(t.tech_id ?? ""),
+    full_name: String(t.full_name ?? ""),
+    co_name: t.co_name == null ? null : String(t.co_name),
+  }));
 
-  const sp = (await searchParams) ?? {};
-  const monthMode = String(sp?.month ?? "current") === "next" ? "next" : "current";
-  const activeFm = monthMode === "next" ? fmNext : fmCurrent;
-
-  const currentHref = "/route-lock/schedule?month=current";
-  const nextHref = "/route-lock/schedule?month=next";
-
-  // Routes (dropdown)
-  const { data: routeRows, error: routesErr } = await sb
+  // Routes
+  const { data: routesData, error: routesErr } = await sb
     .from("route")
     .select("route_id,route_name")
     .eq("pc_org_id", pc_org_id)
@@ -183,120 +128,120 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   if (routesErr) {
     return (
       <PageShell>
-        <MonthToggle
-          active={monthMode}
-          currentHref={currentHref}
-          nextHref={nextHref}
-          currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
-          nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
-        />
+        <PageHeader title="Schedule" subtitle="Unable to load routes for this org." />
         <Card>
-          <div className="text-sm text-[var(--to-warning)]">{routesErr.message}</div>
+          <div className="text-sm text-[var(--to-ink-muted)]">Error: {routesErr.message}</div>
         </Card>
       </PageShell>
     );
   }
 
-  const routes = (routeRows ?? []) as RouteRow[];
+  const routes: RouteRow[] = (routesData ?? []).map((r: any) => ({
+    route_id: String(r.route_id),
+    route_name: String(r.route_name ?? ""),
+  }));
 
-  // Roster techs (DO NOT POLA-GATE schedule planning)
-  // Planning must be possible even if leadership/membership data is incomplete.
-  const { data: rosterRows, error: rosterErr } = await sb
-    .from("route_lock_roster_v")
-    .select("assignment_id,tech_id,full_name,co_name,assignment_active,end_date")
-    .eq("pc_org_id", pc_org_id);
-
-  if (rosterErr) {
-    return (
-      <PageShell>
-        <MonthToggle
-          active={monthMode}
-          currentHref={currentHref}
-          nextHref={nextHref}
-          currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
-          nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
-        />
-        <Card>
-          <div className="text-sm text-[var(--to-warning)]">{rosterErr.message}</div>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  const techs: Technician[] = (rosterRows ?? [])
-    .map((r: any) => ({
-      assignment_id: String(r?.assignment_id ?? "").trim(),
-      tech_id: String(r?.tech_id ?? "").trim(),
-      full_name: String(r?.full_name ?? "").trim(),
-      co_name: r?.co_name == null ? null : String(r.co_name),
-      assignment_active: !!r?.assignment_active,
-      end_date: r?.end_date == null ? null : String(r.end_date),
-    }))
-    .filter((r) => r.assignment_id && r.tech_id) // tech_id is the external truth key
-    .filter((r) => r.assignment_active && !r.end_date)
-    .map(({ assignment_active: _a, end_date: _e, ...rest }) => rest);
-
-  // Existing baselines for this fiscal month
-  const { data: baselineRows, error: baselineErr } = await sb
+  // Baselines for selected month
+  const { data: baselineData, error: baseErr } = await sb
     .from("schedule_baseline_month")
-    .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat")
+    .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat,is_active")
     .eq("pc_org_id", pc_org_id)
-    .eq("fiscal_month_id", activeFm.fiscal_month_id)
+    .eq("fiscal_month_id", fiscal_month_id)
     .eq("is_active", true);
 
-  if (baselineErr) {
+  if (baseErr) {
     return (
       <PageShell>
-        <MonthToggle
-          active={monthMode}
-          currentHref={currentHref}
-          nextHref={nextHref}
-          currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
-          nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
-        />
+        <PageHeader title="Schedule" subtitle="Unable to load baselines for this fiscal month." />
         <Card>
-          <div className="text-sm text-[var(--to-warning)]">{baselineErr.message}</div>
+          <div className="text-sm text-[var(--to-ink-muted)]">Error: {baseErr.message}</div>
         </Card>
       </PageShell>
     );
   }
 
+  // Map baselines to roster assignment_id (baseline.assignment_id should already be present)
   const scheduleByAssignment: Record<string, ScheduleBaselineRow> = {};
-  for (const r of (baselineRows ?? []) as any[]) {
-    const assignment_id = String(r?.assignment_id ?? "").trim();
+  for (const b of (baselineData ?? []) as any[]) {
+    const assignment_id = b.assignment_id != null ? String(b.assignment_id) : null;
     if (!assignment_id) continue;
-
     scheduleByAssignment[assignment_id] = {
-      schedule_baseline_month_id: r?.schedule_baseline_month_id ? String(r.schedule_baseline_month_id) : undefined,
+      schedule_baseline_month_id: b.schedule_baseline_month_id ? String(b.schedule_baseline_month_id) : undefined,
       assignment_id,
-      tech_id: String(r?.tech_id ?? "").trim(),
-      default_route_id: r?.default_route_id ? String(r.default_route_id) : null,
-      sun: r?.sun ?? null,
-      mon: r?.mon ?? null,
-      tue: r?.tue ?? null,
-      wed: r?.wed ?? null,
-      thu: r?.thu ?? null,
-      fri: r?.fri ?? null,
-      sat: r?.sat ?? null,
+      tech_id: String(b.tech_id ?? ""),
+      default_route_id: b.default_route_id ? String(b.default_route_id) : null,
+      sun: b.sun,
+      mon: b.mon,
+      tue: b.tue,
+      wed: b.wed,
+      thu: b.thu,
+      fri: b.fri,
+      sat: b.sat,
     };
   }
 
+  const baselineCount = (baselineData ?? []).length;
+
+  // Quota weekday totals (hours) for the fiscal month (for planning strip)
+  const { data: qdf, error: qErr } = await sb
+    .from("quota_day_fact")
+    .select("shift_date,quota_hours")
+    .eq("pc_org_id", pc_org_id)
+    .eq("fiscal_month_id", fiscal_month_id);
+
+  // If quota is missing, we just don’t show the strip
+  const quotaWeekdayHours: Partial<Record<DayKey, number>> | undefined = !qErr
+    ? (() => {
+        const acc: Partial<Record<DayKey, number>> = {};
+        for (const r of qdf ?? []) {
+          const k = weekdayKey(String(r.shift_date)) as DayKey;
+          acc[k] = (acc[k] ?? 0) + Number(r.quota_hours ?? 0);
+        }
+        return acc;
+      })()
+    : undefined;
+
+  const actions = (
+    <div className="flex items-center gap-2">
+      <Link
+        href="/route-lock/schedule?month=current"
+        className={`to-btn h-8 px-3 text-xs ${!isNextView ? "to-btn--primary" : "to-btn--secondary"}`}
+      >
+        Current
+      </Link>
+      <Link
+        href="/route-lock/schedule?month=next"
+        className={`to-btn h-8 px-3 text-xs ${isNextView ? "to-btn--primary" : "to-btn--secondary"}`}
+      >
+        Next
+      </Link>
+
+      {/* Manual trigger: only show when on NEXT and it’s empty */}
+      {isNextView && nextFm ? (
+        <SeedNextMonthButton
+          fromFiscalMonthId={currentFm.fiscal_month_id}
+          toFiscalMonthId={nextFm.fiscal_month_id}
+          disabled={baselineCount > 0}
+        />
+      ) : null}
+    </div>
+  );
+
   return (
     <PageShell>
-      <MonthToggle
-        active={monthMode}
-        currentHref={currentHref}
-        nextHref={nextHref}
-        currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
-        nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
+      <PageHeader
+        title="Schedule"
+        subtitle={`Fiscal Month: ${fmtRange(selectedBounds)} • Baselines: ${baselineCount}`}
+        actions={actions}
       />
 
       <ScheduleGridClient
-        technicians={techs}
+        technicians={technicians}
         routes={routes}
-        scheduleByAssignment={scheduleByAssignment}
-        fiscalMonthId={activeFm.fiscal_month_id}
-        defaults={{ unitsPerHour: 12, hoursPerDay: 8 }}
+        scheduleByAssignment={scheduleByAssignment as any}
+        fiscalMonthId={fiscal_month_id}
+        defaults={{ hoursPerDay: 8, unitsPerHour: 12 }}
+        quotaWeekdayHours={quotaWeekdayHours as any}
       />
     </PageShell>
   );
