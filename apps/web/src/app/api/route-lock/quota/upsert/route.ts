@@ -1,4 +1,7 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/api/route-lock/quota/upsert/route.ts
+
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -104,7 +107,6 @@ async function guardSelectedOrgQuotaWrite(): Promise<GuardOk | GuardFail> {
   if (roleAllowed) return { ok: true, pc_org_id, auth_user_id: userId };
 
   // ✅ Grants check (SERVICE ROLE read; correct schema + correct column names)
-  // For quota writes, allow route_lock_manage (canonical) and roster_manage (legacy compatibility).
   const { data: grants, error: grantErr } = await admin
     .from("pc_org_permission_grant")
     .select("permission_key, expires_at, revoked_at")
@@ -171,7 +173,6 @@ export async function POST(req: Request) {
 
     const admin = supabaseAdmin();
 
-    // Manual upsert: select existing quota_id for (pc_org_id, route_id, fiscal_month_id), then update/insert.
     const results: Array<{ ok: boolean; route_id: string; fiscal_month_id: string; quota_id?: string; error?: string }> =
       [];
 
@@ -221,7 +222,37 @@ export async function POST(req: Request) {
     }
 
     const okCount = results.filter((r) => r.ok).length;
-    return NextResponse.json({ ok: okCount === results.length, results });
+    const allOk = okCount === results.length;
+
+    // ✅ New rule: any sweep runs ALL sweeps (per fiscal month touched)
+    const fiscalMonthsTouched = Array.from(new Set(clean.map((r) => r.fiscal_month_id)));
+    const sweeps: Record<string, any> = {};
+
+    for (const fmId of fiscalMonthsTouched) {
+      const { data: sweepRes, error: sweepErr } = await admin.rpc("route_lock_sweep_month", {
+        p_pc_org_id: guard.pc_org_id,
+        p_fiscal_month_id: fmId,
+      });
+
+      if (sweepErr) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `quota saved but sweep failed for fiscal_month_id=${fmId}: ${sweepErr.message}`,
+            results,
+          },
+          { status: 500 }
+        );
+      }
+
+      sweeps[fmId] = sweepRes ?? null;
+    }
+
+    return NextResponse.json({
+      ok: allOk,
+      results,
+      sweeps,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });
   }

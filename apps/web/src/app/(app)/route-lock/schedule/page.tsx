@@ -1,7 +1,3 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/app/(app)/route-lock/schedule/page.tsx
-
 // apps/web/src/app/(app)/route-lock/schedule/page.tsx
 
 import Link from "next/link";
@@ -14,6 +10,7 @@ import { Toolbar } from "@/components/ui/Toolbar";
 
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 import { todayInNY } from "@/features/route-lock/calendar/lib/fiscalMonth";
 import { ScheduleGridClient } from "@/features/route-lock/schedule/ScheduleGridClient";
@@ -89,6 +86,33 @@ async function resolveNextFiscalMonth(sb: any, currentEndISO: string): Promise<F
   };
 }
 
+// We intentionally load routes with service role (admin) because route RLS
+// can be tighter than schedule planning access, and schedule must not go blank.
+async function guardCanReadRouteLock(sb: any, pc_org_id: string) {
+  const {
+    data: { user },
+    error: userErr,
+  } = await sb.auth.getUser();
+
+  if (!user || userErr) return { ok: false as const, status: 401, error: "unauthorized" };
+
+  // Owner always allowed
+  const { data: isOwner, error: ownerErr } = await sb.rpc("is_owner");
+  if (ownerErr) return { ok: false as const, status: 403, error: "forbidden" };
+  if (isOwner) return { ok: true as const };
+
+  // Route Lock manage OR legacy roster_manage bridge
+  const apiClient: any = (sb as any).schema ? (sb as any).schema("api") : sb;
+  const { data: allowed, error: permErr } = await apiClient.rpc("has_any_pc_org_permission", {
+    p_pc_org_id: pc_org_id,
+    p_permission_keys: ["route_lock_manage", "roster_manage"],
+  });
+
+  if (permErr || !allowed) return { ok: false as const, status: 403, error: "forbidden" };
+
+  return { ok: true as const };
+}
+
 function MonthToggle({
   active,
   currentHref,
@@ -148,6 +172,19 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   const sb = await supabaseServer();
   const pc_org_id = scope.selected_pc_org_id;
 
+  // Permission gate (read surface)
+  const guard = await guardCanReadRouteLock(sb, pc_org_id);
+  if (!guard.ok) {
+    return (
+      <PageShell>
+        <Card>
+          <div className="text-sm text-[var(--to-warning)]">Forbidden</div>
+          <div className="text-xs text-[var(--to-ink-muted)]">{guard.error}</div>
+        </Card>
+      </PageShell>
+    );
+  }
+
   const today = todayInNY();
   const fmCurrent = await resolveFiscalMonthForDate(sb, today);
   if (!fmCurrent) {
@@ -178,8 +215,9 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   const currentHref = "/route-lock/schedule?month=current";
   const nextHref = "/route-lock/schedule?month=next";
 
-  // Routes (dropdown)
-  const { data: routeRows, error: routesErr } = await sb
+  // Routes (dropdown) — use admin to avoid route RLS blanking schedule page
+  const admin = supabaseAdmin();
+  const { data: routeRows, error: routesErr } = await admin
     .from("route")
     .select("route_id,route_name")
     .eq("pc_org_id", pc_org_id)
@@ -196,7 +234,8 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
           nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
         />
         <Card>
-          <div className="text-sm text-[var(--to-warning)]">{routesErr.message}</div>
+          <div className="text-sm text-[var(--to-warning)]">Could not load routes.</div>
+          <div className="text-xs text-[var(--to-ink-muted)]">{routesErr.message}</div>
         </Card>
       </PageShell>
     );
@@ -205,7 +244,6 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   const routes = (routeRows ?? []) as RouteRow[];
 
   // Roster techs (DO NOT POLA-GATE schedule planning)
-  // Planning must be possible even if leadership/membership data is incomplete.
   const { data: rosterRows, error: rosterErr } = await sb
     .from("route_lock_roster_v")
     .select("assignment_id,tech_id,full_name,co_name,assignment_active,end_date")
@@ -228,27 +266,6 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
     );
   }
 
-  // Build a lookup of ALL roster rows by assignment_id (active or not),
-  // so we can label baseline-orphan rows with a name for cleanup.
-  const rosterByAssignment: Record<
-    string,
-    { tech_id: string; full_name: string; co_name: string | null; assignment_active: boolean; end_date: string | null }
-  > = {};
-
-  for (const rr of rosterRows ?? []) {
-    const assignment_id = String((rr as any)?.assignment_id ?? "").trim();
-    if (!assignment_id) continue;
-
-    rosterByAssignment[assignment_id] = {
-      tech_id: String((rr as any)?.tech_id ?? "").trim(),
-      full_name: String((rr as any)?.full_name ?? "").trim(),
-      co_name: (rr as any)?.co_name == null ? null : String((rr as any)?.co_name),
-      assignment_active: !!(rr as any)?.assignment_active,
-      end_date: (rr as any)?.end_date == null ? null : String((rr as any)?.end_date),
-    };
-  }
-
-  // Active roster techs for normal planning
   const activeRosterTechs: Technician[] = (rosterRows ?? [])
     .map((r: any) => ({
       assignment_id: String(r?.assignment_id ?? "").trim(),
@@ -258,11 +275,11 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       assignment_active: !!r?.assignment_active,
       end_date: r?.end_date == null ? null : String(r.end_date),
     }))
-    .filter((r) => r.assignment_id && r.tech_id) // tech_id is the external truth key
+    .filter((r) => r.assignment_id && r.tech_id)
     .filter((r) => r.assignment_active && !r.end_date)
     .map(({ assignment_active: _a, end_date: _e, ...rest }) => rest);
 
-  const activeAssignmentSet = new Set(activeRosterTechs.map((t) => t.assignment_id));
+  const rosterAssignmentIds = new Set(activeRosterTechs.map((t) => t.assignment_id));
 
   // Existing baselines for this fiscal month
   const { data: baselineRows, error: baselineErr } = await sb
@@ -289,14 +306,16 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
     );
   }
 
+  // Union:
+  // 1) active roster techs
+  // 2) baseline orphans (assignment no longer active/on-roster)
   const scheduleByAssignment: Record<string, ScheduleBaselineRow> = {};
-  const baselineOrphans: Technician[] = [];
+  const orphanTechs: Technician[] = [];
 
   for (const r of (baselineRows ?? []) as any[]) {
     const assignment_id = String(r?.assignment_id ?? "").trim();
-    if (!assignment_id) continue;
-
     const tech_id = String(r?.tech_id ?? "").trim();
+    if (!assignment_id || !tech_id) continue;
 
     scheduleByAssignment[assignment_id] = {
       schedule_baseline_month_id: r?.schedule_baseline_month_id ? String(r.schedule_baseline_month_id) : undefined,
@@ -312,27 +331,21 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       sat: r?.sat ?? null,
     };
 
-    // If there's a baseline row but the assignment is not an active roster row,
-    // surface it so ops can delete it (and flag "NOT ON ROSTER").
-    if (!activeAssignmentSet.has(assignment_id)) {
-      const rr = rosterByAssignment[assignment_id];
-      baselineOrphans.push({
+    if (!rosterAssignmentIds.has(assignment_id)) {
+      orphanTechs.push({
         assignment_id,
-        tech_id: tech_id || String(rr?.tech_id ?? "").trim(),
-        full_name: String(rr?.full_name ?? "").trim() || "(Unknown)",
-        co_name: rr?.co_name ?? null,
+        tech_id,
+        full_name: "(Not on roster)",
+        co_name: null,
         not_on_roster: true,
       });
     }
   }
 
-  // Final tech list: active roster + baseline orphans, dedup by assignment_id
-  const mergedByAssignment: Record<string, Technician> = {};
-  for (const t of activeRosterTechs) mergedByAssignment[t.assignment_id] = t;
-  for (const t of baselineOrphans) {
-    if (!mergedByAssignment[t.assignment_id]) mergedByAssignment[t.assignment_id] = t;
-  }
-  const techs = Object.values(mergedByAssignment).filter((t) => t.assignment_id && t.tech_id);
+  const technicians: Technician[] = [
+    ...activeRosterTechs.map((t) => ({ ...t, not_on_roster: false })),
+    ...orphanTechs,
+  ];
 
   return (
     <PageShell>
@@ -345,7 +358,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       />
 
       <ScheduleGridClient
-        technicians={techs}
+        technicians={technicians as any}
         routes={routes}
         scheduleByAssignment={scheduleByAssignment}
         fiscalMonthId={activeFm.fiscal_month_id}

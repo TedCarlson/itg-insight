@@ -429,13 +429,7 @@ export function ScheduleGridClient({
       </div>
 
       {/* Scroll container: header + body + footer */}
-      <div
-        className={cls(
-          "relative",
-          "max-h-[calc(100vh-16rem)]", // keeps it usable on big teams
-          "overflow-auto"
-        )}
-      >
+      <div className={cls("relative", "max-h-[calc(100vh-16rem)]", "overflow-auto")}>
         {/* Sticky header */}
         <div className="sticky top-0 z-20 bg-[var(--to-surface)] border-b border-[var(--to-border)]">
           <DataTable layout="fixed" gridStyle={gridStyle}>
@@ -516,7 +510,11 @@ export function ScheduleGridClient({
 
                   {DAYS.map((d) => (
                     <div key={d.key} className="flex items-center">
-                      <DayToggle dayLabel={d.label} value={!!r.days[d.key]} onToggle={() => toggleDay(r.assignmentId, d.key)} />
+                      <DayToggle
+                        dayLabel={d.label}
+                        value={!!r.days[d.key]}
+                        onToggle={() => toggleDay(r.assignmentId, d.key)}
+                      />
                     </div>
                   ))}
 

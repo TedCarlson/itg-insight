@@ -1,4 +1,7 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/api/route-lock/shift-validation/upload/route.ts
+
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
@@ -23,7 +26,6 @@ function todayInNY(): string {
 function parseFulfillmentCenter(
   summaryRowsLoose: any[]
 ): { id: number; name: string | null; label: string } | null {
-  // summaryRowsLoose is array of objects with keys like "A" or actual headers; we will just scan values.
   const flat: string[] = [];
   for (const row of summaryRowsLoose) {
     for (const v of Object.values(row ?? {})) {
@@ -36,7 +38,6 @@ function parseFulfillmentCenter(
   const line = flat.find((s) => /^Fulfillment\s*Center\s*:/i.test(s));
   if (!line) return null;
 
-  // Example: "Fulfillment Center: 189931101 - Keystone"
   const after = line.split(":").slice(1).join(":").trim();
   const m = after.match(/^(\d+)/);
   if (!m) return null;
@@ -102,16 +103,13 @@ function timeStr(v: any) {
 function durationToHours(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
 
-  // Excel may give durations as Date-like or as strings like "8:00"
   if (typeof v === "number") {
-    // Excel duration as fraction of day
     return Number.isFinite(v) ? v * 24 : null;
   }
 
   const s = String(v).trim();
   if (!s) return null;
 
-  // "H:MM" or "HH:MM" or "H:MM:SS"
   const m = s.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
   if (m) {
     const hh = Number(m[1]);
@@ -135,7 +133,6 @@ function parseBreakStartEnd(v: any): { break_start_time: string | null; break_en
   const s = String(v).trim();
   if (!s) return { break_start_time: null, break_end_time: null };
 
-  // e.g. "12:00 - 12:30"
   const parts = s.split("-").map((p) => p.trim());
   if (parts.length >= 2) {
     return {
@@ -147,7 +144,6 @@ function parseBreakStartEnd(v: any): { break_start_time: string | null; break_en
 }
 
 function normalizeSummaryRow(r: any) {
-  // Summary header row includes Work Units (12) and Target Unit (12)
   const get = (k: string) => (k in r ? r[k] : null);
 
   const tech_num = normalizeTechNum(get("Tech #"));
@@ -159,8 +155,7 @@ function normalizeSummaryRow(r: any) {
   const target_unit = num(get("Target Unit (12)"));
 
   return {
-    // mapped into existing DB columns where possible
-    fulfillment_center: null, // filled from FC label at insert time
+    fulfillment_center: null,
     company: get("Company") === null ? null : String(get("Company")).trim(),
     fsup_num: get("FSup #") === null ? null : String(get("FSup #")).trim(),
     fsup_last_name: get("FSup Last Name") === null ? null : String(get("FSup Last Name")).trim(),
@@ -181,21 +176,19 @@ function normalizeSummaryRow(r: any) {
     break_end_time,
     break_duration: durationToHours(get("Break Duration")),
 
-    // Summary uses different labels; map into our stored numeric durations
     work_duration: durationToHours(get("Work Available for Jobs")),
 
     skill_groups: get("Skill Groups") === null ? null : String(get("Skill Groups")).trim(),
     route_criteria: get("Route Criteria") === null ? null : String(get("Route Criteria")).trim(),
-    shift_type: null, // not present in Summary; keep null
-    productivity_indicator: null, // not present in Summary; keep null
+    shift_type: null,
+    productivity_indicator: null,
     start_location: get("Routing Start Location") === null ? null : String(get("Routing Start Location")).trim(),
     route_area: get("Route Areas") === null ? null : String(get("Route Areas")).trim(),
     capacity_model: get("Capacity Models") === null ? null : String(get("Capacity Models")).trim(),
     will_not_generate_capacity:
       get("Will Not Generate Capacity") === null ? null : String(get("Will Not Generate Capacity")).trim(),
-    office: null, // Summary doesn’t include Office; keep null
+    office: null,
 
-    // NEW stored columns
     work_units,
     target_unit,
   };
@@ -241,7 +234,7 @@ export async function POST(req: Request) {
     const pc_org_id = (prof?.selected_pc_org_id as string | null) ?? null;
     if (!pc_org_id) return json(400, { ok: false, error: "no org selected" });
 
-    // Permission: owner OR roster_manage
+    // Permission: owner OR roster_manage (keep as-is for now)
     const { data: isOwner } = await supabase.rpc("is_owner");
     let hasRosterManage = false;
     if (!isOwner) {
@@ -285,10 +278,7 @@ export async function POST(req: Request) {
       return json(400, { ok: false, error: "failed to parse file", detail: String(e?.message ?? e) });
     }
 
-    // Summary (loose) used only to find "Fulfillment Center:" line
     const summaryLoose = sheetToJson(workbook, "Summary");
-
-    // Summary data table starts at row 10 (1-based), so range=9 (0-based)
     const summaryData = sheetToJson(workbook, "Summary", { range: 9 });
 
     if (!summaryData.length) return json(400, { ok: false, error: 'missing "Summary" data rows' });
@@ -306,10 +296,24 @@ export async function POST(req: Request) {
     }
 
     const today = todayInNY();
+
+    // Resolve fiscal month for "today" (NY)
+    const { data: fm, error: fmErr } = await supabase
+      .from("fiscal_month_dim")
+      .select("fiscal_month_id,start_date,end_date")
+      .lte("start_date", today)
+      .gte("end_date", today)
+      .maybeSingle();
+
+    if (fmErr) return json(500, { ok: false, error: fmErr.message });
+    const fiscal_month_id = fm?.fiscal_month_id ? String(fm.fiscal_month_id) : null;
+    if (!fiscal_month_id) {
+      return json(400, { ok: false, error: "fiscal_month_dim not found for today", today });
+    }
+
     let minDate: string | null = null;
     let maxDate: string | null = null;
 
-    // Atomic key: pc_org + fc + tech_num + shift_date
     const keyFor = (techNum: string, shiftDate: string) => `${pc_org_id}|${fc.id}|${techNum}|${shiftDate}`;
 
     const byKey = new Map<string, any>();
@@ -375,7 +379,6 @@ export async function POST(req: Request) {
     if (batchErr) return json(500, { ok: false, error: batchErr.message });
 
     const batchId = batch?.shift_validation_batch_id ?? null;
-
     const rowsWithBatch = rows.map((r: any) => ({ ...r, shift_validation_batch_id: batchId }));
 
     if (rowsWithBatch.length) {
@@ -383,9 +386,18 @@ export async function POST(req: Request) {
       if (insErr) return json(500, { ok: false, error: insErr.message });
     }
 
+    // ✅ New rule: any sweep runs ALL sweeps
+    const { data: sweepRes, error: sweepErr } = await supabase.rpc("route_lock_sweep_month", {
+      p_pc_org_id: pc_org_id,
+      p_fiscal_month_id: fiscal_month_id,
+    });
+
+    if (sweepErr) return json(500, { ok: false, error: sweepErr.message });
+
     return json(200, {
       ok: true,
       pc_org_id,
+      fiscal_month_id,
       fulfillment_center_id: fc.id,
       fulfillment_center_label: fc.label,
       filename,
@@ -395,6 +407,7 @@ export async function POST(req: Request) {
       skipped_target_unit_le_zero: skippedTargetZero,
       today,
       batch_id: batchId,
+      sweep: sweepRes ?? null,
     });
   } catch (e: any) {
     return json(500, { ok: false, error: String(e?.message ?? e) });

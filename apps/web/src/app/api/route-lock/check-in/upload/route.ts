@@ -22,6 +22,9 @@ type Ok = {
   batch_id?: string | null;
   min_cp_date?: string | null;
   max_cp_date?: string | null;
+
+  // ✅ New rule: return orchestrator sweeps per fiscal month touched
+  sweeps?: Record<string, any>;
 };
 
 type Err = { ok: false; error: string; hint?: string; expected?: any; received?: any; detail?: any };
@@ -205,13 +208,17 @@ export async function POST(req: NextRequest) {
     const fileHash = sha256(buf);
 
     // Guardrail: org FC
-    const { data: org } = await admin.from("pc_org").select("fulfillment_center_id").eq("pc_org_id", pc_org_id).maybeSingle();
+    const { data: org } = await admin
+      .from("pc_org")
+      .select("fulfillment_center_id")
+      .eq("pc_org_id", pc_org_id)
+      .maybeSingle();
 
     const expectedFC = (org?.fulfillment_center_id as number | null) ?? null;
     if (!expectedFC) {
       return NextResponse.json<Err>(
         { ok: false, error: "uploads disabled for this org", hint: "Populate public.pc_org.fulfillment_center_id to enable." },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -261,7 +268,7 @@ export async function POST(req: NextRequest) {
         start_time: parseTime(by.start_time ?? by.start),
         cp_date,
         cp_time: parseTime(by.cp_time ?? by.completed_time ?? by.cp),
-        // ✅ FIX: no stray identifier. only lookups on `by`
+        // Only lookups on `by`
         job_duration: asNum(by.job_duration ?? by.duration ?? by.job_time_hours ?? by.hours),
         resolution_code: asText(by.resolution_code ?? by.resolution),
         job_comment: asText(by.job_comment ?? by.comment ?? by.comments ?? by.job_comments),
@@ -272,11 +279,14 @@ export async function POST(req: NextRequest) {
 
     // FC validation: if file carries FC, it must match org expected FC
     const distinctFc = Array.from(
-      new Set(parsed.map((x) => x.fulfillment_center_id).filter((x): x is number => typeof x === "number")),
+      new Set(parsed.map((x) => x.fulfillment_center_id).filter((x): x is number => typeof x === "number"))
     );
 
     if (distinctFc.length > 1) {
-      return NextResponse.json<Err>({ ok: false, error: "multiple fulfillment centers found in file", detail: distinctFc }, { status: 400 });
+      return NextResponse.json<Err>(
+        { ok: false, error: "multiple fulfillment centers found in file", detail: distinctFc },
+        { status: 400 }
+      );
     }
 
     const receivedFC = distinctFc[0] ?? expectedFC;
@@ -289,14 +299,14 @@ export async function POST(req: NextRequest) {
           expected: expectedFC,
           received: receivedFC,
         },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
     if (row_count_total === 0) {
       return NextResponse.json<Err>(
         { ok: false, error: "no usable rows found", hint: "Required columns: tech_id, job_num, cp_date." },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -322,7 +332,10 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (batchErr || !batchIns?.check_in_batch_id) {
-      return NextResponse.json<Err>({ ok: false, error: "failed to create batch", detail: batchErr?.message ?? batchErr }, { status: 500 });
+      return NextResponse.json<Err>(
+        { ok: false, error: "failed to create batch", detail: batchErr?.message ?? batchErr },
+        { status: 500 }
+      );
     }
 
     const check_in_batch_id = batchIns.check_in_batch_id as string;
@@ -352,7 +365,9 @@ export async function POST(req: NextRequest) {
     const chunkSize = 750;
     for (let i = 0; i < jobRows.length; i += chunkSize) {
       const chunk = jobRows.slice(i, i + chunkSize);
-      const { error: upErr } = await admin.from("check_in_job_row").upsert(chunk, { onConflict: "pc_org_id,job_num,cp_date,tech_id" });
+      const { error: upErr } = await admin
+        .from("check_in_job_row")
+        .upsert(chunk, { onConflict: "pc_org_id,job_num,cp_date,tech_id" });
       if (upErr) {
         await admin.from("check_in_batch").update({ row_count_loaded: loaded }).eq("check_in_batch_id", check_in_batch_id);
         return NextResponse.json<Err>({ ok: false, error: "failed to upsert job rows", detail: upErr.message }, { status: 500 });
@@ -364,7 +379,11 @@ export async function POST(req: NextRequest) {
     const uniqueDates = Array.from(new Set(parsed.map((p) => p.cp_date)));
     const fiscalEndDates = Array.from(new Set(uniqueDates.map((d) => fiscalEndDateFor(d))));
 
-    const { data: months, error: monthsErr } = await admin.from("fiscal_month_dim").select("fiscal_month_id, fiscal_end_date").in("fiscal_end_date", fiscalEndDates);
+    const { data: months, error: monthsErr } = await admin
+      .from("fiscal_month_dim")
+      .select("fiscal_month_id, fiscal_end_date")
+      .in("fiscal_end_date", fiscalEndDates);
+
     if (monthsErr) {
       return NextResponse.json<Err>({ ok: false, error: "failed to resolve fiscal months", detail: monthsErr.message }, { status: 500 });
     }
@@ -383,7 +402,7 @@ export async function POST(req: NextRequest) {
             hint: "Ensure fiscal_month_dim contains a row for each fiscal_end_date used by Route Lock.",
             detail: { missing_fiscal_end_date: fe },
           },
-          { status: 500 },
+          { status: 500 }
         );
       }
     }
@@ -465,6 +484,31 @@ export async function POST(req: NextRequest) {
 
     await admin.from("check_in_batch").update({ row_count_loaded: loaded, min_cp_date, max_cp_date }).eq("check_in_batch_id", check_in_batch_id);
 
+    // ✅ New rule: any sweep runs ALL sweeps
+    // Check-in can touch multiple fiscal months, so sweep each fiscal_month_id touched.
+    const fiscalMonthsTouched = Array.from(new Set(dayFacts.map((d) => String((d as any).fiscal_month_id))));
+    const sweeps: Record<string, any> = {};
+
+    for (const fiscal_month_id of fiscalMonthsTouched) {
+      const { data: sweepRes, error: sweepErr } = await admin.rpc("route_lock_sweep_month", {
+        p_pc_org_id: pc_org_id,
+        p_fiscal_month_id: fiscal_month_id,
+      });
+
+      if (sweepErr) {
+        return NextResponse.json<Err>(
+          {
+            ok: false,
+            error: `check-in saved but sweep failed for fiscal_month_id=${fiscal_month_id}`,
+            detail: sweepErr.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      sweeps[fiscal_month_id] = sweepRes ?? null;
+    }
+
     return NextResponse.json<Ok>({
       ok: true,
       row_count_loaded: loaded,
@@ -473,11 +517,12 @@ export async function POST(req: NextRequest) {
       batch_id: check_in_batch_id,
       min_cp_date,
       max_cp_date,
+      sweeps,
     });
   } catch (e: any) {
     return NextResponse.json<Err>(
       { ok: false, error: String(e?.message ?? e), detail: e?.stack ? String(e.stack) : undefined },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
