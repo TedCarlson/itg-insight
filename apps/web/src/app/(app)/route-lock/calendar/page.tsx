@@ -1,3 +1,5 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/(app)/route-lock/calendar/page.tsx
 
 import Link from "next/link";
@@ -22,6 +24,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type SearchParams = { month?: string };
+
+// ✅ Next 16 PageProps typing in your repo expects Promise-like searchParams
 type Props = { searchParams?: Promise<SearchParams> };
 
 type FiscalMonth = { fiscal_month_id: string; start_date: string; end_date: string; label: string | null };
@@ -36,6 +40,24 @@ async function resolveCurrentFiscalMonth(sb: any, anchorISO: string): Promise<Fi
     .select("fiscal_month_id,start_date,end_date,label")
     .lte("start_date", anchorISO)
     .gte("end_date", anchorISO)
+    .maybeSingle();
+
+  if (error || !data?.fiscal_month_id) return null;
+  return {
+    fiscal_month_id: String(data.fiscal_month_id),
+    start_date: String(data.start_date),
+    end_date: String(data.end_date),
+    label: (data.label as string | null) ?? null,
+  };
+}
+
+async function resolvePrevFiscalMonth(sb: any, currentStartISO: string): Promise<FiscalMonth | null> {
+  const { data, error } = await sb
+    .from("fiscal_month_dim")
+    .select("fiscal_month_id,start_date,end_date,label")
+    .lt("end_date", currentStartISO)
+    .order("end_date", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error || !data?.fiscal_month_id) return null;
@@ -67,14 +89,18 @@ async function resolveNextFiscalMonth(sb: any, currentEndISO: string): Promise<F
 
 function MonthToggle({
   active,
+  prevHref,
   currentHref,
   nextHref,
+  prevLabel,
   currentLabel,
   nextLabel,
 }: {
-  active: "current" | "next";
+  active: "prev" | "current" | "next";
+  prevHref: string;
   currentHref: string;
   nextHref: string;
+  prevLabel: string;
   currentLabel: string;
   nextLabel: string;
 }) {
@@ -97,11 +123,22 @@ function MonthToggle({
         right={
           <div className="flex items-center gap-2">
             <Link
+              href={prevHref}
+              className={cls("to-btn h-8 px-3 text-xs", active === "prev" ? "to-btn--primary" : "to-btn--secondary")}
+            >
+              Prev • {prevLabel}
+            </Link>
+
+            <Link
               href={currentHref}
-              className={cls("to-btn h-8 px-3 text-xs", active === "current" ? "to-btn--primary" : "to-btn--secondary")}
+              className={cls(
+                "to-btn h-8 px-3 text-xs",
+                active === "current" ? "to-btn--primary" : "to-btn--secondary"
+              )}
             >
               Current • {currentLabel}
             </Link>
+
             <Link
               href={nextHref}
               className={cls("to-btn h-8 px-3 text-xs", active === "next" ? "to-btn--primary" : "to-btn--secondary")}
@@ -136,23 +173,32 @@ export default async function RouteLockCalendarPage({ searchParams }: Props) {
     );
   }
 
+  const fmPrev = await resolvePrevFiscalMonth(sb, fmCurrent.start_date);
   const fmNext = await resolveNextFiscalMonth(sb, fmCurrent.end_date);
-  if (!fmNext) {
+
+  if (!fmPrev || !fmNext) {
     return (
       <PageShell>
         <Card>
-          <div className="text-sm text-[var(--to-warning)]">Could not resolve next fiscal month (fiscal_month_dim).</div>
+          <div className="text-sm text-[var(--to-warning)]">Could not resolve prev/next fiscal month (fiscal_month_dim).</div>
         </Card>
       </PageShell>
     );
   }
 
+  // ✅ Await promise-typed searchParams (fixes TS2344 constraint error)
   const sp = (await searchParams) ?? {};
-  const monthMode = String(sp?.month ?? "current") === "next" ? "next" : "current";
-  const activeFm = monthMode === "next" ? fmNext : fmCurrent;
+  const rawMode = String(sp.month ?? "current");
+  const monthMode: "prev" | "current" | "next" = rawMode === "prev" ? "prev" : rawMode === "next" ? "next" : "current";
+  const activeFm = monthMode === "prev" ? fmPrev : monthMode === "next" ? fmNext : fmCurrent;
 
+  const prevHref = "/route-lock/calendar?month=prev";
   const currentHref = "/route-lock/calendar?month=current";
   const nextHref = "/route-lock/calendar?month=next";
+
+  const prevLabel = String(fmPrev.label ?? `${fmPrev.start_date} → ${fmPrev.end_date}`);
+  const currentLabel = String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`);
+  const nextLabel = String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`);
 
   const res = await getRouteLockDaysForFiscalMonth(sb, pc_org_id, activeFm.fiscal_month_id);
 
@@ -161,10 +207,12 @@ export default async function RouteLockCalendarPage({ searchParams }: Props) {
       <PageShell>
         <MonthToggle
           active={monthMode}
+          prevHref={prevHref}
           currentHref={currentHref}
           nextHref={nextHref}
-          currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
-          nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
+          prevLabel={prevLabel}
+          currentLabel={currentLabel}
+          nextLabel={nextLabel}
         />
         <Card>
           <div className="text-sm text-[var(--to-warning)]">{String(res.error ?? "Could not load route lock days.")}</div>
@@ -177,10 +225,12 @@ export default async function RouteLockCalendarPage({ searchParams }: Props) {
     <PageShell>
       <MonthToggle
         active={monthMode}
+        prevHref={prevHref}
         currentHref={currentHref}
         nextHref={nextHref}
-        currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
-        nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
+        prevLabel={prevLabel}
+        currentLabel={currentLabel}
+        nextLabel={nextLabel}
       />
 
       <RouteLockCalendarClient fiscal={res.fiscal} days={res.days} />
