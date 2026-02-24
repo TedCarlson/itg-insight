@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import crypto from "crypto";
+import * as XLSX from "xlsx";
 
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseServer } from "@/shared/data/supabase/server";
@@ -22,24 +23,51 @@ type Ok = {
   batch_id?: string | null;
   min_cp_date?: string | null;
   max_cp_date?: string | null;
-
-  // ✅ New rule: return orchestrator sweeps per fiscal month touched
-  sweeps?: Record<string, any>;
+  day_fact_rows?: number;
+  today_ny?: string;
+  filtered_out_today_or_future?: number;
 };
 
 type Err = { ok: false; error: string; hint?: string; expected?: any; received?: any; detail?: any };
 
-function normHeader(h: unknown): string {
-  return String(h ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "");
+function json(status: number, payload: any) {
+  return NextResponse.json(payload, { status });
+}
+
+function todayInNY(): string {
+  // YYYY-MM-DD in America/New_York
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function sha256(buf: Buffer): string {
+  return crypto.createHash("sha256").update(buf).digest("hex");
 }
 
 function asText(v: unknown): string | null {
   const s = String(v ?? "").trim();
   return s ? s : null;
+}
+
+/**
+ * Normalize ID-ish values that can arrive as numbers or "123.0".
+ */
+function normalizeId(v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return null;
+    const s = String(v);
+    return s.endsWith(".0") ? s.slice(0, -2) : s;
+  }
+
+  const s = String(v).trim();
+  if (!s) return null;
+  return s.endsWith(".0") ? s.slice(0, -2) : s;
 }
 
 function asNum(v: unknown): number | null {
@@ -48,21 +76,15 @@ function asNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function asInt(v: unknown): number | null {
-  const n = asNum(v);
-  return n === null ? null : Math.trunc(n);
-}
-
+/**
+ * IMPORTANT:
+ * Use UTC-based YYYY-MM-DD for Date objects (avoids NY timezone shifting the day).
+ */
 function parseISODate(v: unknown): string | null {
   if (!v) return null;
 
   if (v instanceof Date && !isNaN(v.getTime())) {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(v);
+    return v.toISOString().slice(0, 10);
   }
 
   const s = String(v).trim();
@@ -78,12 +100,16 @@ function parseISODate(v: unknown): string | null {
     return `${yy}-${mm}-${dd}`;
   }
 
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+
   return null;
 }
 
 function parseTime(v: unknown): string | null {
   if (v === null || v === undefined || v === "") return null;
 
+  // Excel time serial (fraction of a day)
   if (typeof v === "number" && Number.isFinite(v)) {
     const totalSeconds = Math.round(v * 24 * 60 * 60);
     const hh = String(Math.floor(totalSeconds / 3600) % 24).padStart(2, "0");
@@ -106,222 +132,347 @@ function parseTime(v: unknown): string | null {
   return null;
 }
 
-// Fiscal rule: months start on 22nd and end on 21st.
-function fiscalEndDateFor(isoDate: string): string {
-  const [yStr, mStr, dStr] = isoDate.split("-");
-  const y = Number(yStr);
-  const m = Number(mStr);
-  const d = Number(dStr);
+/**
+ * Job Duration comes in as:
+ * - Excel duration serial (fraction of day) -> hours = v * 24
+ * - String like "1:02" or "01:02:30" -> hours
+ * - Sometimes already numeric hours
+ */
+function parseDurationHours(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
 
-  const toISO = (yy: number, mm: number, dd: number) =>
-    `${String(yy).padStart(4, "0")}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
-
-  if (d <= 21) return toISO(y, m, 21);
-
-  let yy = y;
-  let mm = m + 1;
-  if (mm === 13) {
-    mm = 1;
-    yy += 1;
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // If vendor emits Excel time serial for duration, this is the right conversion.
+    // If they already emit hours, this still usually stays reasonable (but in your sample it's a string "1:02").
+    return v * 24;
   }
-  return toISO(yy, mm, 21);
+
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    // Rare, but treat as time-of-day duration and convert hh:mm:ss to hours
+    const hh = v.getUTCHours();
+    const mm = v.getUTCMinutes();
+    const ss = v.getUTCSeconds();
+    return hh + mm / 60 + ss / 3600;
+  }
+
+  const s = String(v).trim();
+  if (!s) return null;
+
+  // "H:MM" or "HH:MM" or "H:MM:SS"
+  const m = s.match(/^(\d+):(\d{2})(?::(\d{2}))?$/);
+  if (m) {
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    const ss = m[3] ? Number(m[3]) : 0;
+    if (![hh, mm, ss].every((x) => Number.isFinite(x))) return null;
+    return hh + mm / 60 + ss / 3600;
+  }
+
+  // Fallback numeric string
+  const n = Number(s.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
-function sha256(buf: Buffer): string {
-  return crypto.createHash("sha256").update(buf).digest("hex");
+function sheetToJson(workbook: XLSX.WorkBook, sheetName: string, opts?: XLSX.Sheet2JSONOpts) {
+  const ws = workbook.Sheets[sheetName];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { defval: null, ...(opts ?? {}) });
 }
 
-async function readSpreadsheetRows(fileName: string, buf: Buffer): Promise<Record<string, any>[]> {
-  const lower = fileName.toLowerCase();
-
-  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-    const XLSX = require("xlsx") as typeof import("xlsx");
-    const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
-    const wsName = wb.SheetNames[0];
-    if (!wsName) return [];
-    const ws = wb.Sheets[wsName];
-    return XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: null });
+function getAny(row: Record<string, any>, keys: string[]): any {
+  for (const k of keys) {
+    if (k in row) return row[k];
+    const trimmed = k.trim();
+    if (trimmed !== k && trimmed in row) return row[trimmed];
   }
 
-  if (lower.endsWith(".csv")) {
-    const text = buf.toString("utf8");
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length === 0) return [];
+  const map = new Map<string, string>();
+  for (const rk of Object.keys(row)) map.set(rk.trim(), rk);
 
-    const splitCsvLine = (line: string) => {
-      const out: string[] = [];
-      let cur = "";
-      let inQ = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i]!;
-        if (ch === '"') {
-          if (inQ && line[i + 1] === '"') {
-            cur += '"';
-            i++;
-          } else {
-            inQ = !inQ;
-          }
-        } else if (ch === "," && !inQ) {
-          out.push(cur);
-          cur = "";
-        } else {
-          cur += ch;
-        }
-      }
-      out.push(cur);
-      return out.map((s) => s.trim());
-    };
+  for (const k of keys) {
+    const hit = map.get(k.trim());
+    if (hit) return row[hit];
+  }
+  return undefined;
+}
 
-    const headers = splitCsvLine(lines[0]!).map((h) => h);
-    const rows: Record<string, any>[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = splitCsvLine(lines[i]!);
-      const row: Record<string, any> = {};
-      for (let c = 0; c < headers.length; c++) row[headers[c] ?? `col_${c}`] = parts[c] ?? null;
-      rows.push(row);
-    }
-    return rows;
+/**
+ * A5 contains something like:
+ * "Fulfillment Center189931101 - Keystone"
+ */
+function parseFulfillmentCenterFromA5(workbook: XLSX.WorkBook, sheetName: string) {
+  const ws: any = workbook.Sheets[sheetName];
+  if (!ws) return null;
+
+  const cell: any = ws["A5"] ?? null;
+  const raw = cell?.w ?? cell?.v ?? null;
+  const line = raw === null || raw === undefined ? "" : String(raw).trim();
+  if (!line) return null;
+
+  const m = line.match(/Fulfillment\s*Center\s*:?\s*(\d+)/i) || line.match(/Fulfillment\s*Center(\d+)/i);
+  if (!m) return null;
+
+  const id = Number(m[1]);
+  if (!Number.isFinite(id)) return null;
+
+  const after = line.replace(m[0], "").trim();
+  const name =
+    after.includes("-") ? after.split("-").slice(1).join("-").trim() : after.startsWith("-") ? after.slice(1).trim() : null;
+
+  return { id, name: name || null, label: line };
+}
+
+type ParsedRow = {
+  tech_id: string;
+  job_num: string;
+  cp_date: string;
+  work_order_number: string | null;
+  account: string | null;
+  job_type: string | null;
+  job_units: number | null;
+  time_slot_start_time: string | null;
+  time_slot_end_time: string | null;
+  start_time: string | null;
+  cp_time: string | null;
+  job_duration_hours: number | null; // ✅ normalized hours
+  resolution_code: string | null;
+  job_comment: string | null;
+};
+
+function buildXlsxRows(bytes: Uint8Array) {
+  const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
+
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return { sheetName: null as string | null, fc: null as any, rows: [] as ParsedRow[], debug: { reason: "no_sheet" } };
+
+  const fc = parseFulfillmentCenterFromA5(workbook, sheetName);
+
+  // Headers are on row 10 (1-based) => range: 9 (0-based)
+  const data = sheetToJson(workbook, sheetName, { range: 9 });
+
+  const parsed: ParsedRow[] = [];
+
+  for (const r of data as any[]) {
+    const tech = normalizeId(getAny(r, ["Tech #", "Tech#", "tech_id", "Tech ID", "Technician", "Tech"]));
+    const job = normalizeId(getAny(r, ["Job #", "Job#", "job_num", "Job Number", "Job"]));
+    const cpDate = parseISODate(getAny(r, ["CP Date", "Cp Date", "cp_date", "Date", "Close Date"]));
+
+    if (!tech || !job || !cpDate) continue;
+
+    parsed.push({
+      tech_id: tech,
+      job_num: job,
+      cp_date: cpDate,
+
+      work_order_number: asText(getAny(r, ["Work Order Number", "Work Order #", "Work Order", "work_order_number"])),
+      account: asText(getAny(r, ["Account", "account"])),
+      job_type: asText(getAny(r, ["Job Type", "job_type"])),
+      job_units: asNum(getAny(r, ["Job Units", "Units", "job_units"])),
+
+      time_slot_start_time: parseTime(getAny(r, ["Time Slot Start Time", "Slot Start", "time_slot_start_time"])),
+      time_slot_end_time: parseTime(getAny(r, ["Time Slot End Time", "Slot End", "time_slot_end_time"])),
+      start_time: parseTime(getAny(r, ["Start Time", "start_time"])),
+      cp_time: parseTime(getAny(r, ["CP Time", "Cp Time", "cp_time"])),
+
+      // ✅ This is the fix: support "1:02" and similar
+      job_duration_hours: parseDurationHours(getAny(r, ["Job Duration", "Duration", "job_duration"])),
+
+      resolution_code: asText(getAny(r, ["Resolution Code", "resolution_code"])),
+      job_comment: asText(getAny(r, ["Job Comment", "Comments", "job_comment"])),
+    });
   }
 
-  throw new Error("Unsupported file type. Please upload .xlsx, .xls, or .csv");
+  const ws: any = workbook.Sheets[sheetName];
+  const a5cell = ws?.["A5"];
+  const a5 = a5cell ? String(a5cell?.w ?? a5cell?.v ?? "") : null;
+
+  return {
+    sheetName,
+    fc,
+    rows: parsed,
+    debug: {
+      sheet: sheetName,
+      range_start_row_1based: 10,
+      row_count_scanned: (data as any[]).length,
+      row_count_usable: parsed.length,
+      a5,
+    },
+  };
+}
+
+type FiscalMonthRow = {
+  fiscal_month_id: string;
+  start_date: string;
+  end_date: string; // IMPORTANT: this is the fiscal_end_date for the month in your model
+  label?: string | null;
+};
+
+function resolveFiscalMonthForDate(iso: string, months: FiscalMonthRow[]): FiscalMonthRow | null {
+  for (const m of months) {
+    if (m.start_date <= iso && iso <= m.end_date) return m;
+  }
+  return null;
+}
+
+function dbErr(e: any) {
+  if (!e) return null;
+  return {
+    message: String(e.message ?? e),
+    details: e.details ?? null,
+    hint: e.hint ?? null,
+    code: e.code ?? null,
+  };
 }
 
 export async function POST(req: NextRequest) {
   try {
     const scope = await requireSelectedPcOrgServer();
-    if (!scope.ok) return NextResponse.json<Err>({ ok: false, error: "no org selected" }, { status: 401 });
+    if (!scope.ok) return json(401, { ok: false, error: "no org selected" } satisfies Err);
 
     const sb = await supabaseServer();
     const admin = supabaseAdmin();
 
     const { data: auth } = await sb.auth.getUser();
     const user = auth?.user ?? null;
-    if (!user) return NextResponse.json<Err>({ ok: false, error: "not authenticated" }, { status: 401 });
+    if (!user) return json(401, { ok: false, error: "not authenticated" } satisfies Err);
 
     const pc_org_id = scope.selected_pc_org_id;
 
     const form = await req.formData();
     const file = form.get("file");
-    if (!(file instanceof File)) return NextResponse.json<Err>({ ok: false, error: "missing file" }, { status: 400 });
+    if (!(file instanceof File)) return json(400, { ok: false, error: "missing file" } satisfies Err);
 
-    const buf = Buffer.from(await file.arrayBuffer());
+    const filename = String((file as any).name ?? "upload");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const buf = Buffer.from(bytes);
     const fileHash = sha256(buf);
 
-    // Guardrail: org FC
-    const { data: org } = await admin
+    // Org guardrail FC
+    const { data: org, error: orgErr } = await admin
       .from("pc_org")
       .select("fulfillment_center_id")
       .eq("pc_org_id", pc_org_id)
       .maybeSingle();
 
+    if (orgErr) return json(500, { ok: false, error: orgErr.message } satisfies Err);
+
     const expectedFC = (org?.fulfillment_center_id as number | null) ?? null;
     if (!expectedFC) {
-      return NextResponse.json<Err>(
-        { ok: false, error: "uploads disabled for this org", hint: "Populate public.pc_org.fulfillment_center_id to enable." },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        error: "uploads disabled for this org",
+        hint: "Populate public.pc_org.fulfillment_center_id to enable.",
+      } satisfies Err);
     }
 
-    const rawRows = await readSpreadsheetRows(file.name, buf);
-
-    const parsed: Array<{
-      fulfillment_center_id: number | null;
-      tech_id: string;
-      job_num: string;
-      work_order_number: string | null;
-      account: string | null;
-      job_type: string | null;
-      job_units: number | null;
-      time_slot_start_time: string | null;
-      time_slot_end_time: string | null;
-      start_time: string | null;
-      cp_date: string;
-      cp_time: string | null;
-      job_duration: number | null;
-      resolution_code: string | null;
-      job_comment: string | null;
-    }> = [];
-
-    for (const r of rawRows) {
-      const by: Record<string, any> = {};
-      for (const [k, v] of Object.entries(r)) by[normHeader(k)] = v;
-
-      const tech_id = asText(by.tech_id ?? by.tech ?? by.techid ?? by.tech_number ?? by.tech_num);
-      const job_num = asText(by.job_num ?? by.jobnumber ?? by.job_number ?? by.job ?? by.jobid);
-      const cp_date = parseISODate(by.cp_date ?? by.completed_date ?? by.date ?? by.cpdate);
-
-      const fc =
-        asInt(by.fulfillment_center_id ?? by.fc ?? by.fc_id ?? by.fulfillmentcenterid ?? by.fulfillment_center) ?? null;
-
-      if (!tech_id || !job_num || !cp_date) continue;
-
-      parsed.push({
-        fulfillment_center_id: fc,
-        tech_id,
-        job_num,
-        work_order_number: asText(by.work_order_number ?? by.workorder ?? by.workorder_number),
-        account: asText(by.account ?? by.customer_account ?? by.acct),
-        job_type: asText(by.job_type ?? by.type ?? by.jobtype),
-        job_units: asNum(by.job_units ?? by.units ?? by.unit),
-        time_slot_start_time: parseTime(by.time_slot_start_time ?? by.slot_start ?? by.timeslot_start),
-        time_slot_end_time: parseTime(by.time_slot_end_time ?? by.slot_end ?? by.timeslot_end),
-        start_time: parseTime(by.start_time ?? by.start),
-        cp_date,
-        cp_time: parseTime(by.cp_time ?? by.completed_time ?? by.cp),
-        // Only lookups on `by`
-        job_duration: asNum(by.job_duration ?? by.duration ?? by.job_time_hours ?? by.hours),
-        resolution_code: asText(by.resolution_code ?? by.resolution),
-        job_comment: asText(by.job_comment ?? by.comment ?? by.comments ?? by.job_comments),
-      });
+    const lower = filename.toLowerCase();
+    if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+      return json(400, {
+        ok: false,
+        error: "unsupported file type",
+        hint: "Upload the vendor Check-In XLSX/XLS report (this endpoint expects the A5 fulfillment center header).",
+      } satisfies Err);
     }
 
-    const row_count_total = parsed.length;
+    const parsed = buildXlsxRows(bytes);
 
-    // FC validation: if file carries FC, it must match org expected FC
-    const distinctFc = Array.from(
-      new Set(parsed.map((x) => x.fulfillment_center_id).filter((x): x is number => typeof x === "number"))
-    );
+    if (!parsed.sheetName) return json(400, { ok: false, error: "no worksheet found", detail: parsed.debug } satisfies Err);
 
-    if (distinctFc.length > 1) {
-      return NextResponse.json<Err>(
-        { ok: false, error: "multiple fulfillment centers found in file", detail: distinctFc },
-        { status: 400 }
-      );
+    // FC from A5 (authoritative)
+    if (!parsed.fc) {
+      return json(400, {
+        ok: false,
+        error: "could not parse fulfillment center from A5",
+        hint: 'Expected cell A5 to contain: "Fulfillment Center189931101 - Keystone" (or similar).',
+        expected: expectedFC,
+        received: null,
+        detail: parsed.debug,
+      } satisfies Err);
     }
 
-    const receivedFC = distinctFc[0] ?? expectedFC;
-    if (receivedFC !== expectedFC) {
-      return NextResponse.json<Err>(
-        {
-          ok: false,
-          error: "fulfillment center mismatch",
-          hint: "This org is guarded by pc_org.fulfillment_center_id. Upload a file for the selected org’s FC.",
-          expected: expectedFC,
-          received: receivedFC,
-        },
-        { status: 400 }
-      );
+    if (Number(parsed.fc.id) !== Number(expectedFC)) {
+      return json(400, {
+        ok: false,
+        error: "fulfillment center mismatch",
+        hint: "This org is guarded by pc_org.fulfillment_center_id. Upload a file for the selected org’s FC.",
+        expected: expectedFC,
+        received: parsed.fc.id,
+        detail: parsed.debug,
+      } satisfies Err);
     }
 
-    if (row_count_total === 0) {
-      return NextResponse.json<Err>(
-        { ok: false, error: "no usable rows found", hint: "Required columns: tech_id, job_num, cp_date." },
-        { status: 400 }
-      );
+    const todayNY = todayInNY();
+
+    // ✅ Check-In is PAST DAYS ONLY: exclude today and future
+    const allRows = parsed.rows;
+    const ingestRows = allRows.filter((r) => r.cp_date < todayNY);
+    const filteredOut = allRows.length - ingestRows.length;
+
+    if (!ingestRows.length) {
+      return json(400, {
+        ok: false,
+        error: "no usable rows found (past days only)",
+        hint: "This endpoint ingests only cp_date < today (NY). Your report appears to include only today/future rows.",
+        detail: { todayNY, total_rows_found: allRows.length, filtered_out_today_or_future: filteredOut, parse_debug: parsed.debug },
+      } satisfies Err);
     }
 
-    const datesSorted = parsed.map((p) => p.cp_date).sort();
+    const row_count_total = ingestRows.length;
+    const datesSorted = ingestRows.map((r) => r.cp_date).sort();
     const min_cp_date = datesSorted[0] ?? null;
     const max_cp_date = datesSorted[datesSorted.length - 1] ?? null;
 
-    // Create batch row
+    // ---- Fiscal Month Resolution (your real model: start_date/end_date) ----
+    const { data: months, error: monthsErr } = await admin
+      .from("fiscal_month_dim")
+      .select("fiscal_month_id,start_date,end_date,label")
+      .lte("start_date", max_cp_date)
+      .gte("end_date", min_cp_date)
+      .order("start_date", { ascending: true });
+
+    if (monthsErr) {
+      return json(500, { ok: false, error: "failed to resolve fiscal months", detail: dbErr(monthsErr) } satisfies Err);
+    }
+
+    const monthRows: FiscalMonthRow[] = (months ?? []).map((m: any) => ({
+      fiscal_month_id: String(m.fiscal_month_id),
+      start_date: String(m.start_date),
+      end_date: String(m.end_date),
+      label: m.label === null || m.label === undefined ? null : String(m.label),
+    }));
+
+    if (!monthRows.length) {
+      return json(500, {
+        ok: false,
+        error: "failed to resolve fiscal months",
+        hint: "No fiscal_month_dim rows overlap the upload date range.",
+        detail: { min_cp_date, max_cp_date, todayNY },
+      } satisfies Err);
+    }
+
+    // Validate every cp_date is covered
+    const uniqueDates = Array.from(new Set(ingestRows.map((r) => r.cp_date))).sort();
+    const missingDates: string[] = [];
+    for (const d of uniqueDates) {
+      if (!resolveFiscalMonthForDate(d, monthRows)) missingDates.push(d);
+    }
+    if (missingDates.length) {
+      return json(500, {
+        ok: false,
+        error: "failed to resolve fiscal months",
+        hint: "Some cp_date values were not covered by any fiscal_month_dim (start_date/end_date).",
+        detail: { missing_dates: missingDates.slice(0, 100), min_cp_date, max_cp_date, todayNY, months: monthRows },
+      } satisfies Err);
+    }
+
+    // ---- Create batch row ----
     const { data: batchIns, error: batchErr } = await admin
       .from("check_in_batch")
       .insert({
         pc_org_id,
         fulfillment_center_id: expectedFC,
         uploaded_by_auth_user_id: user.id,
-        source_file_name: file.name,
+        source_file_name: filename,
         source_hash: fileHash,
         row_count_total,
         row_count_loaded: 0,
@@ -332,110 +483,78 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (batchErr || !batchIns?.check_in_batch_id) {
-      return NextResponse.json<Err>(
-        { ok: false, error: "failed to create batch", detail: batchErr?.message ?? batchErr },
-        { status: 500 }
-      );
+      return json(500, { ok: false, error: "failed to create batch", detail: dbErr(batchErr) } satisfies Err);
     }
 
-    const check_in_batch_id = batchIns.check_in_batch_id as string;
+    const check_in_batch_id = String(batchIns.check_in_batch_id);
 
-    // Upsert job rows
-    const jobRows = parsed.map((p) => ({
+    // ---- Upsert job rows (past-days-only rows) ----
+    const jobRows = ingestRows.map((r) => ({
       pc_org_id,
       check_in_batch_id,
       fulfillment_center_id: expectedFC,
-      tech_id: p.tech_id,
-      job_num: p.job_num,
-      work_order_number: p.work_order_number,
-      account: p.account,
-      job_type: p.job_type,
-      job_units: p.job_units,
-      time_slot_start_time: p.time_slot_start_time,
-      time_slot_end_time: p.time_slot_end_time,
-      start_time: p.start_time,
-      cp_date: p.cp_date,
-      cp_time: p.cp_time,
-      job_duration: p.job_duration,
-      resolution_code: p.resolution_code,
-      job_comment: p.job_comment,
+      tech_id: r.tech_id,
+      job_num: r.job_num,
+      work_order_number: r.work_order_number,
+      account: r.account,
+      job_type: r.job_type,
+      job_units: r.job_units,
+      time_slot_start_time: r.time_slot_start_time,
+      time_slot_end_time: r.time_slot_end_time,
+      start_time: r.start_time,
+      cp_date: r.cp_date,
+      cp_time: r.cp_time,
+      // ✅ store normalized hours
+      job_duration: r.job_duration_hours,
+      resolution_code: r.resolution_code,
+      job_comment: r.job_comment,
     }));
 
     let loaded = 0;
     const chunkSize = 750;
     for (let i = 0; i < jobRows.length; i += chunkSize) {
       const chunk = jobRows.slice(i, i + chunkSize);
-      const { error: upErr } = await admin
-        .from("check_in_job_row")
-        .upsert(chunk, { onConflict: "pc_org_id,job_num,cp_date,tech_id" });
+      const { error: upErr } = await admin.from("check_in_job_row").upsert(chunk, {
+        onConflict: "pc_org_id,job_num,cp_date,tech_id",
+      });
+
       if (upErr) {
         await admin.from("check_in_batch").update({ row_count_loaded: loaded }).eq("check_in_batch_id", check_in_batch_id);
-        return NextResponse.json<Err>({ ok: false, error: "failed to upsert job rows", detail: upErr.message }, { status: 500 });
+        return json(500, { ok: false, error: "failed to upsert job rows", detail: dbErr(upErr) } satisfies Err);
       }
+
       loaded += chunk.length;
     }
 
-    // Resolve fiscal_month_id via fiscal_end_date -> fiscal_month_dim
-    const uniqueDates = Array.from(new Set(parsed.map((p) => p.cp_date)));
-    const fiscalEndDates = Array.from(new Set(uniqueDates.map((d) => fiscalEndDateFor(d))));
-
-    const { data: months, error: monthsErr } = await admin
-      .from("fiscal_month_dim")
-      .select("fiscal_month_id, fiscal_end_date")
-      .in("fiscal_end_date", fiscalEndDates);
-
-    if (monthsErr) {
-      return NextResponse.json<Err>({ ok: false, error: "failed to resolve fiscal months", detail: monthsErr.message }, { status: 500 });
-    }
-
-    const monthMap = new Map<string, string>();
-    for (const m of months ?? []) {
-      monthMap.set(String((m as any).fiscal_end_date), String((m as any).fiscal_month_id));
-    }
-
-    for (const fe of fiscalEndDates) {
-      if (!monthMap.has(fe)) {
-        return NextResponse.json<Err>(
-          {
-            ok: false,
-            error: "missing fiscal_month_dim rows",
-            hint: "Ensure fiscal_month_dim contains a row for each fiscal_end_date used by Route Lock.",
-            detail: { missing_fiscal_end_date: fe },
-          },
-          { status: 500 }
-        );
-      }
-    }
-
-    // Aggregate to day facts (Pattern A: upsert supports backfill)
+    // ---- Aggregate -> check_in_day_fact ----
     type Agg = {
       pc_org_id: string;
       shift_date: string;
       tech_id: string;
-      fiscal_end_date: string;
       fiscal_month_id: string;
+      fiscal_end_date: string; // REQUIRED by table
       fulfillment_center_id: number;
       actual_jobs: number;
-      actual_units: number;
-      actual_hours: number;
+      actual_units: number; // numeric not null
+      actual_hours: number; // numeric not null
       first_start_time: string | null;
       last_cp_time: string | null;
     };
 
     const agg = new Map<string, Agg>();
-    for (const p of parsed) {
-      const key = `${pc_org_id}::${p.cp_date}::${p.tech_id}`;
-      const fe = fiscalEndDateFor(p.cp_date);
-      const fm = monthMap.get(fe)!;
 
+    for (const r of ingestRows) {
+      const fm = resolveFiscalMonthForDate(r.cp_date, monthRows)!;
+
+      const key = `${pc_org_id}::${r.cp_date}::${r.tech_id}`;
       const cur =
         agg.get(key) ??
         ({
           pc_org_id,
-          shift_date: p.cp_date,
-          tech_id: p.tech_id,
-          fiscal_end_date: fe,
-          fiscal_month_id: fm,
+          shift_date: r.cp_date,
+          tech_id: r.tech_id,
+          fiscal_month_id: fm.fiscal_month_id,
+          fiscal_end_date: fm.end_date, // ✅ end_date is your fiscal_end_date
           fulfillment_center_id: expectedFC,
           actual_jobs: 0,
           actual_units: 0,
@@ -445,14 +564,14 @@ export async function POST(req: NextRequest) {
         } satisfies Agg);
 
       cur.actual_jobs += 1;
-      cur.actual_units += p.job_units ?? 0;
-      cur.actual_hours += p.job_duration ?? 0;
+      cur.actual_units += r.job_units ?? 0;
+      cur.actual_hours += r.job_duration_hours ?? 0;
 
-      if (p.start_time) {
-        if (!cur.first_start_time || p.start_time < cur.first_start_time) cur.first_start_time = p.start_time;
+      if (r.start_time) {
+        if (!cur.first_start_time || r.start_time < cur.first_start_time) cur.first_start_time = r.start_time;
       }
-      if (p.cp_time) {
-        if (!cur.last_cp_time || p.cp_time > cur.last_cp_time) cur.last_cp_time = p.cp_time;
+      if (r.cp_time) {
+        if (!cur.last_cp_time || r.cp_time > cur.last_cp_time) cur.last_cp_time = r.cp_time;
       }
 
       agg.set(key, cur);
@@ -476,40 +595,29 @@ export async function POST(req: NextRequest) {
     const dfChunk = 1000;
     for (let i = 0; i < dayFacts.length; i += dfChunk) {
       const chunk = dayFacts.slice(i, i + dfChunk);
-      const { error: dfErr } = await admin.from("check_in_day_fact").upsert(chunk, { onConflict: "pc_org_id,shift_date,tech_id" });
-      if (dfErr) {
-        return NextResponse.json<Err>({ ok: false, error: "failed to upsert day facts", detail: dfErr.message }, { status: 500 });
-      }
-    }
-
-    await admin.from("check_in_batch").update({ row_count_loaded: loaded, min_cp_date, max_cp_date }).eq("check_in_batch_id", check_in_batch_id);
-
-    // ✅ New rule: any sweep runs ALL sweeps
-    // Check-in can touch multiple fiscal months, so sweep each fiscal_month_id touched.
-    const fiscalMonthsTouched = Array.from(new Set(dayFacts.map((d) => String((d as any).fiscal_month_id))));
-    const sweeps: Record<string, any> = {};
-
-    for (const fiscal_month_id of fiscalMonthsTouched) {
-      const { data: sweepRes, error: sweepErr } = await admin.rpc("route_lock_sweep_month", {
-        p_pc_org_id: pc_org_id,
-        p_fiscal_month_id: fiscal_month_id,
+      const { error: dfErr } = await admin.from("check_in_day_fact").upsert(chunk, {
+        onConflict: "pc_org_id,shift_date,tech_id",
       });
 
-      if (sweepErr) {
-        return NextResponse.json<Err>(
-          {
-            ok: false,
-            error: `check-in saved but sweep failed for fiscal_month_id=${fiscal_month_id}`,
-            detail: sweepErr.message,
+      if (dfErr) {
+        return json(500, {
+          ok: false,
+          error: "failed to upsert day facts",
+          detail: {
+            db_error: dbErr(dfErr),
+            onConflict: "pc_org_id,shift_date,tech_id",
+            sample_rows: chunk.slice(0, 5),
           },
-          { status: 500 }
-        );
+        } satisfies Err);
       }
-
-      sweeps[fiscal_month_id] = sweepRes ?? null;
     }
 
-    return NextResponse.json<Ok>({
+    await admin
+      .from("check_in_batch")
+      .update({ row_count_loaded: loaded, min_cp_date, max_cp_date })
+      .eq("check_in_batch_id", check_in_batch_id);
+
+    return json(200, {
       ok: true,
       row_count_loaded: loaded,
       row_count_total,
@@ -517,12 +625,11 @@ export async function POST(req: NextRequest) {
       batch_id: check_in_batch_id,
       min_cp_date,
       max_cp_date,
-      sweeps,
-    });
+      day_fact_rows: dayFacts.length,
+      today_ny: todayNY,
+      filtered_out_today_or_future: filteredOut,
+    } satisfies Ok);
   } catch (e: any) {
-    return NextResponse.json<Err>(
-      { ok: false, error: String(e?.message ?? e), detail: e?.stack ? String(e.stack) : undefined },
-      { status: 500 }
-    );
+    return json(500, { ok: false, error: String(e?.message ?? e), detail: e?.stack ? String(e.stack) : undefined } satisfies Err);
   }
 }
