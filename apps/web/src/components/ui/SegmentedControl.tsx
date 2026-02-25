@@ -1,4 +1,3 @@
-// apps/web/src/components/ui/SegmentedControl.tsx
 "use client";
 
 import type { ReactNode } from "react";
@@ -14,8 +13,18 @@ function cls(...parts: Array<string | false | undefined>) {
 
 /**
  * SegmentedControl (Tabs-lite)
- * - Use for switching between sibling views inside a page.
  * - Controlled component: value + onChange.
+ *
+ * Goal:
+ * - Respect theme active background (your "green" selected state)
+ * - Ensure active text is always readable (default: white ink)
+ * - Add a visible selected border
+ * - Add focus-visible ring for keyboard navigation
+ *
+ * Theme hooks:
+ * - --to-toggle-active-bg (or --to-seg-active-bg)
+ * - --to-toggle-active-ink (or --to-seg-active-ink)
+ * - --to-toggle-active-border (or --to-seg-active-border)
  */
 export function SegmentedControl<T extends string>({
   value,
@@ -45,6 +54,15 @@ export function SegmentedControl<T extends string>({
     >
       {options.map((opt) => {
         const active = opt.value === value;
+
+        const activeBg =
+          "var(--to-toggle-active-bg, var(--to-seg-active-bg, var(--to-row-hover)))";
+        // Key change: default to WHITE so green stays readable without extra theme work.
+        const activeInk =
+          "var(--to-toggle-active-ink, var(--to-seg-active-ink, white))";
+        const activeBorder =
+          "var(--to-toggle-active-border, var(--to-seg-active-border, rgba(0,0,0,0.12)))";
+
         return (
           <button
             key={opt.value}
@@ -54,22 +72,18 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(opt.value)}
             className={cls(
               "rounded-full font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--to-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--to-surface)]",
               btn,
-              active ? "text-[var(--to-ink)]" : "text-[var(--to-ink-muted)] hover:text-[var(--to-ink)]"
+              active
+                ? "text-green-900"
+                : "text-[var(--to-ink-muted)] hover:text-[var(--to-ink)] hover:bg-[var(--to-bg-subtle)]"
             )}
             style={{
-              background: active
-                ? "var(--to-toggle-active-bg, var(--to-seg-active-bg, var(--to-row-hover)))"
-                : "transparent",
-              color: active
-                ? "var(--to-toggle-active-ink, var(--to-seg-active-ink, var(--to-ink)))"
-                : undefined,
-              boxShadow: active
-                ? "inset 0 0 0 1px var(--to-toggle-active-border, var(--to-seg-active-border, transparent))"
-                : undefined,
+              background: active ? activeBg : "transparent",
+              color: active ? activeInk : undefined,
+              // Requested: clear selected border (works on light or green fills)
+              boxShadow: active ? `inset 0 0 0 2px ${activeBorder}` : undefined,
             }}
-
-
           >
             {opt.label}
           </button>

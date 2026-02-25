@@ -16,6 +16,7 @@
     /* Segmented control active tint (soft green highlight) */
   --to-seg-active-bg: color-mix(in srgb, var(--to-accent-2) 16%, var(--to-surface) 84%);
   --to-pill-active-bg: color-mix(in srgb, var(--to-accent-2) 12%, var(--to-surface) 88%);
+  --to-toggle-active-ink: var(--to-ink);
 
   /* Empty state contrast (faint blue tint for glass theme) */
   --to-empty-bg: color-mix(in srgb, var(--to-info) 9%, var(--to-surface) 91%);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { PageHeader, PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { useOrg } from "@/state/org";
+import { useDispatchConsoleAccess } from "../../../hooks/useDispatchConsoleAccess";
 
 function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -23,6 +24,7 @@ function DisabledTile({ label, reason }: { label: string; reason: string }) {
 
 export default function FulfillmentHomePage() {
   const { orgs, orgsLoading, orgsError, selectedOrgId } = useOrg();
+  const { loading: dcLoading, allowed: dcAllowed } = useDispatchConsoleAccess();
 
   const hasOrgs = (orgs ?? []).length > 0;
   const isScoped = !!selectedOrgId;
@@ -57,7 +59,7 @@ export default function FulfillmentHomePage() {
       ) : null}
 
       <Card>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           {isScoped ? (
             <Link
               href="/roster"
@@ -92,6 +94,24 @@ export default function FulfillmentHomePage() {
             </Link>
           ) : (
             <DisabledTile label="Metrics" reason="Select a PC scope first" />
+          )}
+
+          {isScoped ? (
+            dcLoading ? (
+              <DisabledTile label="Dispatch Console" reason="Checking supervisor access…" />
+            ) : dcAllowed ? (
+              <Link
+                href="/dispatch-console"
+                prefetch={false}
+                className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}
+              >
+                Dispatch Console
+              </Link>
+            ) : (
+              <DisabledTile label="Dispatch Console" reason="Supervisor+ only (ITG or BP)" />
+            )
+          ) : (
+            <DisabledTile label="Dispatch Console" reason="Select a PC scope first" />
           )}
         </div>
       </Card>

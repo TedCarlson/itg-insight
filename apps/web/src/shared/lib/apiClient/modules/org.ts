@@ -33,3 +33,13 @@ export async function isItgSupervisor(ctx: ApiModuleCtx, auth_user_id: string): 
   ]);
   return !!out;
 }
+
+// BP supervisor access (mirrors ITG supervisor RPC shape). If the RPC is not
+// deployed in the DB yet, rpcWithFallback will return null and we fail closed.
+export async function isBpSupervisor(ctx: ApiModuleCtx, auth_user_id: string): Promise<boolean> {
+  const out = await ctx.rpcWithFallback<boolean>("is_bp_supervisor", [
+    { p_auth_user_id: auth_user_id },
+    { auth_user_id },
+  ]);
+  return !!out;
+}
