@@ -1,136 +1,165 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/api/dispatch-console/log/route.ts
 
-import { NextResponse } from "next/server";
-import { requireSelectedPcOrgServer } from "@/shared/lib/auth/requireSelectedPcOrg.server";
-import { requireDispatchConsoleAccess } from "../_auth";
+import { NextResponse, type NextRequest } from "next/server";
+import { supabaseServer } from "@/shared/data/supabase/server";
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
-type EventType = "CALL_OUT" | "ADD_IN" | "INCIDENT" | "NOTE";
+export const runtime = "nodejs";
 
-function deltaFor(t: EventType): number {
+type EventType = "CALL_OUT" | "ADD_IN" | "INCIDENT" | "NOTE" | "TECH_MOVE";
+const EVENT_TYPES: EventType[] = ["CALL_OUT", "ADD_IN", "INCIDENT", "NOTE", "TECH_MOVE"];
+
+function isISODate(d: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(d);
+}
+
+function deltaForEventType(t: EventType): number {
   if (t === "CALL_OUT") return -1;
   if (t === "ADD_IN") return 1;
+  // INCIDENT / NOTE / TECH_MOVE do not change capacity
   return 0;
 }
 
-function asIsoDate(v: any): string | null {
-  const s = String(v ?? "").trim();
-  // Minimal validation: YYYY-MM-DD
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-  return s;
-}
+async function requireDispatchAccess(pc_org_id: string) {
+  const sb = await supabaseServer();
+  const { data, error } = await sb.auth.getUser();
+  const user = data?.user ?? null;
 
-function pickPcOrgId(raw: any, fallback: string | null): string | null {
-  const s = String(raw ?? fallback ?? "").trim();
-  return s ? s : null;
-}
-
-export async function GET(req: Request) {
-  try {
-    const authz = await requireDispatchConsoleAccess();
-    if (!authz.ok) return NextResponse.json({ ok: false, error: authz.error }, { status: authz.status });
-
-    const url = new URL(req.url);
-    const qPcOrgId = url.searchParams.get("pc_org_id");
-    const qShiftDate = url.searchParams.get("shift_date");
-
-    const sel = await requireSelectedPcOrgServer();
-    const selectedPcOrgId = sel.ok ? sel.selected_pc_org_id : null;
-    const pc_org_id = pickPcOrgId(qPcOrgId, selectedPcOrgId);
-    const shift_date = asIsoDate(qShiftDate);
-
-    if (!pc_org_id) {
-      return NextResponse.json({ ok: false, error: "Missing pc_org_id (select a PC scope)" }, { status: 400 });
-    }
-    if (selectedPcOrgId && pc_org_id !== selectedPcOrgId) {
-      return NextResponse.json({ ok: false, error: "Forbidden (org mismatch)" }, { status: 403 });
-    }
-    if (!shift_date) {
-      return NextResponse.json({ ok: false, error: "Missing/invalid shift_date (YYYY-MM-DD)" }, { status: 400 });
-    }
-
-    const { data, error } = await authz.supabase
-      .from("dispatch_console_log")
-      .select("*")
-      .eq("pc_org_id", pc_org_id)
-      .eq("shift_date", shift_date)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      // Common during rollout (table not created yet)
-      const msg = error.message ?? "Query failed";
-      const missing = msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("relation");
-      return NextResponse.json(
-        { ok: false, error: missing ? "Dispatch Console DB shape not deployed yet" : msg },
-        { status: missing ? 501 : 400 }
-      );
-    }
-
-    return NextResponse.json({ ok: true, rows: data ?? [] }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+  if (error || !user) {
+    return { ok: false as const, status: 401 as const, error: "unauthorized" as const, user: null };
   }
+
+  // IMPORTANT:
+  // api.has_pc_org_permission() relies on auth.uid()
+  // so it MUST run through the user-scoped client (supabaseServer), not service role.
+  const perm = await sb.schema("api").rpc("has_pc_org_permission", {
+    p_pc_org_id: pc_org_id,
+    p_permission_key: "dispatch_manage",
+  });
+
+  if (perm.error) {
+    return { ok: false as const, status: 500 as const, error: "permission_check_failed" as const, user: null };
+  }
+
+  if (!perm.data) {
+    return { ok: false as const, status: 403 as const, error: "forbidden" as const, user: null };
+  }
+
+  return { ok: true as const, status: 200 as const, error: null, user };
 }
 
-export async function POST(req: Request) {
-  try {
-    const authz = await requireDispatchConsoleAccess();
-    if (!authz.ok) return NextResponse.json({ ok: false, error: authz.error }, { status: authz.status });
+export async function GET(req: NextRequest) {
+  const pc_org_id = req.nextUrl.searchParams.get("pc_org_id") ?? "";
+  const shift_date = req.nextUrl.searchParams.get("shift_date") ?? "";
+  const event_type = req.nextUrl.searchParams.get("event_type") ?? "";
+  const assignment_id = req.nextUrl.searchParams.get("assignment_id") ?? "";
 
-    const body = await req.json().catch(() => ({}));
-    const qPcOrgId = body?.pc_org_id ?? null;
-    const qShiftDate = body?.shift_date ?? null;
-    const assignment_id = String(body?.assignment_id ?? "").trim();
-    const event_type = String(body?.event_type ?? "").trim() as EventType;
-    const message = String(body?.message ?? "").trim();
+  if (!pc_org_id) return NextResponse.json({ ok: false, error: "missing_pc_org_id" }, { status: 400 });
+  if (!shift_date || !isISODate(shift_date)) {
+    return NextResponse.json({ ok: false, error: "invalid_shift_date" }, { status: 400 });
+  }
 
-    const sel = await requireSelectedPcOrgServer();
-    const selectedPcOrgId = sel.ok ? sel.selected_pc_org_id : null;
-    const pc_org_id = pickPcOrgId(qPcOrgId, selectedPcOrgId);
-    const shift_date = asIsoDate(qShiftDate);
+  const gate = await requireDispatchAccess(pc_org_id);
+  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
-    if (!pc_org_id) {
-      return NextResponse.json({ ok: false, error: "Missing pc_org_id (select a PC scope)" }, { status: 400 });
-    }
-    if (selectedPcOrgId && pc_org_id !== selectedPcOrgId) {
-      return NextResponse.json({ ok: false, error: "Forbidden (org mismatch)" }, { status: 403 });
-    }
-    if (!shift_date) {
-      return NextResponse.json({ ok: false, error: "Missing/invalid shift_date (YYYY-MM-DD)" }, { status: 400 });
-    }
-    if (!assignment_id) {
-      return NextResponse.json({ ok: false, error: "Missing assignment_id" }, { status: 400 });
-    }
-    if (!message) {
-      return NextResponse.json({ ok: false, error: "Missing message" }, { status: 400 });
-    }
-    if (!(["CALL_OUT", "ADD_IN", "INCIDENT", "NOTE"] as string[]).includes(event_type)) {
-      return NextResponse.json({ ok: false, error: "Invalid event_type" }, { status: 400 });
-    }
+  const admin = supabaseAdmin();
 
-    // Resolve/stamp denormalized fields from the roster view.
-    const { data: rosterRow, error: rosterErr } = await authz.supabase
+  let q = admin
+    .from("dispatch_console_log")
+    .select(
+      "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id"
+    )
+    .eq("pc_org_id", pc_org_id)
+    .eq("shift_date", shift_date)
+    .order("created_at", { ascending: false });
+
+  if (event_type) {
+    if (!EVENT_TYPES.includes(event_type as EventType)) {
+      return NextResponse.json({ ok: false, error: "invalid_event_type" }, { status: 400 });
+    }
+    q = q.eq("event_type", event_type);
+  }
+
+  if (assignment_id) q = q.eq("assignment_id", assignment_id);
+
+  const res = await q;
+  if (res.error) {
+    return NextResponse.json({ ok: false, error: "log_fetch_failed", details: res.error }, { status: 400 });
+  }
+
+  return NextResponse.json({ ok: true, rows: res.data ?? [] }, { status: 200 });
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+
+  const pc_org_id = String(body.pc_org_id ?? "");
+  const shift_date = String(body.shift_date ?? "");
+  const assignment_id = String(body.assignment_id ?? "");
+  const event_type = String(body.event_type ?? "");
+  const message = String(body.message ?? "").trim();
+
+  if (!pc_org_id) return NextResponse.json({ ok: false, error: "missing_pc_org_id" }, { status: 400 });
+  if (!shift_date || !isISODate(shift_date))
+    return NextResponse.json({ ok: false, error: "invalid_shift_date" }, { status: 400 });
+  if (!assignment_id) return NextResponse.json({ ok: false, error: "missing_assignment_id" }, { status: 400 });
+  if (!EVENT_TYPES.includes(event_type as EventType))
+    return NextResponse.json({ ok: false, error: "invalid_event_type" }, { status: 400 });
+  if (!message) return NextResponse.json({ ok: false, error: "missing_message" }, { status: 400 });
+
+  const gate = await requireDispatchAccess(pc_org_id);
+  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
+
+  const user = gate.user!;
+  const admin = supabaseAdmin();
+
+  // Identity stamping: prefer dispatch_day_tech for the day (fast & stable)
+  // Fallback to route_lock_roster_tech_v if dispatch_day_tech doesn't have it (e.g., Add before seed).
+  const day = await admin
+    .from("dispatch_day_tech")
+    .select("person_id,tech_id,affiliation_id")
+    .eq("pc_org_id", pc_org_id)
+    .eq("shift_date", shift_date)
+    .eq("assignment_id", assignment_id)
+    .maybeSingle();
+
+  let person_id: string | null = day.data?.person_id ?? null;
+  let tech_id: string | null = day.data?.tech_id ?? null;
+  let affiliation_id: string | null = day.data?.affiliation_id ?? null;
+
+  if (!person_id || !tech_id) {
+    const roster = await admin
       .from("route_lock_roster_tech_v")
-      .select("*")
+      .select("person_id,tech_id")
       .eq("pc_org_id", pc_org_id)
       .eq("assignment_id", assignment_id)
       .maybeSingle();
 
-    if (rosterErr) {
-      return NextResponse.json({ ok: false, error: rosterErr.message }, { status: 400 });
-    }
-    if (!rosterRow) {
-      return NextResponse.json({ ok: false, error: "Unknown assignment_id for this PC scope" }, { status: 404 });
+    if (roster.error) {
+      return NextResponse.json({ ok: false, error: "roster_lookup_failed", details: roster.error }, { status: 400 });
     }
 
-    const person_id = String((rosterRow as any).person_id ?? "").trim();
-    const tech_id = String((rosterRow as any).tech_id ?? "").trim();
-    const affiliation_id = (rosterRow as any).affiliation_id ?? null;
+    person_id = person_id ?? roster.data?.person_id ?? null;
+    tech_id = tech_id ?? (roster.data?.tech_id ? String(roster.data.tech_id) : null);
+  }
 
-    if (!person_id || !tech_id) {
-      return NextResponse.json({ ok: false, error: "Roster row missing person_id or tech_id" }, { status: 409 });
-    }
+  if (!person_id || !tech_id) {
+    return NextResponse.json(
+      { ok: false, error: "identity_unresolved", details: "Could not resolve person_id/tech_id for assignment_id" },
+      { status: 400 }
+    );
+  }
 
-    const insPayload: any = {
+  const capDelta = deltaForEventType(event_type as EventType);
+
+  const ins = await admin
+    .from("dispatch_console_log")
+    .insert({
       pc_org_id,
       shift_date,
       assignment_id,
@@ -138,24 +167,18 @@ export async function POST(req: Request) {
       tech_id,
       affiliation_id,
       event_type,
-      capacity_delta_routes: deltaFor(event_type),
+      capacity_delta_routes: capDelta,
       message,
-      created_by_user_id: authz.boot.auth_user_id,
-    };
+      created_by_user_id: user.id,
+    })
+    .select(
+      "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id"
+    )
+    .single();
 
-    const { data, error } = await authz.supabase.from("dispatch_console_log").insert(insPayload).select("*").single();
-
-    if (error) {
-      const msg = error.message ?? "Insert failed";
-      const missing = msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("relation");
-      return NextResponse.json(
-        { ok: false, error: missing ? "Dispatch Console DB shape not deployed yet" : msg },
-        { status: missing ? 501 : 400 }
-      );
-    }
-
-    return NextResponse.json({ ok: true, row: data }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+  if (ins.error) {
+    return NextResponse.json({ ok: false, error: "log_insert_failed", details: ins.error }, { status: 400 });
   }
+
+  return NextResponse.json({ ok: true, row: ins.data }, { status: 200 });
 }

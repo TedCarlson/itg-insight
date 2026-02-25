@@ -50,11 +50,6 @@ export default function AdminHomePage() {
           title="Admin catalogue"
           desc="Manage core tables and foundational data."
         />
-        <NavButton
-          href="/admin/metrics"
-          title="Metrics Settings"
-          desc="Manage core tables and foundational data."
-        />
       </div>
     </div>
   );

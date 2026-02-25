@@ -69,41 +69,10 @@ export async function GET(req: NextRequest) {
     .range(from, to);
 
   if (q) {
-    // 1) find matching pc_org ids by name
-    const { data: pcMatches, error: pcErr } = await admin
-      .from("pc_org")
-      .select("pc_org_id")
-      .ilike("pc_org_name", `%${q}%`)
-      .limit(200);
-
-    if (pcErr) return NextResponse.json({ error: pcErr.message }, { status: 500 });
-
-    // 2) find matching office ids by name
-    const { data: officeMatches, error: officeErr } = await admin
-      .from("office")
-      .select("office_id")
-      .ilike("office_name", `%${q}%`)
-      .limit(200);
-
-    if (officeErr) return NextResponse.json({ error: officeErr.message }, { status: 500 });
-
-    const pcIds = (pcMatches ?? []).map((r: any) => r.pc_org_id).filter(Boolean);
-    const officeIds = (officeMatches ?? []).map((r: any) => r.office_id).filter(Boolean);
-
-    // If nothing matched, return empty page (no need to hit pc_org_office)
-    if (pcIds.length === 0 && officeIds.length === 0) {
-      return NextResponse.json({
-        rows: [],
-        page: { pageIndex, pageSize, totalRows: 0 },
-      });
-    }
-
-    // Build OR on BASE TABLE columns only
-    const parts: string[] = [];
-    if (pcIds.length) parts.push(`pc_org_id.in.(${pcIds.join(",")})`);
-    if (officeIds.length) parts.push(`office_id.in.(${officeIds.join(",")})`);
-
-    query = query.or(parts.join(","));
+    // Fast + predictable: search embedded names (works because we return them).
+    // If your PostgREST doesn’t allow searching embedded aliases, swap to:
+    //   query = query.or(`pc_org_id.eq.${q},office_id.eq.${q}`)
+    query = query.or(`pc_org.pc_org_name.ilike.%${q}%,office.office_name.ilike.%${q}%`);
   }
 
   const { data, error, count } = await query;

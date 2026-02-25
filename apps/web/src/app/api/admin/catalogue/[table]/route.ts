@@ -4,23 +4,27 @@ import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 export const runtime = "nodejs";
 
+type Ctx = { params: { table: string } } | { params: Promise<{ table: string }> };
+
 function num(v: string | null, fallback: number) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ table: string }> }
-) {
+async function getParams(ctx: Ctx): Promise<{ table: string }> {
+  // supports both Next variants (sync params or Promise params)
+  const p: any = (ctx as any).params;
+  return typeof p?.then === "function" ? await p : p;
+}
+
+export async function GET(req: NextRequest, ctx: Ctx) {
   const supabase = await supabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Next build expects params to be a Promise in this project setup
-  const { table } = await context.params;
+  const { table } = await getParams(ctx);
 
   const url = new URL(req.url);
   const limit = Math.min(200, Math.max(1, num(url.searchParams.get("limit"), 50)));
@@ -30,6 +34,7 @@ export async function GET(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // columns from first row (lightweight)
   const first = (data ?? [])[0] ?? {};
   const columns = Object.keys(first).map((k) => ({
     key: k,
