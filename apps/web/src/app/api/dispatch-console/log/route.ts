@@ -1,4 +1,4 @@
-// RUN THIS
+// RUN THIS #2
 // Replace the entire file:
 // apps/web/src/app/api/dispatch-console/log/route.ts
 
@@ -18,8 +18,7 @@ function isISODate(d: string) {
 function deltaForEventType(t: EventType): number {
   if (t === "CALL_OUT") return -1;
   if (t === "ADD_IN") return 1;
-  // BP_LOW / INCIDENT / NOTE / TECH_MOVE do not change capacity
-  return 0;
+  return 0; // BP_LOW / INCIDENT / NOTE / TECH_MOVE
 }
 
 async function requireDispatchAccess(_pc_org_id: string) {
@@ -31,11 +30,7 @@ async function requireDispatchAccess(_pc_org_id: string) {
     return { ok: false as const, status: 401 as const, error: "unauthorized" as const, user: null };
   }
 
-  // Dispatch access is derived from profile.selected_pc_org_id + membership + assignment title
-  // -> api.can_access_dispatch(auth_user_id)
-  const can = await sb.schema("api").rpc("can_access_dispatch", {
-    p_auth_user_id: user.id,
-  });
+  const can = await sb.schema("api").rpc("can_access_dispatch", { p_auth_user_id: user.id });
 
   if (can.error) {
     return { ok: false as const, status: 500 as const, error: "permission_check_failed" as const, user: null };
@@ -46,49 +41,6 @@ async function requireDispatchAccess(_pc_org_id: string) {
   }
 
   return { ok: true as const, status: 200 as const, error: null, user };
-}
-
-type LogRowDb = {
-  dispatch_console_log_id: string;
-  pc_org_id: string;
-  shift_date: string;
-  assignment_id: string;
-  person_id: string;
-  tech_id: string;
-  affiliation_id: string | null;
-  event_type: EventType;
-  capacity_delta_routes: number;
-  message: string;
-  tags: string[] | null;
-  meta: any | null;
-  created_at: string;
-  created_by_user_id: string;
-};
-
-async function attachCreatedByName(admin: ReturnType<typeof supabaseAdmin>, rows: LogRowDb[]) {
-  const ids = Array.from(new Set(rows.map((r) => r.created_by_user_id).filter(Boolean)));
-  if (ids.length === 0) return rows.map((r) => ({ ...r, created_by_name: null as string | null }));
-
-  // Expect: user_profile.auth_user_id -> person.full_name (via user_profile.person_id)
-  const prof = await admin
-    .from("user_profile")
-    .select("auth_user_id, person:person_id(full_name)")
-    .in("auth_user_id", ids);
-
-  const nameByAuth = new Map<string, string>();
-
-  if (!prof.error && Array.isArray(prof.data)) {
-    for (const r of prof.data as any[]) {
-      const authId = String(r.auth_user_id ?? "");
-      const fullName = String(r.person?.full_name ?? "").trim();
-      if (authId && fullName) nameByAuth.set(authId, fullName);
-    }
-  }
-
-  return rows.map((r) => ({
-    ...r,
-    created_by_name: nameByAuth.get(r.created_by_user_id) ?? null,
-  }));
 }
 
 export async function GET(req: NextRequest) {
@@ -110,7 +62,7 @@ export async function GET(req: NextRequest) {
   let q = admin
     .from("dispatch_console_log")
     .select(
-      "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id"
+      "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id,created_by_display_name"
     )
     .eq("pc_org_id", pc_org_id)
     .eq("shift_date", shift_date)
@@ -130,10 +82,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "log_fetch_failed", details: res.error }, { status: 400 });
   }
 
-  const baseRows = (res.data ?? []) as LogRowDb[];
-  const rows = await attachCreatedByName(admin, baseRows);
-
-  return NextResponse.json({ ok: true, rows }, { status: 200 });
+  return NextResponse.json({ ok: true, rows: res.data ?? [] }, { status: 200 });
 }
 
 export async function POST(req: NextRequest) {
@@ -144,14 +93,14 @@ export async function POST(req: NextRequest) {
 
   const pc_org_id = String((body as any).pc_org_id ?? "");
   const shift_date = String((body as any).shift_date ?? "");
-  const assignment_id = String((body as any).assignment_id ?? "");
+  const assignment_id_raw = (body as any).assignment_id;
+  const assignment_id = assignment_id_raw === null || assignment_id_raw === undefined ? "" : String(assignment_id_raw);
   const event_type = String((body as any).event_type ?? "");
   const message = String((body as any).message ?? "").trim();
 
   if (!pc_org_id) return NextResponse.json({ ok: false, error: "missing_pc_org_id" }, { status: 400 });
   if (!shift_date || !isISODate(shift_date))
     return NextResponse.json({ ok: false, error: "invalid_shift_date" }, { status: 400 });
-  if (!assignment_id) return NextResponse.json({ ok: false, error: "missing_assignment_id" }, { status: 400 });
   if (!EVENT_TYPES.includes(event_type as EventType))
     return NextResponse.json({ ok: false, error: "invalid_event_type" }, { status: 400 });
   if (!message) return NextResponse.json({ ok: false, error: "missing_message" }, { status: 400 });
@@ -161,6 +110,39 @@ export async function POST(req: NextRequest) {
 
   const user = gate.user!;
   const admin = supabaseAdmin();
+
+  // NOTE: allowed without technician context
+  if (event_type === "NOTE" && !assignment_id) {
+    const capDelta = 0;
+
+    const ins = await admin
+      .from("dispatch_console_log")
+      .insert({
+        pc_org_id,
+        shift_date,
+        assignment_id: null,
+        person_id: null,
+        tech_id: null,
+        affiliation_id: null,
+        event_type,
+        capacity_delta_routes: capDelta,
+        message,
+        created_by_user_id: user.id,
+      })
+      .select(
+        "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id,created_by_display_name"
+      )
+      .single();
+
+    if (ins.error) {
+      return NextResponse.json({ ok: false, error: "log_insert_failed", details: ins.error }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true, row: ins.data }, { status: 200 });
+  }
+
+  // For all non-NOTE events, assignment_id is required
+  if (!assignment_id) return NextResponse.json({ ok: false, error: "missing_assignment_id" }, { status: 400 });
 
   const day = await admin
     .from("dispatch_day_tech")
@@ -214,7 +196,7 @@ export async function POST(req: NextRequest) {
       created_by_user_id: user.id,
     })
     .select(
-      "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id"
+      "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id,created_by_display_name"
     )
     .single();
 
@@ -222,7 +204,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "log_insert_failed", details: ins.error }, { status: 400 });
   }
 
-  const rowWithName = (await attachCreatedByName(admin, [ins.data as LogRowDb]))[0];
-
-  return NextResponse.json({ ok: true, row: rowWithName }, { status: 200 });
+  return NextResponse.json({ ok: true, row: ins.data }, { status: 200 });
 }

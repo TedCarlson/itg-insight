@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@/shared/data/supabase/client";
+import { useMemo } from "react";
 import { useOrg } from "@/state/org";
+import { useAccessPass } from "@/state/access";
 
 type Result = {
   loading: boolean;
@@ -12,68 +12,17 @@ type Result = {
 
 export function useOrgConsoleAccess(): Result {
   const { selectedOrgId } = useOrg();
-  const supabase = useMemo(() => createClient(), []);
+  const { accessPass } = useAccessPass();
 
-  // Cache per org id to avoid repeated RPC calls when users bounce around
-  const cacheRef = useRef<Map<string, boolean>>(new Map());
+  const loading = !!selectedOrgId && !accessPass;
 
-  const [loading, setLoading] = useState(false);
-  const [canManageConsole, setCanManageConsole] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const canManageConsole = useMemo(() => {
+    if (!selectedOrgId) return false;
+    if (accessPass?.is_app_owner || accessPass?.is_admin) return true;
+    const perms = accessPass?.permissions ?? [];
+    // If you later add a dedicated permission key, wire it here.
+    return perms.includes("org_console_manage") || perms.includes("admin_console_manage");
+  }, [selectedOrgId, accessPass]);
 
-  useEffect(() => {
-    let alive = true;
-
-    async function run() {
-      setError(null);
-
-      if (!selectedOrgId) {
-        setLoading(false);
-        setCanManageConsole(false);
-        return;
-      }
-
-      const cached = cacheRef.current.get(selectedOrgId);
-      if (cached !== undefined) {
-        setLoading(false);
-        setCanManageConsole(cached);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        // NOTE: this RPC is defined in the `api` schema (not `public`).
-        const { data, error: rpcErr } = await (supabase as any).schema("api").rpc("can_manage_pc_org_console", {
-          p_pc_org_id: selectedOrgId,
-        });
-
-        if (!alive) return;
-
-        if (rpcErr) {
-          setError(rpcErr.message ?? "RPC error");
-          cacheRef.current.set(selectedOrgId, false);
-          setCanManageConsole(false);
-        } else {
-          const ok = !!data;
-          cacheRef.current.set(selectedOrgId, ok);
-          setCanManageConsole(ok);
-        }
-      } catch (e: any) {
-        if (!alive) return;
-        setError(e?.message ?? "Unknown error");
-        cacheRef.current.set(selectedOrgId, false);
-        setCanManageConsole(false);
-      } finally {
-        if (!alive) return;
-        setLoading(false);
-      }
-    }
-
-    run();
-    return () => {
-      alive = false;
-    };
-  }, [selectedOrgId, supabase]);
-
-  return { loading, canManageConsole, error };
+  return { loading, canManageConsole, error: null };
 }

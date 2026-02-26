@@ -65,7 +65,6 @@ export default function FulfillmentHomePage() {
           </Card>
         ) : (
           <>
-            {/* Optional areas, rendered in order */}
             {byArea.header?.length ? <HomeBlocks blocks={byArea.header} /> : null}
 
             <div className="grid gap-3 lg:grid-cols-2">

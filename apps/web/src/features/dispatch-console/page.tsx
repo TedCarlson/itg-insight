@@ -321,7 +321,7 @@ export default function DispatchConsolePage() {
   const submit = useCallback(async () => {
     if (!pc_org_id) return;
 
-    if (!selectedAssignmentId) {
+    if (entryType !== "NOTE" && !selectedAssignmentId) {
       toast.push({ title: "Dispatch Console", message: "Select a technician first.", variant: "warning" });
       return;
     }
@@ -339,7 +339,7 @@ export default function DispatchConsolePage() {
         body: JSON.stringify({
           pc_org_id,
           shift_date: shiftDate,
-          assignment_id: selectedAssignmentId,
+          assignment_id: entryType === "NOTE" ? (selectedAssignmentId ?? null) : selectedAssignmentId,
           event_type: entryType,
           message: msg,
         }),
@@ -527,7 +527,7 @@ export default function DispatchConsolePage() {
               </div>
 
               <div className="mt-3 flex justify-end">
-                <Button onClick={submit} disabled={!selectedAssignmentId} className="h-9 px-4">
+                <Button onClick={submit} disabled={entryType !== "NOTE" && !selectedAssignmentId} className="h-9 px-4">
                   Add
                 </Button>
               </div>

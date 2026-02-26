@@ -7,6 +7,7 @@ import CoreNav from "@/components/CoreNav";
 import FooterHelp from "@/components/FooterHelp";
 import { OrgProvider } from "@/state/org";
 import { SessionProvider } from "@/state/session";
+import { AccessProvider } from "@/state/access";
 import { ToastProvider } from "@/components/ui/Toast";
 
 type Lob = "FULFILLMENT" | "LOCATE";
@@ -32,11 +33,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     }
   );
 
-  // Signed-in gate (the only hard gate at layout level)
+  // 🔐 Hard signed-in gate (do not change)
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) redirect("/login");
 
-  // LOB resolution must NOT be fatal. Default safe.
+  // LOB resolution must NOT be fatal
   let lob: Lob = "FULFILLMENT";
 
   try {
@@ -46,24 +47,25 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       if (fromRow) lob = fromRow;
     }
   } catch {
-    // swallow — do not block app rendering
+    // swallow — do not block rendering
   }
 
   return (
     <ToastProvider>
       <SessionProvider>
         <OrgProvider lob={lob}>
-          <div className="min-h-screen">
-            <CoreNav lob={lob} />
+          <AccessProvider>
+            <div className="min-h-screen">
+              <CoreNav lob={lob} />
 
-            {/* Content shell: left padding on desktop rail + top padding on mobile header */}
-            <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
-              <main className="flex-1 px-6 py-6">{children}</main>
-              <div className="px-6">
-                <FooterHelp />
+              <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
+                <main className="flex-1 px-6 py-6">{children}</main>
+                <div className="px-6">
+                  <FooterHelp />
+                </div>
               </div>
             </div>
-          </div>
+          </AccessProvider>
         </OrgProvider>
       </SessionProvider>
     </ToastProvider>
