@@ -15,10 +15,15 @@ export default function NotReadyLayout({ children }: { children: ReactNode }) {
     <ToastProvider>
       <SessionProvider>
         <OrgProvider lob="FULFILLMENT">
-          <div className="min-h-screen flex flex-col">
+          <div className="min-h-screen">
             <CoreNav lob="FULFILLMENT" />
-            <main className="flex-1 px-6 py-6">{children}</main>
-            <FooterHelp />
+
+            <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
+              <main className="flex-1 px-6 py-6">{children}</main>
+              <div className="px-6">
+                <FooterHelp />
+              </div>
+            </div>
           </div>
         </OrgProvider>
       </SessionProvider>

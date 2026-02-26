@@ -10,11 +10,7 @@ function NavButton(props: { href: string; title: string; desc?: string }) {
       style={{ borderColor: "var(--to-border)" }}
     >
       <div className="text-sm font-semibold">{props.title}</div>
-      {props.desc ? (
-        <div className="mt-1 text-sm text-[var(--to-ink-muted)]">
-          {props.desc}
-        </div>
-      ) : null}
+      {props.desc ? <div className="mt-1 text-sm text-[var(--to-ink-muted)]">{props.desc}</div> : null}
     </Link>
   );
 }
@@ -24,32 +20,23 @@ export default function AdminHomePage() {
     <div className="grid gap-4">
       <div className="grid gap-1">
         <h1 className="text-xl font-semibold">Admin</h1>
-        <p className="text-sm text-[var(--to-ink-muted)]">
-          Internal tools for managing access and platform data.
-        </p>
+        <p className="text-sm text-[var(--to-ink-muted)]">Internal tools for managing access and platform data.</p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <NavButton
+          href="/admin/home-editor"
+          title="Home editor"
+          desc="Customize the org homepage (per PC + LOB) using blocks."
+        />
         <NavButton
           href="/admin/edge-permissions"
           title="Edge permissions"
           desc="Grant/revoke admin + delegation permissions (global + PC-ORG)."
         />
-        <NavButton
-          href="/admin/org-users"
-          title="Org users"
-          desc="User membership and org-scoped access."
-        />
-        <NavButton
-          href="/admin/leadership"
-          title="Leadership"
-          desc="Leadership assignments and controls."
-        />
-        <NavButton
-          href="/admin/catalogue"
-          title="Admin catalogue"
-          desc="Manage core tables and foundational data."
-        />
+        <NavButton href="/admin/org-users" title="Org users" desc="User membership and org-scoped access." />
+        <NavButton href="/admin/leadership" title="Leadership" desc="Leadership assignments and controls." />
+        <NavButton href="/admin/catalogue" title="Admin catalogue" desc="Manage core tables and foundational data." />
       </div>
     </div>
   );

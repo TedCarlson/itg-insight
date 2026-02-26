@@ -57,12 +57,15 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <ToastProvider>
       <SessionProvider>
         <OrgProvider lob={lob}>
-          <div className="min-h-screen flex flex-col">
+          <div className="min-h-screen">
             <CoreNav lob={lob} />
-            <main className={isCatalogue ? "flex-1 px-2 py-4" : "flex-1 px-6 py-6"}>
-              {children}
-            </main>
-            <FooterHelp />
+
+            <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
+              <main className={isCatalogue ? "flex-1 px-2 py-4" : "flex-1 px-6 py-6"}>{children}</main>
+              <div className={isCatalogue ? "px-2" : "px-6"}>
+                <FooterHelp />
+              </div>
+            </div>
           </div>
         </OrgProvider>
       </SessionProvider>

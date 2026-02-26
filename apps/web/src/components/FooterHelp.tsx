@@ -14,18 +14,8 @@ export default function FooterHelp() {
   return (
     <footer className="mt-10 py-6 border-t border-black/10 text-sm text-black/70 flex items-center justify-between">
       <div>
-        Need help?{" "}
-        <a className="underline" href="mailto:admin@teamoptix.com">
-          admin@teamoptix.com
-        </a>
+        Insight powered by TeamOptix
       </div>
-
-      {canSeeAdmin ? (
-        <Link href="/admin" prefetch={false} className="inline-flex items-center gap-2 underline">
-          <ShieldCheck className="h-4 w-4" />
-          Admin
-        </Link>
-      ) : null}
     </footer>
   );
 }

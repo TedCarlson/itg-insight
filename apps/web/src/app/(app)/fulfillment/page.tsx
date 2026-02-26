@@ -1,30 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader, PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { useOrg } from "@/state/org";
-import { useDispatchConsoleAccess } from "../../../hooks/useDispatchConsoleAccess";
-
-function cls(...parts: Array<string | false | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-function DisabledTile({ label, reason }: { label: string; reason: string }) {
-  return (
-    <div
-      className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center", "opacity-60", "cursor-not-allowed")}
-      aria-disabled
-      title={reason}
-    >
-      {label}
-    </div>
-  );
-}
+import { useHomeBlocks } from "@/features/home/useHomeBlocks";
+import { HomeBlocks } from "@/features/home/HomeBlocks";
 
 export default function FulfillmentHomePage() {
   const { orgs, orgsLoading, orgsError, selectedOrgId } = useOrg();
-  const { loading: dcLoading, allowed: dcAllowed } = useDispatchConsoleAccess();
+  const { loading: blocksLoading, error: blocksError, byArea } = useHomeBlocks("FULFILLMENT");
 
   const hasOrgs = (orgs ?? []).length > 0;
   const isScoped = !!selectedOrgId;
@@ -32,9 +16,13 @@ export default function FulfillmentHomePage() {
   const blocked = !orgsLoading && hasOrgs && !isScoped;
   const noOrgsYet = !orgsLoading && !orgsError && !hasOrgs;
 
+  const selectedOrg = isScoped
+    ? (orgs ?? []).find((o: any) => String(o?.pc_org_id) === String(selectedOrgId))
+    : null;
+
   return (
     <PageShell>
-      <PageHeader title="Fulfillment" subtitle="Roster Management • Route Lock Planning • Metrics Visibility" />
+      <PageHeader title="Fulfillment" subtitle="PC home • report surface • blocks per org" />
 
       {orgsError ? (
         <Card>
@@ -53,74 +41,55 @@ export default function FulfillmentHomePage() {
       ) : blocked ? (
         <Card>
           <p className="text-sm text-[var(--to-ink-muted)]">
-            Select a <span className="font-medium">PC</span> in the header to unlock Fulfillment tools.
+            Select a <span className="font-medium">PC</span> in the left rail to load your Fulfillment homepage.
           </p>
         </Card>
       ) : null}
 
       <Card>
-        <div className="grid gap-3 sm:grid-cols-4">
-          {isScoped ? (
-            <Link
-              href="/roster"
-              prefetch={false}
-              className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}
-            >
-              Roster
-            </Link>
-          ) : (
-            <DisabledTile label="Roster" reason="Select a PC scope first" />
-          )}
-
-          {isScoped ? (
-            <Link
-              href="/route-lock"
-              prefetch={false}
-              className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}
-            >
-              Route Lock
-            </Link>
-          ) : (
-            <DisabledTile label="Route Lock" reason="Select a PC scope first" />
-          )}
-
-          {isScoped ? (
-            <Link
-              href="/metrics"
-              prefetch={false}
-              className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}
-            >
-              Metrics
-            </Link>
-          ) : (
-            <DisabledTile label="Metrics" reason="Select a PC scope first" />
-          )}
-
-          {isScoped ? (
-            dcLoading ? (
-              <DisabledTile label="Dispatch Console" reason="Checking supervisor access…" />
-            ) : dcAllowed ? (
-              <Link
-                href="/dispatch-console"
-                prefetch={false}
-                className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}
-              >
-                Dispatch Console
-              </Link>
-            ) : (
-              <DisabledTile label="Dispatch Console" reason="Supervisor+ only (ITG or BP)" />
-            )
-          ) : (
-            <DisabledTile label="Dispatch Console" reason="Select a PC scope first" />
-          )}
+        <div className="text-[11px] text-[var(--to-ink-muted)]">Current PC</div>
+        <div className="mt-1 text-base font-semibold">
+          {selectedOrg?.pc_org_name ?? (isScoped ? "Selected PC" : "No PC Selected")}
         </div>
+        {isScoped ? <div className="mt-1 text-[11px] text-[var(--to-ink-muted)]">pc_org_id: {selectedOrgId}</div> : null}
       </Card>
 
-      <Card>
-        <p className="text-sm text-[var(--to-ink-muted)]">
-          Fulfillment floor landing. Choose a module to continue once PC scope is selected.
-        </p>
-      </Card>
+      {isScoped ? (
+        blocksError ? (
+          <Card>
+            <p className="text-sm text-[var(--to-danger)]">Home blocks error: {blocksError}</p>
+          </Card>
+        ) : blocksLoading ? (
+          <Card>
+            <p className="text-sm text-[var(--to-ink-muted)]">Loading homepage blocks…</p>
+          </Card>
+        ) : (
+          <>
+            {/* Optional areas, rendered in order */}
+            {byArea.header?.length ? <HomeBlocks blocks={byArea.header} /> : null}
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3">
+                {byArea.kpis?.length ? <HomeBlocks blocks={byArea.kpis} /> : null}
+                {byArea.left?.length ? <HomeBlocks blocks={byArea.left} /> : null}
+              </div>
+              <div className="grid gap-3">
+                {byArea.right?.length ? <HomeBlocks blocks={byArea.right} /> : null}
+              </div>
+            </div>
+
+            {byArea.footer?.length ? <HomeBlocks blocks={byArea.footer} /> : null}
+
+            {!Object.keys(byArea).length ? (
+              <Card>
+                <p className="text-sm text-[var(--to-ink-muted)]">
+                  No homepage blocks configured for this PC yet. Seed rows in <code>pc_org_home_block</code>.
+                </p>
+              </Card>
+            ) : null}
+          </>
+        )
+      ) : null}
     </PageShell>
   );
 }

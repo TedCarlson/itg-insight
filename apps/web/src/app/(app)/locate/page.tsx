@@ -1,40 +1,28 @@
 "use client";
 
-import Link from "next/link";
 import { PageHeader, PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { useOrg } from "@/state/org";
-
-function cls(...parts: Array<string | false | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-function DisabledTile({ label, reason }: { label: string; reason: string }) {
-  return (
-    <div
-      className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center", "opacity-60", "cursor-not-allowed")}
-      aria-disabled
-      title={reason}
-    >
-      {label} <span className="ml-2 text-xs">🚧</span>
-    </div>
-  );
-}
+import { useHomeBlocks } from "@/features/home/useHomeBlocks";
+import { HomeBlocks } from "@/features/home/HomeBlocks";
 
 export default function LocateHomePage() {
   const { orgs, orgsLoading, orgsError, selectedOrgId } = useOrg();
+  const { loading: blocksLoading, error: blocksError, byArea } = useHomeBlocks("LOCATE");
 
   const hasOrgs = (orgs ?? []).length > 0;
   const isScoped = !!selectedOrgId;
 
-  // Locate MVP: allow the floor to render even if there are no orgs yet,
-  // but block module entry until scope exists.
   const noOrgsYet = !orgsLoading && !orgsError && !hasOrgs;
   const blocked = !orgsLoading && hasOrgs && !isScoped;
 
+  const selectedOrg = isScoped
+    ? (orgs ?? []).find((o: any) => String(o?.pc_org_id) === String(selectedOrgId))
+    : null;
+
   return (
     <PageShell>
-      <PageHeader title="Locate" subtitle="MVP floor: Roster access + Daily Log (construction barriers up)" />
+      <PageHeader title="Locate" subtitle="PC home • report surface • blocks per org" />
 
       {orgsError ? (
         <Card>
@@ -47,42 +35,60 @@ export default function LocateHomePage() {
       ) : noOrgsYet ? (
         <Card>
           <p className="text-sm text-[var(--to-ink-muted)]">
-            No Locate PCs exist yet. That’s expected right now. Once an admin creates a Locate PC and assigns you, you’ll
-            be able to select it in the header.
+            No Locate PCs exist yet. Once created + assigned, you’ll be able to pick it from the left rail.
           </p>
         </Card>
       ) : blocked ? (
         <Card>
           <p className="text-sm text-[var(--to-ink-muted)]">
-            Select a <span className="font-medium">PC</span> in the header to unlock Locate tools.
+            Select a <span className="font-medium">PC</span> in the left rail to load your Locate homepage.
           </p>
         </Card>
       ) : null}
 
       <Card>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {isScoped ? (
-            <Link href="/roster" className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}>
-              Roster
-            </Link>
-          ) : (
-            <DisabledTile label="Roster" reason="Select a PC scope first" />
-          )}
-
-          <Link
-            href="/locate/daily-log"
-            className={cls("to-btn", "to-btn--secondary", "px-4 py-3", "text-center")}
-          >
-            Daily Log (Not PC Scoped)
-          </Link>
+        <div className="text-[11px] text-[var(--to-ink-muted)]">Current PC</div>
+        <div className="mt-1 text-base font-semibold">
+          {selectedOrg?.pc_org_name ?? (isScoped ? "Selected PC" : "No PC Selected")}
         </div>
+        {isScoped ? <div className="mt-1 text-[11px] text-[var(--to-ink-muted)]">pc_org_id: {selectedOrgId}</div> : null}
       </Card>
 
-      <Card>
-        <p className="text-sm text-[var(--to-ink-muted)]">
-          Locate floor is intentionally small right now. Most areas are behind construction barriers.
-        </p>
-      </Card>
+      {isScoped ? (
+        blocksError ? (
+          <Card>
+            <p className="text-sm text-[var(--to-danger)]">Home blocks error: {blocksError}</p>
+          </Card>
+        ) : blocksLoading ? (
+          <Card>
+            <p className="text-sm text-[var(--to-ink-muted)]">Loading homepage blocks…</p>
+          </Card>
+        ) : (
+          <>
+            {byArea.header?.length ? <HomeBlocks blocks={byArea.header} /> : null}
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid gap-3">
+                {byArea.kpis?.length ? <HomeBlocks blocks={byArea.kpis} /> : null}
+                {byArea.left?.length ? <HomeBlocks blocks={byArea.left} /> : null}
+              </div>
+              <div className="grid gap-3">
+                {byArea.right?.length ? <HomeBlocks blocks={byArea.right} /> : null}
+              </div>
+            </div>
+
+            {byArea.footer?.length ? <HomeBlocks blocks={byArea.footer} /> : null}
+
+            {!Object.keys(byArea).length ? (
+              <Card>
+                <p className="text-sm text-[var(--to-ink-muted)]">
+                  No homepage blocks configured for this PC yet. Seed rows in <code>pc_org_home_block</code>.
+                </p>
+              </Card>
+            ) : null}
+          </>
+        )
+      ) : null}
     </PageShell>
   );
 }

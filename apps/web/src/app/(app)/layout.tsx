@@ -53,10 +53,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <ToastProvider>
       <SessionProvider>
         <OrgProvider lob={lob}>
-          <div className="min-h-screen flex flex-col">
+          <div className="min-h-screen">
             <CoreNav lob={lob} />
-            <main className="flex-1 px-6 py-6">{children}</main>
-            <FooterHelp />
+
+            {/* Content shell: left padding on desktop rail + top padding on mobile header */}
+            <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
+              <main className="flex-1 px-6 py-6">{children}</main>
+              <div className="px-6">
+                <FooterHelp />
+              </div>
+            </div>
           </div>
         </OrgProvider>
       </SessionProvider>
