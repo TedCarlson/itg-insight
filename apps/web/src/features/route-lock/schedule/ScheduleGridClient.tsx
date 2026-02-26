@@ -1,3 +1,6 @@
+// RUN THIS
+// Replace the entire file with the contents below.
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -173,6 +176,13 @@ function setAllDays(next: boolean): Record<DayKey, boolean> {
   return { sun: next, mon: next, tue: next, wed: next, thu: next, fri: next, sat: next };
 }
 
+function fmtCooldown(seconds: number) {
+  const s = Math.max(0, Math.trunc(seconds));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${String(ss).padStart(2, "0")}`;
+}
+
 export function ScheduleGridClient({
   technicians,
   routes,
@@ -208,6 +218,20 @@ export function ScheduleGridClient({
   const [isSaving, setIsSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string>("");
 
+  // Stage All
+  const [stageAll, setStageAll] = useState(false);
+  const [stageAllCooldownUntil, setStageAllCooldownUntil] = useState<number | null>(null);
+  const [cooldownTick, setCooldownTick] = useState(0); // used only to repaint countdown text
+
+  const stageAllMsLeft = stageAllCooldownUntil ? Math.max(0, stageAllCooldownUntil - Date.now()) : 0;
+  const isStageAllCooling = stageAllMsLeft > 0;
+
+  useEffect(() => {
+    if (!isStageAllCooling) return;
+    const t = setInterval(() => setCooldownTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [isStageAllCooling]);
+
   // Hydrate on prop changes
   useEffect(() => {
     const nextRows = buildRows(technicians, scheduleByAssignment);
@@ -221,6 +245,9 @@ export function ScheduleGridClient({
     baselineRef.current = snap;
 
     setSaveMsg("");
+
+    // month change / data rehydrate should not carry a staged-all intent across loads
+    setStageAll(false);
   }, [technicians, scheduleByAssignment]);
 
   const totals = useMemo<ScheduleTotals>(() => {
@@ -261,9 +288,13 @@ export function ScheduleGridClient({
     });
   }, [rows]);
 
+  const commitRows = stageAll ? rows : dirtyRows;
+  const canCommit = !isSaving && (stageAll || dirtyRows.length > 0);
+
   async function commitChanges() {
     setSaveMsg("");
-    if (dirtyRows.length === 0) {
+
+    if (commitRows.length === 0) {
       setSaveMsg("No changes to commit.");
       return;
     }
@@ -274,7 +305,7 @@ export function ScheduleGridClient({
         fiscal_month_id: fiscalMonthId,
         hoursPerDay: defaults.hoursPerDay,
         unitsPerHour: defaults.unitsPerHour,
-        rows: dirtyRows.map((r) => ({
+        rows: commitRows.map((r) => ({
           assignment_id: r.assignmentId,
           tech_id: r.techId,
           default_route_id: r.routeId ? r.routeId : null,
@@ -320,6 +351,12 @@ export function ScheduleGridClient({
         nextBase[r.assignmentId] = { routeId: r.routeId, days: { ...r.days } };
       }
       baselineRef.current = nextBase;
+
+      // Stage All cooldown ONLY when it was used for this commit
+      if (stageAll) {
+        setStageAll(false);
+        setStageAllCooldownUntil(Date.now() + 60_000);
+      }
 
       toast.push({
         variant: "success",
@@ -399,7 +436,16 @@ export function ScheduleGridClient({
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <div className="text-xs text-[var(--to-ink-muted)]">Schedule Changes</div>
-            <div className="text-sm font-medium">{dirtyRows.length}</div>
+            <div className="text-sm font-medium">
+              {stageAll ? (
+                <span className="inline-flex items-center gap-2">
+                  <span>ALL</span>
+                  <span className="text-xs text-[var(--to-ink-muted)]">({rows.length})</span>
+                </span>
+              ) : (
+                dirtyRows.length
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col gap-1">
@@ -415,10 +461,34 @@ export function ScheduleGridClient({
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
+              className={cls(
+                "to-btn h-8 px-3 text-xs",
+                stageAll ? "to-btn--primary" : "to-btn--secondary"
+              )}
+              disabled={isSaving || isStageAllCooling}
+              onClick={() => setStageAll((v) => !v)}
+              aria-disabled={isSaving || isStageAllCooling}
+              title={
+                isStageAllCooling
+                  ? "Stage All is temporarily locked after a full rewrite."
+                  : "Stage all rows so Commit writes a full baseline."
+              }
+            >
+              {isStageAllCooling ? (
+                <>Stage All (locked {fmtCooldown(stageAllMsLeft / 1000)})</>
+              ) : stageAll ? (
+                "Stage All: ON"
+              ) : (
+                "Stage All"
+              )}
+            </button>
+
+            <button
+              type="button"
               className="to-btn to-btn--secondary h-8 px-3 text-xs"
-              disabled={isSaving || dirtyRows.length === 0}
+              disabled={isSaving || !canCommit}
               onClick={commitChanges}
-              aria-disabled={isSaving || dirtyRows.length === 0}
+              aria-disabled={isSaving || !canCommit}
             >
               {isSaving ? "Committing…" : "Commit changes"}
             </button>
