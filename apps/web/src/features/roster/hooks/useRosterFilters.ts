@@ -1,3 +1,7 @@
+// RUN THIS
+// Replace the entire file:
+// apps/web/src/features/roster/hooks/useRosterFilters.ts
+
 // apps/web/src/features/roster/hooks/useRosterFilters.ts
 "use client";
 
@@ -23,22 +27,50 @@ function isTechnicianRow(r: any): boolean {
   return Boolean(String(r?.tech_id ?? "").trim()) && !isSupervisorRow(r);
 }
 
+function supervisorKeyForRow(r: any): string | null {
+  const pid = String(r?.reports_to_person_id ?? "").trim();
+  if (pid) return `p:${pid}`;
+
+  const aid = String(r?.reports_to_assignment_id ?? "").trim();
+  if (aid) return `a:${aid}`;
+
+  const name = String(r?.reports_to_full_name ?? "").trim();
+  if (name) return `n:${name}`;
+
+  return null;
+}
+
+function supervisorNameForRow(r: any): string | null {
+  const name = String(r?.reports_to_full_name ?? "").trim();
+  return name || null;
+}
+
 export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: string | null }) {
   const { roster, validatedOrgId } = args;
 
-  // Default to Technician per UX request.
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(DEFAULT_ROLE_FILTER);
   const [query, setQuery] = useState("");
   const [affKey, setAffKey] = useState("all");
   const [supervisorKey, setSupervisorKey] = useState("all");
 
-  const rosterRoleFiltered = useMemo(() => {
+  // Scope rows to the org (but do NOT tie supervisor options to roleFilter)
+  const rosterOrgScoped = useMemo(() => {
     const rows = (roster ?? []).slice();
+    if (!validatedOrgId) return rows;
+
+    return rows.filter((r: any) => {
+      const orgId = String(r?.pc_org_id ?? "").trim();
+      return !orgId || orgId === String(validatedOrgId);
+    });
+  }, [roster, validatedOrgId]);
+
+  const rosterRoleFiltered = useMemo(() => {
+    const rows = (rosterOrgScoped ?? []).slice();
     if (roleFilter === "all") return rows;
     if (roleFilter === "technician") return rows.filter(isTechnicianRow);
     if (roleFilter === "supervisor") return rows.filter(isSupervisorRow);
     return rows;
-  }, [roster, roleFilter]);
+  }, [rosterOrgScoped, roleFilter]);
 
   const affiliationOptions = useMemo(() => {
     const rows = rosterRoleFiltered ?? [];
@@ -61,23 +93,25 @@ export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: st
       .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
   }, [rosterRoleFiltered]);
 
+  // ✅ Supervisor dropdown should be independent of roleFilter
   const supervisorOptions = useMemo(() => {
-    const rows = rosterRoleFiltered ?? [];
+    const rows = rosterOrgScoped ?? [];
     const map = new Map<string, string>();
 
     for (const r of rows as any[]) {
-      const sid = String(r?.reports_to_person_id ?? "").trim();
-      const sname = String(r?.reports_to_full_name ?? "").trim();
-      if (!sid || !sname) continue;
-      if (!map.has(sid)) map.set(sid, sname);
+      const key = supervisorKeyForRow(r);
+      const name = supervisorNameForRow(r);
+      if (!key || !name) continue;
+
+      if (!map.has(key)) map.set(key, name);
     }
 
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }, [rosterRoleFiltered]);
+  }, [rosterOrgScoped]);
 
-  // ✅ NO effects. We derive "effective" keys so UI never breaks.
+  // effective keys
   const effAffKey = useMemo(() => {
     if (affKey === "all") return "all";
     return affiliationOptions.some((o) => o.key === affKey) ? affKey : "all";
@@ -102,6 +136,7 @@ export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: st
         r?.person_csg_id,
         r?.co_name,
         roleText(r),
+        r?.reports_to_full_name,
       ]
         .filter(Boolean)
         .join(" ")
@@ -117,16 +152,11 @@ export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: st
 
     const matchesSupervisor = (r: any) => {
       if (effSupervisorKey === "all") return true;
-      return String(r?.reports_to_person_id ?? "").trim() === String(effSupervisorKey).trim();
+      const rowKey = supervisorKeyForRow(r);
+      return rowKey === effSupervisorKey;
     };
 
-    const isInScopedOrg = (r: any) => {
-      if (!validatedOrgId) return false;
-      const orgId = String(r?.pc_org_id ?? "").trim();
-      return !orgId || orgId === String(validatedOrgId);
-    };
-
-    const out = rows.filter((r: any) => matchesAff(r) && matchesSearch(r) && matchesSupervisor(r) && isInScopedOrg(r));
+    const out = rows.filter((r: any) => matchesAff(r) && matchesSearch(r) && matchesSupervisor(r));
 
     out.sort((a: any, b: any) => {
       const aTech = String(a?.tech_id ?? "");
@@ -140,30 +170,16 @@ export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: st
     });
 
     return out;
-  }, [rosterRoleFiltered, query, effAffKey, effSupervisorKey, validatedOrgId]);
+  }, [rosterRoleFiltered, query, effAffKey, effSupervisorKey]);
 
   const rosterStats = useMemo(() => {
     const techRows = filteredRoster ?? [];
-
     const totalTechs = techRows.length;
+
     const itgTechs = techRows.filter((r: any) => String(r?.co_type ?? "").trim() === "company").length;
     const bpTechs = techRows.filter((r: any) => String(r?.co_type ?? "").trim() === "contractor").length;
 
     const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
-
-    const assignmentSet = techRows.filter((r: any) => {
-      const end = String(r?.assignment_end_date ?? r?.end_date ?? "").trim();
-      const active = Boolean(r?.assignment_active ?? r?.active ?? true);
-      return active && !end && !!String(r?.assignment_id ?? "").trim();
-    }).length;
-
-    const leadershipSet = techRows.filter((r: any) => {
-      const end = String(r?.reports_to_end_date ?? r?.leadership_end_date ?? "").trim();
-      const rid = r?.reports_to_reporting_id ?? r?.assignment_reporting_id ?? r?.reporting_id ?? r?.id ?? null;
-      return !!rid && !end;
-    }).length;
-
-    const clean = totalTechs > 0 && totalTechs === assignmentSet && totalTechs === leadershipSet;
 
     return {
       totalTechs,
@@ -171,13 +187,9 @@ export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: st
       bpTechs,
       techPctITG: pct(itgTechs, totalTechs),
       techPctBP: pct(bpTechs, totalTechs),
-      readinessA: assignmentSet,
-      readinessL: leadershipSet,
-      clean,
     };
   }, [filteredRoster]);
 
-  // Treat DEFAULT_ROLE_FILTER as the baseline, so "Clear" doesn't show by default.
   const anyFiltersActive =
     Boolean(query.trim()) ||
     roleFilter !== DEFAULT_ROLE_FILTER ||
@@ -197,7 +209,6 @@ export function useRosterFilters(args: { roster: RosterRow[]; validatedOrgId: st
     query,
     setQuery,
 
-    // IMPORTANT: export the *effective* keys so Selects stay valid
     affKey: effAffKey,
     setAffKey,
     supervisorKey: effSupervisorKey,

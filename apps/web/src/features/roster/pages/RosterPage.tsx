@@ -1,4 +1,7 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/features/roster/pages/RosterPage.tsx
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -34,17 +37,13 @@ export default function RosterPage() {
   const { selectedOrgId, orgs, orgsLoading } = useOrg();
   const toast = useToast();
 
-  // ✅ Permission gate: owner OR roster_manage
   const { isOwner } = useSession();
   const { allowed: canManageRoster, loading: rosterPermLoading } = useRosterManageAccess();
   const canEditRoster = isOwner || canManageRoster;
 
   const [modifyMode, setModifyMode] = useState<"open" | "locked">("locked");
-
-  // derived safety: never allow "open" if user can't edit
   const effectiveModifyMode: "open" | "locked" = canEditRoster ? modifyMode : "locked";
 
-  // quick view
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickRow, setQuickRow] = useState<RosterRow | null>(null);
   const [quickPos, setQuickPos] = useState<{ top: number; left: number } | null>(null);
@@ -95,7 +94,7 @@ export default function RosterPage() {
 
   const canLoad = Boolean(validatedOrgId);
 
-  const { loading, err, roster, orgMetaLoading, orgMeta, activeSetSize, loadAll } = useRosterPageData({
+  const { loading, err, roster, orgMetaLoading, orgMeta, loadAll } = useRosterPageData({
     validatedOrgId,
     supabase,
     selectedRow,
@@ -119,8 +118,8 @@ export default function RosterPage() {
     supervisorOptions,
     filteredRoster,
     rosterStats,
-    anyFiltersActive,
-    clearFilters,
+    // anyFiltersActive,
+    // clearFilters,
   } = useRosterFilters({ roster, validatedOrgId });
 
   const refreshDisabled = orgsLoading || !canLoad || loading || orgMetaLoading;
@@ -142,6 +141,14 @@ export default function RosterPage() {
     orgMetaLoading ||
     !canEditRoster ||
     effectiveModifyMode !== "open";
+
+  // toolbar sizing (nano)
+  const H = "h-9";
+  const FIELD = `${H} text-xs`;
+  const REFRESH_SMALL = "h-8 px-2.5 text-xs rounded-full";
+
+  const countLabel =
+    roleFilter === "technician" ? "Tech" : roleFilter === "supervisor" ? "Supervisor" : "Roster";
 
   return (
     <PageShell>
@@ -169,118 +176,60 @@ export default function RosterPage() {
 
       <Card>
         <div className="mb-3 flex flex-col gap-2">
+          {/* Top toolbar */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-3 rounded-full border border-[var(--to-border)] px-2 h-10">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[var(--to-ink-muted)]">Modify</span>
-                <span style={modifyToggleVars}>
-                  <SegmentedControl
-                    value={effectiveModifyMode}
-                    onChange={(v) => {
-                      if (!canEditRoster) {
-                        toast.push({
-                          title: "Permission required",
-                          message: "You need roster_manage to unlock modify mode.",
-                          variant: "warning",
-                        });
-                        return;
-                      }
-                      setModifyMode(v as "open" | "locked");
-                    }}
-                    options={[
-                      { value: "locked", label: "Locked" },
-                      { value: "open", label: "Open" },
-                    ]}
-                    size="sm"
-                    className={!canEditRoster ? "opacity-60" : undefined}
-                  />
-                </span>
-              </div>
-
-              <span className="text-[var(--to-ink-muted)]">•</span>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[var(--to-ink-muted)]">Readiness</span>
-                <span
-                  className="inline-flex items-center rounded-full border px-2 text-xs h-8"
-                  style={
-                    rosterStats.clean
-                      ? {
-                          background: "rgba(34, 197, 94, 0.14)",
-                          borderColor: "var(--to-status-success)",
-                          color: "var(--to-status-success)",
-                        }
-                      : {
-                          background: "rgba(249, 115, 22, 0.16)",
-                          borderColor: "var(--to-status-warning)",
-                          color: "var(--to-status-warning)",
-                        }
-                  }
-                >
-                  {rosterStats.clean ? "Ready" : "Incomplete"}
-                </span>
-
-                {typeof activeSetSize === "number" ? (
-                  <span className="ml-1 text-xs text-[var(--to-ink-muted)]">(activeSet: {activeSetSize})</span>
-                ) : null}
-              </div>
+            <div className={`flex items-center gap-2 rounded-full border border-[var(--to-border)] px-2 ${H}`}>
+              <span className="text-xs text-[var(--to-ink-muted)]">Modify</span>
+              <span style={modifyToggleVars}>
+                <SegmentedControl
+                  value={effectiveModifyMode}
+                  onChange={(v) => {
+                    if (!canEditRoster) {
+                      toast.push({
+                        title: "Permission required",
+                        message: "You need roster_manage to unlock modify mode.",
+                        variant: "warning",
+                      });
+                      return;
+                    }
+                    setModifyMode(v as "open" | "locked");
+                  }}
+                  options={[
+                    { value: "locked", label: "Locked" },
+                    { value: "open", label: "Open" },
+                  ]}
+                  size="sm"
+                  className={!canEditRoster ? "opacity-60" : undefined}
+                />
+              </span>
             </div>
 
-            <span className="text-[var(--to-ink-muted)]">•</span>
+            <span className="px-1 text-[var(--to-ink-muted)]">•</span>
 
-            <div className="flex items-center gap-1 rounded-full border border-[var(--to-border)] p-1 h-10">
-              <Button
-                type="button"
-                variant={roleFilter === "technician" ? "secondary" : "ghost"}
-                className="rounded-full px-3 h-8 text-xs"
-                style={
-                  roleFilter === "technician"
-                    ? { background: "var(--to-toggle-active-bg)", borderColor: "var(--to-toggle-active-border)" }
-                    : undefined
-                }
-                onClick={() => setRoleFilter("technician")}
-              >
-                Technician
-              </Button>
-              <Button
-                type="button"
-                variant={roleFilter === "supervisor" ? "secondary" : "ghost"}
-                className="rounded-full px-3 py-1 text-xs"
-                style={
-                  roleFilter === "supervisor"
-                    ? { background: "var(--to-toggle-active-bg)", borderColor: "var(--to-toggle-active-border)" }
-                    : undefined
-                }
-                onClick={() => setRoleFilter("supervisor")}
-              >
-                Supervisor
-              </Button>
-              <Button
-                type="button"
-                variant={roleFilter === "all" ? "secondary" : "ghost"}
-                className="rounded-full px-3 py-1 text-xs"
-                style={
-                  roleFilter === "all"
-                    ? { background: "var(--to-toggle-active-bg)", borderColor: "var(--to-toggle-active-border)" }
-                    : undefined
-                }
-                onClick={() => setRoleFilter("all")}
-              >
-                All
-              </Button>
+            <div className={`flex items-center rounded-full ${H}`}>
+              <SegmentedControl
+                value={roleFilter}
+                onChange={(v) => setRoleFilter(v as any)}
+                options={[
+                  { value: "technician", label: "Technician" },
+                  { value: "supervisor", label: "Supervisor" },
+                  { value: "all", label: "All" },
+                ]}
+                size="sm"
+              />
             </div>
 
             <TextInput
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search (tech id, name, mobile, nt login, csg, affiliation)…"
-              className="w-full sm:w-80 h-10"
+              className={`w-full sm:w-80 ${FIELD}`}
             />
 
             <Select
               value={affKey}
               onChange={(e) => setAffKey(e.target.value)}
-              className="w-full sm:w-80 h-10"
+              className={`w-full sm:w-80 ${FIELD}`}
               disabled={affiliationOptions.length === 0}
             >
               <option value="all">All affiliations</option>
@@ -294,7 +243,7 @@ export default function RosterPage() {
             <Select
               value={supervisorKey}
               onChange={(e) => setSupervisorKey(e.target.value)}
-              className="w-full sm:w-80 h-10"
+              className={`w-full sm:w-80 ${FIELD}`}
               disabled={supervisorOptions.length === 0}
             >
               <option value="all">All supervisors</option>
@@ -304,23 +253,37 @@ export default function RosterPage() {
                 </option>
               ))}
             </Select>
+          </div>
 
-            {/* Refresh now lives with the table controls */}
+          {/* Stats row with inline Refresh */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-y-1 text-sm">
+              <span className="font-medium">
+                {countLabel} Count: {rosterStats.totalTechs}
+              </span>
+              <span className="mx-2 inline-block text-muted-foreground">&nbsp;•&nbsp;</span>
+              <span>
+                ITG: <span className="font-medium">{rosterStats.itgTechs}</span> (
+                {rosterStats.totalTechs === 0 ? "0.0" : ((rosterStats.itgTechs / rosterStats.totalTechs) * 100).toFixed(1)}
+                %)
+              </span>
+              <span className="mx-2 inline-block text-muted-foreground">&nbsp;•&nbsp;</span>
+              <span>
+                BP: <span className="font-medium">{rosterStats.bpTechs}</span> (
+                {rosterStats.totalTechs === 0 ? "0.0" : ((rosterStats.bpTechs / rosterStats.totalTechs) * 100).toFixed(1)}
+                %)
+              </span>
+            </div>
+
             <Button
               variant="secondary"
               type="button"
               onClick={() => validatedOrgId && void loadAll(validatedOrgId)}
               disabled={refreshDisabled}
-              className="h-10 px-3 text-xs"
+              className={REFRESH_SMALL}
             >
               {loading ? "Refreshing…" : "Refresh"}
             </Button>
-
-            {anyFiltersActive && (
-              <Button type="button" variant="secondary" className="h-10 px-3 text-xs" onClick={clearFilters}>
-                Clear
-              </Button>
-            )}
           </div>
         </div>
 
@@ -398,7 +361,7 @@ export default function RosterPage() {
           pcOrgName={selectedOrgName}
           row={selectedRow}
           canManage={canEditRoster}
-          modifyMode={modifyMode} // or effectiveModifyMode if you prefer
+          modifyMode={modifyMode}
           orgMeta={orgMeta ?? null}
         />
       ) : null}
