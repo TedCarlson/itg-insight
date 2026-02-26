@@ -1,20 +1,29 @@
+// RUN THIS
+// Replace the entire file:
+// apps/web/src/app/not-ready/page.tsx
+
 import Link from "next/link";
-import { PageHeader, PageShell } from "@/components/ui/PageShell";
-import { Card } from "@/components/ui/Card";
 
 function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+export const runtime = "nodejs";
+
 export default function NotReadyPage() {
   return (
-    <PageShell>
-      <PageHeader
-        title="Profile not ready"
-        subtitle="Your account is authenticated, but your org/profile setup isn’t complete yet."
-      />
+    <div className="mx-auto w-full max-w-3xl px-4 py-10">
+      <div className="mb-6">
+        <div className="text-2xl font-semibold">Profile not ready</div>
+        <div className="mt-1 text-sm text-[var(--to-ink-muted)]">
+          Your account is authenticated, but your org/profile setup isn’t complete yet.
+        </div>
+      </div>
 
-      <Card>
+      <div
+        className="rounded-2xl border bg-[var(--to-surface)] p-5 shadow-sm"
+        style={{ borderColor: "var(--to-border)" }}
+      >
         <p className="text-sm text-[var(--to-ink-muted)]">
           If you believe this is a mistake, contact your administrator to finish provisioning your profile and assign an
           organization.
@@ -33,13 +42,16 @@ export default function NotReadyPage() {
             Admin
           </Link>
         </div>
-      </Card>
+      </div>
 
-      <Card>
+      <div
+        className="mt-4 rounded-2xl border bg-[var(--to-surface)] p-5 shadow-sm"
+        style={{ borderColor: "var(--to-border)" }}
+      >
         <p className="text-sm text-[var(--to-ink-muted)]">
           Next step: once your org exists for the target LOB, you’ll be able to select it from the header and proceed.
         </p>
-      </Card>
-    </PageShell>
+      </div>
+    </div>
   );
 }
