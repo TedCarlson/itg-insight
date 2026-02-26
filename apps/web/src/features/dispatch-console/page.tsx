@@ -163,6 +163,23 @@ export default function DispatchConsolePage() {
   const [loadingRollup, setLoadingRollup] = useState(false);
   const [logRollupRows, setLogRollupRows] = useState<LogRow[]>([]);
 
+  // ✅ Minimal addition: day-level counts from actual log rows (includes BP_LOW)
+  const rollupCounts = useMemo(() => {
+    let callOut = 0;
+    let addIn = 0;
+    let bpLow = 0;
+    let incident = 0;
+
+    for (const r of logRollupRows) {
+      if (r.event_type === "CALL_OUT") callOut += 1;
+      else if (r.event_type === "ADD_IN") addIn += 1;
+      else if (r.event_type === "BP_LOW") bpLow += 1;
+      else if (r.event_type === "INCIDENT") incident += 1;
+    }
+
+    return { callOut, addIn, bpLow, incident };
+  }, [logRollupRows]);
+
   const [entryType, setEntryType] = useState<EntryType>("NOTE");
   const [message, setMessage] = useState("");
 
@@ -415,20 +432,33 @@ export default function DispatchConsolePage() {
             </div>
 
             {summary ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Badge>{summary.call_out_count} call outs</Badge>
-                <Badge>{summary.add_in_count} add ins</Badge>
-                <Badge>{(summary.bp_low_count ?? 0)} BP-low</Badge>
-                <Badge>{summary.incident_count} incidents</Badge>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <Badge className="text-[11px] px-2 py-0.5">
+                  {Math.max(summary.call_out_count ?? 0, rollupCounts.callOut)} call outs
+                </Badge>
+                <Badge className="text-[11px] px-2 py-0.5">
+                  {Math.max(summary.add_in_count ?? 0, rollupCounts.addIn)} add ins
+                </Badge>
+                <Badge className="text-[11px] px-2 py-0.5">
+                  {Math.max(summary.bp_low_count ?? 0, rollupCounts.bpLow)} BP-low
+                </Badge>
+                <Badge className="text-[11px] px-2 py-0.5">
+                  {Math.max(summary.incident_count ?? 0, rollupCounts.incident)} incidents
+                </Badge>
 
                 {(() => {
                   const cap = summary.tech_count + summary.net_capacity_delta_routes;
                   const below = cap < summary.quota_routes_required;
-                  return <Badge variant={below ? "danger" : "neutral"}>Techs {cap}</Badge>;
+                  return (
+                    <Badge className="text-[11px] px-2 py-0.5" variant={below ? "danger" : "neutral"}>
+                      Techs {cap}
+                    </Badge>
+                  );
                 })()}
 
-                <Badge>Quota {summary.quota_routes_required} routes</Badge>
-                <Badge>Δ {fmtDelta(summary.net_capacity_delta_routes)}</Badge>
+                <Badge className="text-[11px] px-2 py-0.5">Quota {summary.quota_routes_required} routes</Badge>
+
+                {/* Δ pill hidden per request */}
               </div>
             ) : null}
           </div>
