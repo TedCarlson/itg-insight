@@ -1,7 +1,3 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/app/api/dispatch-console/log/route.ts
-
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -21,7 +17,7 @@ function deltaForEventType(t: EventType): number {
   return 0; // BP_LOW / INCIDENT / NOTE / TECH_MOVE
 }
 
-async function requireDispatchAccess(pc_org_id: string) {
+async function requireDispatchAccess(_pc_org_id: string) {
   const sb = await supabaseServer();
   const { data, error } = await sb.auth.getUser();
   const user = data?.user ?? null;
@@ -30,22 +26,65 @@ async function requireDispatchAccess(pc_org_id: string) {
     return { ok: false as const, status: 401 as const, error: "unauthorized" as const, user: null };
   }
 
-  // Keep consistent with /api/dispatch-console/workforce (pc_org scoped)
-  const can = await sb.rpc("has_dispatch_console_access", { p_pc_org_id: pc_org_id });
+  const can = await sb.schema("api").rpc("can_access_dispatch", { p_auth_user_id: user.id });
 
   if (can.error) {
     return { ok: false as const, status: 500 as const, error: "permission_check_failed" as const, user: null };
   }
 
-  if (can.data !== true) {
+  if (!can.data) {
     return { ok: false as const, status: 403 as const, error: "forbidden" as const, user: null };
   }
 
   return { ok: true as const, status: 200 as const, error: null, user };
 }
 
+// ✅ NO created_by_display_name here (we synthesize created_by_name below)
 const SELECT_COLS =
   "dispatch_console_log_id,pc_org_id,shift_date,assignment_id,person_id,tech_id,affiliation_id,event_type,capacity_delta_routes,message,tags,meta,created_at,created_by_user_id";
+
+async function resolveUserLabels(admin: ReturnType<typeof supabaseAdmin>, userIds: string[]) {
+  const ids = Array.from(new Set(userIds.filter(Boolean)));
+  const out = new Map<string, string>();
+
+  for (const uid of ids) {
+    // 1) Prefer user_profile -> person full_name
+    try {
+      const { data: prof } = await admin.from("user_profile").select("person_id").eq("auth_user_id", uid).maybeSingle();
+      const personId = prof?.person_id ? String(prof.person_id) : null;
+
+      if (personId) {
+        const { data: person } = await admin.from("person").select("full_name").eq("person_id", personId).maybeSingle();
+        const nm = person?.full_name ? String(person.full_name).trim() : "";
+        if (nm) {
+          out.set(uid, nm);
+          continue;
+        }
+      }
+    } catch {
+      // ignore, fallback below
+    }
+
+    // 2) Fallback to auth email
+    try {
+      const { data, error } = await admin.auth.admin.getUserById(uid);
+      if (!error) {
+        const email = (data?.user?.email ?? null) as string | null;
+        if (email) {
+          out.set(uid, email);
+          continue;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3) Fallback to uid
+    out.set(uid, uid);
+  }
+
+  return out;
+}
 
 export async function GET(req: NextRequest) {
   const pc_org_id = req.nextUrl.searchParams.get("pc_org_id") ?? "";
@@ -84,7 +123,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "log_fetch_failed", details: res.error }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true, rows: res.data ?? [] }, { status: 200 });
+  const rows = (res.data ?? []) as any[];
+  const nameMap = await resolveUserLabels(admin, rows.map((r) => String(r.created_by_user_id ?? "")));
+
+  const decorated = rows.map((r) => ({
+    ...r,
+    created_by_name: nameMap.get(String(r.created_by_user_id ?? "")) ?? null,
+  }));
+
+  return NextResponse.json({ ok: true, rows: decorated }, { status: 200 });
 }
 
 export async function POST(req: NextRequest) {
@@ -113,8 +160,8 @@ export async function POST(req: NextRequest) {
   const user = gate.user!;
   const admin = supabaseAdmin();
 
-  // NOTE: allowed without technician context
-  if (event_type === "NOTE" && !assignment_id) {
+  // NOTE is day-level only (assignment_id must be null)
+  if (event_type === "NOTE") {
     const ins = await admin
       .from("dispatch_console_log")
       .insert({
@@ -136,10 +183,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "log_insert_failed", details: ins.error }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, row: ins.data }, { status: 200 });
+    const nameMap = await resolveUserLabels(admin, [String(ins.data?.created_by_user_id ?? "")]);
+    return NextResponse.json(
+      { ok: true, row: { ...ins.data, created_by_name: nameMap.get(String(ins.data?.created_by_user_id ?? "")) ?? null } },
+      { status: 200 }
+    );
   }
 
-  // For all non-NOTE events, assignment_id is required
   if (!assignment_id) return NextResponse.json({ ok: false, error: "missing_assignment_id" }, { status: 400 });
 
   const day = await admin
@@ -200,5 +250,87 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "log_insert_failed", details: ins.error }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true, row: ins.data }, { status: 200 });
+  const nameMap = await resolveUserLabels(admin, [String(ins.data?.created_by_user_id ?? "")]);
+  return NextResponse.json(
+    { ok: true, row: { ...ins.data, created_by_name: nameMap.get(String(ins.data?.created_by_user_id ?? "")) ?? null } },
+    { status: 200 }
+  );
+}
+
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
+  }
+
+  const dispatch_console_log_id = String((body as any).dispatch_console_log_id ?? "").trim();
+  const pc_org_id = String((body as any).pc_org_id ?? "").trim();
+  const event_type = String((body as any).event_type ?? "").trim();
+  const message = String((body as any).message ?? "").trim();
+
+  if (!dispatch_console_log_id) {
+    return NextResponse.json({ ok: false, error: "missing_dispatch_console_log_id" }, { status: 400 });
+  }
+  if (!pc_org_id) {
+    return NextResponse.json({ ok: false, error: "missing_pc_org_id" }, { status: 400 });
+  }
+  if (!EVENT_TYPES.includes(event_type as EventType)) {
+    return NextResponse.json({ ok: false, error: "invalid_event_type" }, { status: 400 });
+  }
+  if (!message) {
+    return NextResponse.json({ ok: false, error: "missing_message" }, { status: 400 });
+  }
+
+  const gate = await requireDispatchAccess(pc_org_id);
+  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
+
+  const user = gate.user!;
+  const admin = supabaseAdmin();
+
+  // ✅ Use USER-SCOPED client for update so auth.uid() works in trigger + RLS
+  const sb = await supabaseServer();
+
+  // Friendly pre-check (also protects UX)
+  const pre = await admin
+    .from("dispatch_console_log")
+    .select("dispatch_console_log_id,created_by_user_id")
+    .eq("dispatch_console_log_id", dispatch_console_log_id)
+    .maybeSingle();
+
+  if (pre.error) {
+    return NextResponse.json({ ok: false, error: "log_lookup_failed", details: pre.error }, { status: 400 });
+  }
+  if (!pre.data) {
+    return NextResponse.json({ ok: false, error: "log_not_found" }, { status: 404 });
+  }
+  if (String(pre.data.created_by_user_id) !== String(user.id)) {
+    return NextResponse.json({ ok: false, error: "edit_forbidden" }, { status: 403 });
+  }
+
+  const upd = await sb
+    .from("dispatch_console_log")
+    .update({ event_type, message })
+    .eq("dispatch_console_log_id", dispatch_console_log_id)
+    .select(SELECT_COLS)
+    .single();
+
+  if (upd.error) {
+  console.error("PATCH ERROR:", upd.error);
+  return NextResponse.json(
+    {
+      ok: false,
+      error: upd.error.message,
+      code: upd.error.code,
+      hint: upd.error.hint,
+      details: upd.error.details,
+    },
+    { status: 400 }
+  );
+}
+
+  const nameMap = await resolveUserLabels(admin, [String(upd.data?.created_by_user_id ?? "")]);
+  return NextResponse.json(
+    { ok: true, row: { ...upd.data, created_by_name: nameMap.get(String(upd.data?.created_by_user_id ?? "")) ?? null } },
+    { status: 200 }
+  );
 }
