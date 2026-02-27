@@ -1,11 +1,6 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/state/access.tsx
-
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { createClient } from "@/shared/data/supabase/client";
 import { useOrg } from "./org";
 
 type AccessPass = {
@@ -31,7 +26,6 @@ type AccessContextType = {
 const AccessContext = createContext<AccessContextType | undefined>(undefined);
 
 export function AccessProvider({ children }: { children: React.ReactNode }) {
-  const supabase = createClient();
   const { selectedOrgId } = useOrg();
   const [accessPass, setAccessPass] = useState<AccessPass | null>(null);
 
@@ -41,28 +35,48 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const { data, error } = await supabase.rpc("get_access_pass", {
-      p_pc_org_id: selectedOrgId,
+    const res = await fetch(`/api/access-pass?pc_org_id=${encodeURIComponent(selectedOrgId)}`, {
+      method: "GET",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
     });
 
-    if (!error) {
-      setAccessPass(data ?? null);
+    const text = await res.text();
+
+    if (!res.ok) {
+      // Keep existing pass (don’t thrash UI) but log the body for debugging.
+     
+      console.log("access-pass error:", res.status, text);
+      return;
     }
-  }, [selectedOrgId, supabase]);
+
+    // Parse once (stream already consumed by res.text()).
+    let payload: any = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+     
+      console.log("access-pass parse error:", text);
+      setAccessPass(null);
+      return;
+    }
+
+    // Support both shapes:
+    // 1) { data: AccessPass }
+    // 2) AccessPass
+    const nextPass: AccessPass | null = (payload?.data ?? payload) ?? null;
+
+    setAccessPass(nextPass);
+  }, [selectedOrgId]);
 
   useEffect(() => {
     const t = setTimeout(() => {
       void refresh();
     }, 0);
-
     return () => clearTimeout(t);
   }, [refresh]);
 
-  return (
-    <AccessContext.Provider value={{ accessPass, refresh }}>
-      {children}
-    </AccessContext.Provider>
-  );
+  return <AccessContext.Provider value={{ accessPass, refresh }}>{children}</AccessContext.Provider>;
 }
 
 export function useAccessPass() {
