@@ -174,6 +174,12 @@ export default function DispatchConsolePage() {
 
   const lastAutoDraftRef = useRef<string>("");
 
+  const clearDraft = useCallback(() => {
+    setMessage("");
+    lastAutoDraftRef.current = "";
+    setSelectedAssignmentId(null);
+  }, []);
+
   // Restrict entry types when tab = NOT_SCHEDULED
   useEffect(() => {
     if (workforceTab !== "NOT_SCHEDULED") return;
@@ -408,7 +414,19 @@ export default function DispatchConsolePage() {
     } catch (e: any) {
       toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to add log entry", variant: "danger" });
     }
-  }, [pc_org_id, shiftDate, selectedAssignmentId, entryType, message, toast, loadWorkforce, loadNotScheduled, loadLog, loadLogRollup, workforceTab]);
+  }, [
+    pc_org_id,
+    shiftDate,
+    selectedAssignmentId,
+    entryType,
+    message,
+    toast,
+    loadWorkforce,
+    loadNotScheduled,
+    loadLog,
+    loadLogRollup,
+    workforceTab,
+  ]);
 
   if (!pc_org_id) {
     return (
@@ -421,10 +439,10 @@ export default function DispatchConsolePage() {
     );
   }
 
-  const panelH = "lg:h-[calc(100vh-260px)]";
+  const panelH = "lg:h-[calc(100vh-220px)]";
 
   const leftEmptyText =
-    workforceTab === "SCHEDULED" ? "No scheduled techs match your filters." : "No active roster techs are OFF.";
+    workforceTab === "SCHEDULED" ? "No scheduled techs match your filters." : "No roster techs are not scheduled today.";
 
   const entryOptionsScheduled = [
     { value: "CALL_OUT" as const, label: "Call Out" },
@@ -439,6 +457,8 @@ export default function DispatchConsolePage() {
     { value: "ADD_IN" as const, label: "Add In" },
     { value: "NOTE" as const, label: "Note" },
   ];
+
+  const canSubmit = Boolean(message.trim()) && (entryType === "NOTE" || Boolean(selectedAssignmentId));
 
   return (
     <PageShell>
@@ -457,34 +477,37 @@ export default function DispatchConsolePage() {
                 <div className="text-xs text-[var(--to-ink-muted)]">{shiftDate}</div>
               </div>
 
-              <Button
-                variant="secondary"
-                className="h-8 px-3 text-sm"
-                onClick={() => {
-                  void loadWorkforce();
-                  void loadLogRollup();
-                  if (workforceTab === "NOT_SCHEDULED") void loadNotScheduled();
-                }}
-                disabled={loadingWorkforce || loadingRollup || loadingNotScheduled}
+              {/* Tabs + Refresh pill wrapper */}
+              <div
+                className="flex items-center gap-2 rounded-full border bg-[var(--to-surface)] p-1"
+                style={{ borderColor: "var(--to-border)" }}
               >
-                {loadingWorkforce || loadingRollup || loadingNotScheduled ? "Refreshing…" : "Refresh"}
-              </Button>
-            </div>
-
-            <div className="mt-3">
-              <SegmentedControl<WorkforceTab>
-                value={workforceTab}
-                onChange={(v) => {
-                  setWorkforceTab(v);
-                  setSelectedAssignmentId(null);
-                  lastAutoDraftRef.current = "";
-                }}
-                size="sm"
-                options={[
-                  { value: "SCHEDULED", label: "Scheduled" },
-                  { value: "NOT_SCHEDULED", label: "Not scheduled" },
-                ]}
-              />
+                <SegmentedControl<WorkforceTab>
+                  value={workforceTab}
+                  onChange={(v) => {
+                    setWorkforceTab(v);
+                    setSelectedAssignmentId(null);
+                    lastAutoDraftRef.current = "";
+                  }}
+                  size="sm"
+                  options={[
+                    { value: "SCHEDULED", label: "Scheduled" },
+                    { value: "NOT_SCHEDULED", label: "Not scheduled" },
+                  ]}
+                />
+                <Button
+                  variant="secondary"
+                  className="h-8 px-3 text-sm"
+                  onClick={() => {
+                    void loadWorkforce();
+                    void loadLogRollup();
+                    if (workforceTab === "NOT_SCHEDULED") void loadNotScheduled();
+                  }}
+                  disabled={loadingWorkforce || loadingRollup || loadingNotScheduled}
+                >
+                  {loadingWorkforce || loadingRollup || loadingNotScheduled ? "Refreshing…" : "Refresh"}
+                </Button>
+              </div>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
@@ -518,8 +541,6 @@ export default function DispatchConsolePage() {
                 })()}
 
                 <Badge className="text-[11px]">Quota {summary.quota_routes_required} routes</Badge>
-
-                {/* Delta pill intentionally hidden per request */}
               </div>
             ) : null}
           </div>
@@ -583,35 +604,34 @@ export default function DispatchConsolePage() {
 
         {/* RIGHT */}
         <div className={cls("lg:col-span-7 grid gap-4", panelH)}>
+          {/* ✅ TOP: minimal entry bar */}
           <Card className="border" style={{ borderColor: "var(--to-border)" }}>
             <div className="p-4">
-              <div className="text-sm font-semibold">Tech selected</div>
-              <div className="text-xs text-[var(--to-ink-muted)]">
-                {selectedTech
-                  ? `${selectedTech.full_name} (${selectedTech.tech_id})`
-                  : "Select a technician on the left"}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <SegmentedControl<EntryType>
                   value={entryType}
                   onChange={setEntryType}
                   size="sm"
                   options={workforceTab === "NOT_SCHEDULED" ? entryOptionsNotScheduled : entryOptionsScheduled}
                 />
-                <div className="text-xs text-[var(--to-ink-muted)]">Δ {fmtDelta(deltaForEntry(entryType))}</div>
+
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" className="h-9 px-3" onClick={clearDraft}>
+                    Clear
+                  </Button>
+                </div>
               </div>
 
-              <div className="mt-3">
-                <TextInput
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type the dispatch note…"
-                />
-              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex-1">
+                  <TextInput
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Type the dispatch note…"
+                  />
+                </div>
 
-              <div className="mt-3 flex justify-end">
-                <Button onClick={submit} disabled={entryType !== "NOTE" && !selectedAssignmentId} className="h-9 px-4">
+                <Button onClick={submit} disabled={!canSubmit} className="h-9 px-4">
                   Add
                 </Button>
               </div>

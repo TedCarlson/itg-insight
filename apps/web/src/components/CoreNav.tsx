@@ -103,7 +103,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
     return [
       { key: "home", label: "Home", href: "/fulfillment", icon: Home },
       { key: "roster", label: "Roster", href: "/roster", icon: Users },
-      { key: "routelock", label: "Route Lock", href: "/route-lock/schedule", icon: CalendarDays },
+      { key: "routelock", label: "Route Lock", href: "/route-lock", icon: CalendarDays },
       { key: "metrics", label: "Metrics", href: "/metrics", icon: BarChart3 },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console", icon: ClipboardCheck },
     ];

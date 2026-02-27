@@ -9,6 +9,9 @@ import { OrgProvider } from "@/state/org";
 import { SessionProvider } from "@/state/session";
 import { ToastProvider } from "@/components/ui/Toast";
 
+// ✅ client boundary that provides AccessProvider (Step 1 file)
+import { AdminProviders } from "./AdminProviders";
+
 type Lob = "FULFILLMENT" | "LOCATE";
 
 function normalizeLob(v: unknown): Lob | null {
@@ -57,16 +60,21 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <ToastProvider>
       <SessionProvider>
         <OrgProvider lob={lob}>
-          <div className="min-h-screen">
-            <CoreNav lob={lob} />
+          {/* ✅ ensures CoreNav (and anything else under /admin) has AccessProvider */}
+          <AdminProviders>
+            <div className="min-h-screen">
+              <CoreNav lob={lob} />
 
-            <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
-              <main className={isCatalogue ? "flex-1 px-2 py-4" : "flex-1 px-6 py-6"}>{children}</main>
-              <div className={isCatalogue ? "px-2" : "px-6"}>
-                <FooterHelp />
+              <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
+                <main className={isCatalogue ? "flex-1 px-2 py-4" : "flex-1 px-6 py-6"}>
+                  {children}
+                </main>
+                <div className={isCatalogue ? "px-2" : "px-6"}>
+                  <FooterHelp />
+                </div>
               </div>
             </div>
-          </div>
+          </AdminProviders>
         </OrgProvider>
       </SessionProvider>
     </ToastProvider>

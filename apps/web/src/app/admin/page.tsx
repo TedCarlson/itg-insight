@@ -24,19 +24,12 @@ export default function AdminHomePage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        <NavButton
-          href="/admin/home-editor"
-          title="Home editor"
-          desc="Customize the org homepage (per PC + LOB) using blocks."
-        />
-        <NavButton
-          href="/admin/edge-permissions"
-          title="Edge permissions"
-          desc="Grant/revoke admin + delegation permissions (global + PC-ORG)."
-        />
+        <NavButton href="/admin/home-editor" title="Home editor" desc="Customize the org homepage (per PC + LOB) using blocks."/>
+        <NavButton href="/admin/edge-permissions" title="Edge permissions" desc="Grant/revoke admin + delegation permissions (global + PC-ORG)."/>
         <NavButton href="/admin/org-users" title="Org users" desc="User membership and org-scoped access." />
         <NavButton href="/admin/leadership" title="Leadership" desc="Leadership assignments and controls." />
         <NavButton href="/admin/catalogue" title="Admin catalogue" desc="Manage core tables and foundational data." />
+        <NavButton href="/admin/metrics" title="Metrics admin" desc="Manage metrics rubric and weighted scores." />
       </div>
     </div>
   );
