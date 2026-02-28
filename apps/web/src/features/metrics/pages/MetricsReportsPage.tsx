@@ -1,3 +1,7 @@
+// RUN THIS
+// Replace the entire file:
+// apps/web/src/features/metrics/pages/MetricsReportsPage.tsx
+
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/shared/data/supabase/server";
@@ -321,12 +325,10 @@ async function loadSnapshotRows(
 }
 
 async function scopeRowsForViewer(sb: any, pc_org_id: string, rows: any[]) {
-  // is_owner
   const ownerRes = await sb.rpc("is_owner");
   const isOwner = ownerRes?.error ? false : Boolean(ownerRes?.data);
-  if (isOwner) return { scopeLabel: "ORG", rows };
+  if (isOwner) return { scopeLabel: "ORG (is_owner)", rows, reason: "is_owner" as const };
 
-  // perms (non-owner)
   const apiClient: any = (sb as any).schema ? (sb as any).schema("api") : sb;
 
   const permRes = await apiClient.rpc("has_any_pc_org_permission", {
@@ -335,31 +337,33 @@ async function scopeRowsForViewer(sb: any, pc_org_id: string, rows: any[]) {
   });
 
   const allowed = permRes?.error ? false : Boolean(permRes?.data);
-  if (allowed) return { scopeLabel: "ORG", rows };
+  if (allowed) return { scopeLabel: "ORG (perm)", rows, reason: "permission" as const };
 
-  // fallback: infer role from row linkage
   const viewerPersonId = await getViewerPersonId(sb);
-  if (!viewerPersonId) return { scopeLabel: "TECH", rows: [] as any[] };
+  if (!viewerPersonId) return { scopeLabel: "TECH (no person_id)", rows: [] as any[], reason: "no_person" as const };
 
   const itgHas = rows.some((r) => String(r.itg_rollup_person_id ?? "") === viewerPersonId);
   if (itgHas) {
     return {
-      scopeLabel: "ITG_SUPERVISOR",
+      scopeLabel: "ITG_SUPERVISOR (itg_rollup_person_id match)",
       rows: rows.filter((r) => String(r.itg_rollup_person_id ?? "") === viewerPersonId),
+      reason: "itg_rollup" as const,
     };
   }
 
   const bpHas = rows.some((r) => String(r.reports_to_person_id ?? "") === viewerPersonId);
   if (bpHas) {
     return {
-      scopeLabel: "BP_SUPERVISOR",
+      scopeLabel: "BP_SUPERVISOR (reports_to match)",
       rows: rows.filter((r) => String(r.reports_to_person_id ?? "") === viewerPersonId),
+      reason: "reports_to" as const,
     };
   }
 
   return {
-    scopeLabel: "TECH",
+    scopeLabel: "TECH (self only)",
     rows: rows.filter((r) => String(r.person_id ?? "") === viewerPersonId),
+    reason: "self" as const,
   };
 }
 
@@ -404,7 +408,6 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
 
   const rubricMap = buildRubricMap(rubricRowsAll);
 
-  // If no options yet, render safe empty state
   if (!fiscalOptions.length) {
     return (
       <PageShell>
@@ -467,6 +470,7 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
   const snapshotRowsRaw = await loadSnapshotRows(sb, pc_org_id, classType, selectedFiscal, batchMeta.batch_id);
   const snapshotUiRows = snapshotRowsRaw.map(toUiRow);
 
+  // viewer scoped rows (table + tailored tiles)
   const scoped = await scopeRowsForViewer(sb, pc_org_id, snapshotUiRows);
 
   const selectedReportsTo = sp.reports_to ?? "ALL";
@@ -492,9 +496,9 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
   const priorMetricDate = priorBatch?.metric_date ?? null;
 
   const priorSnapshotRaw = priorBatch ? await loadSnapshotRows(sb, pc_org_id, classType, selectedFiscal, priorBatch.batch_id) : [];
-  const priorUi = priorSnapshotRaw.map(toUiRow);
+  const priorUiAll = priorSnapshotRaw.map(toUiRow);
 
-  const priorScoped = await scopeRowsForViewer(sb, pc_org_id, priorUi);
+  const priorScoped = await scopeRowsForViewer(sb, pc_org_id, priorUiAll);
   const priorRowsScoped = applyReportsTo(priorScoped.rows);
 
   const priorByTechId = new Map<string, any>();
@@ -513,7 +517,7 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
     if (r.reports_to_person_id) ids.add(String(r.reports_to_person_id));
   });
 
-  const personIds: string[] = Array.from(ids); // ✅ typed
+  const personIds: string[] = Array.from(ids);
 
   const personNameById = new Map<string, string>();
   const personMetaById = new Map<string, { affiliation_kind: "company" | "contractor" | null; affiliation_name: string | null }>();
@@ -662,7 +666,10 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
         </div>
       </Card>
 
+      {/* ✅ Two rows: Org snapshot + Tailored view (both compact) */}
       <ReportSummaryTiles
+        orgRows={snapshotUiRows}
+        priorOrgRows={priorUiAll}
         rows={filteredRows}
         priorRows={priorRowsScoped}
         kpis={P4P_KPIS}
