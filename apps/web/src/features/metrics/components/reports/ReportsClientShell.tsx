@@ -43,10 +43,10 @@ export default function ReportsClientShell({
           left={
             <div className="min-w-0 flex items-center gap-2">
               <Link
-                href="/metrics"
+                href="/metrics/uploads"
                 className="to-btn to-btn--secondary h-8 px-3 text-xs inline-flex items-center"
               >
-                Back
+                Uploads
               </Link>
 
               <span className="px-2 text-[var(--to-ink-muted)]">•</span>

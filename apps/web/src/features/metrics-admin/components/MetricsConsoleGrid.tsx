@@ -1,314 +1,435 @@
+// RUN THIS
+// Replace the entire file:
+// apps/web/src/features/metrics-admin/components/MetricsConsoleGrid.tsx
+
 "use client";
 
-// apps/web/src/features/metrics-admin/components/MetricsConsoleGrid.tsx
-import * as React from "react";
-import MetricsConsoleRow from "@/features/metrics-admin/components/MetricsConsoleRow";
-import MetricsColorsDrawer from "@/features/metrics-admin/components/MetricsColorsDrawer";
+import React, { useEffect, useMemo, useState } from "react";
 
+type AnyRow = Record<string, any>;
 type ClassType = "P4P" | "SMART" | "TECH";
-type BandKey = "EXCEEDS" | "MEETS" | "NEEDS_IMPROVEMENT" | "MISSES" | "NO_DATA";
 
 type InitialPayload = {
-  kpiDefs: any[];
-  classConfig: any[];
-  rubricRows: any[];
+  kpiDefs: AnyRow[];
+  classConfig: AnyRow[];
+  rubricRows: AnyRow[];
 };
 
-type Props = {
-  initial: InitialPayload;
-};
+const CLASS_TABS: ClassType[] = ["P4P", "SMART", "TECH"];
 
-type Snapshot = {
-  kpiDefs: any[];
-  classConfig: any[];
-  rubricRows: any[];
-};
+// Update if your DB uses different band keys.
+const BAND_KEYS = ["EXCEEDS", "MEETS", "NEEDS_IMPROVEMENT", "MISSES", "NO_DATA"] as const;
+type BandKey = (typeof BAND_KEYS)[number];
 
-type GridState = {
-  kpiOrder: string[];
-  kpiDefsByKey: Record<string, any>;
-  classConfigByClass: Record<ClassType, Record<string, any>>;
-  rubricByClass: Record<ClassType, Record<string, Record<string, any>>>;
-};
-
-const CLASSES: ClassType[] = ["P4P", "SMART", "TECH"];
-const BANDS: BandKey[] = ["EXCEEDS", "MEETS", "NEEDS_IMPROVEMENT", "MISSES", "NO_DATA"];
-
-function str(v: unknown) {
-  return String(v ?? "").trim();
+function asText(v: unknown): string {
+  return typeof v === "string" ? v : v == null ? "" : String(v);
 }
 
-function safeKey(v: unknown) {
-  return str(v).toLowerCase();
+function asBool(v: unknown): boolean {
+  return v === true || v === "true" || v === 1 || v === "1";
 }
 
-function upper(v: unknown) {
-  return str(v).toUpperCase();
-}
-
-function numOrNull(v: unknown) {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  const s = String(v).trim();
-  if (!s) return null;
-  const n = Number(s);
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v));
   return Number.isFinite(n) ? n : null;
 }
 
-function normalizeClassConfigRow(r: any) {
-  const out = { ...(r ?? {}) };
-  // Back-compat: some DB rows may be threshold_value/weight.
-  if (out.threshold === undefined && out.threshold_value !== undefined) out.threshold = out.threshold_value;
-  if (out.weight_percent === undefined && out.weight !== undefined) out.weight_percent = out.weight;
-  return out;
+function firstExistingKey(row: AnyRow | null | undefined, keys: string[]): string | null {
+  if (!row) return null;
+  for (const k of keys) if (k in row) return k;
+  return null;
 }
 
-function buildStateFromInitial(initial: InitialPayload): GridState {
-  const kpiDefsByKey: Record<string, any> = {};
-  const kpiOrder: string[] = [];
+function kpiKeyFromDef(d: AnyRow): string {
+  return asText(d?.kpi_key || d?.kpiKey || d?.key).trim();
+}
 
-  for (const d of initial.kpiDefs ?? []) {
-    const k = str(d?.kpi_key);
-    if (!k) continue;
-    if (!kpiDefsByKey[k]) kpiOrder.push(k);
-    kpiDefsByKey[k] = d;
+function kpiLabelFor(kpiKey: string, kpiDefsByKey: Record<string, AnyRow>): string {
+  const def = kpiDefsByKey[kpiKey];
+  const label =
+    asText(def?.label) ||
+    asText(def?.kpi_label) ||
+    asText(def?.display_label) ||
+    asText(def?.name) ||
+    "";
+  return label || kpiKey;
+}
+
+function rubricIssueSummary(rows: AnyRow[]): { level: "ok" | "warn"; text: string } {
+  if (!rows || rows.length === 0) return { level: "warn", text: "No rubric" };
+
+  const byBand = new Map<string, AnyRow>();
+  for (const r of rows) byBand.set(asText(r.band_key).toUpperCase(), r);
+
+  const missing: string[] = [];
+  for (const b of BAND_KEYS) if (!byBand.has(b)) missing.push(b);
+
+  let emptyBands = 0;
+  for (const b of BAND_KEYS) {
+    const r = byBand.get(b);
+    if (!r) continue;
+
+    const min = toNumberOrNull(r.min_value);
+    const max = toNumberOrNull(r.max_value);
+    const score = toNumberOrNull(r.score_value);
+    const isNoData = b === "NO_DATA";
+
+    const empty = isNoData ? score === null : min === null && max === null && score === null;
+    if (empty) emptyBands += 1;
   }
 
-  const classConfigByClass: any = { P4P: {}, SMART: {}, TECH: {} };
-  for (const r of initial.classConfig ?? []) {
-    const ct = upper(r?.class_type) as ClassType;
-    const k = str(r?.kpi_key);
-    if (!ct || !k) continue;
-    if (!classConfigByClass[ct]) classConfigByClass[ct] = {};
-    classConfigByClass[ct][k] = normalizeClassConfigRow(r);
+  if (missing.length === 0 && emptyBands === 0) return { level: "ok", text: "Complete" };
+
+  const parts: string[] = [];
+  if (missing.length) parts.push(`Missing: ${missing.length}`);
+  if (emptyBands) parts.push(`Empty: ${emptyBands}`);
+  return { level: "warn", text: parts.join(" • ") };
+}
+
+/**
+ * TECH IS CANONICAL, ALWAYS.
+ * - We treat TECH rubric as the single source of truth per KPI.
+ * - On Save we replicate TECH values into P4P + SMART (overwrite those).
+ * - We NEVER overwrite TECH from any other class.
+ */
+function normalizeRubricsFromTech(allRubrics: AnyRow[], kpiKeys: string[]): AnyRow[] {
+  // Index existing rows by class+kpi+band (so we can preserve ids / extra columns if present)
+  const idx = new Map<string, AnyRow>();
+  for (const r of allRubrics ?? []) {
+    const ct = asText(r.class_type).toUpperCase();
+    const kk = asText(r.kpi_key);
+    const bk = asText(r.band_key).toUpperCase();
+    if (!ct || !kk || !bk) continue;
+    idx.set(`${ct}::${kk}::${bk}`, r);
   }
 
-  const rubricByClass: any = { P4P: {}, SMART: {}, TECH: {} };
-  // Normalize rubric rows into class->kpi->band
-  for (const r of initial.rubricRows ?? []) {
-    const cls = upper(r?.class_type) as ClassType;
-    const k = str(r?.kpi_key);
-    const b = upper(r?.band_key) as BandKey;
-    if (!cls || !k || !b) continue;
-    if (!rubricByClass[cls]) rubricByClass[cls] = {};
-    if (!rubricByClass[cls][k]) rubricByClass[cls][k] = {};
-    rubricByClass[cls][k][b] = r;
-  }
+  const out: AnyRow[] = [];
 
-  // Ensure rubric shells exist for each KPI/band so editors always render stable rows
-  for (const cls of CLASSES) {
-    for (const k of kpiOrder) {
-      if (!rubricByClass[cls][k]) rubricByClass[cls][k] = {};
-      for (const band of BANDS) {
-        if (!rubricByClass[cls][k][band]) {
-          rubricByClass[cls][k][band] = {
-            class_type: cls,
-            kpi_key: k,
+  for (const kpiKey of kpiKeys) {
+    // Build TECH canonical rows (prefer existing TECH rows, else nulls)
+    const techByBand = new Map<BandKey, AnyRow>();
+    for (const band of BAND_KEYS) {
+      const existingTech = idx.get(`TECH::${kpiKey}::${band}`) ?? null;
+      if (existingTech) {
+        techByBand.set(band, existingTech);
+      } else {
+        techByBand.set(band, {
+          class_type: "TECH",
+          kpi_key: kpiKey,
+          band_key: band,
+          min_value: null,
+          max_value: null,
+          score_value: null,
+        });
+      }
+    }
+
+    // 1) Always emit TECH rows (canonical) — these are never overwritten from other classes.
+    for (const band of BAND_KEYS) {
+      out.push(techByBand.get(band)!);
+    }
+
+    // 2) Replicate TECH into P4P + SMART (overwrite values there to stay uniform)
+    for (const classType of ["P4P", "SMART"] as const) {
+      for (const band of BAND_KEYS) {
+        const tech = techByBand.get(band)!;
+        const existing = idx.get(`${classType}::${kpiKey}::${band}`) ?? null;
+
+        if (existing) {
+          out.push({
+            ...existing,
+            class_type: classType,
+            kpi_key: kpiKey,
             band_key: band,
-            min_value: null,
-            max_value: null,
-            score_value: null,
-            color_hex: null,
-          };
+            min_value: tech.min_value ?? null,
+            max_value: tech.max_value ?? null,
+            score_value: tech.score_value ?? null,
+          });
+        } else {
+          out.push({
+            class_type: classType,
+            kpi_key: kpiKey,
+            band_key: band,
+            min_value: tech.min_value ?? null,
+            max_value: tech.max_value ?? null,
+            score_value: tech.score_value ?? null,
+          });
         }
       }
     }
   }
 
-  return { kpiOrder, kpiDefsByKey, classConfigByClass, rubricByClass };
-}
-
-function snapshotFromPayload(p: InitialPayload): Snapshot {
-  return {
-    kpiDefs: Array.isArray(p?.kpiDefs) ? p.kpiDefs : [],
-    classConfig: Array.isArray(p?.classConfig) ? p.classConfig.map(normalizeClassConfigRow) : [],
-    rubricRows: Array.isArray(p?.rubricRows) ? p.rubricRows : [],
-  };
-}
-
-function flattenStateToPayload(state: GridState): Snapshot {
-  const kpiDefs = Object.values(state.kpiDefsByKey ?? {});
-  const classConfig: any[] = [];
-
-  for (const cls of CLASSES) {
-    const byKpi = state.classConfigByClass?.[cls] ?? {};
-    for (const k of Object.keys(byKpi)) {
-      classConfig.push({
-        ...byKpi[k],
-        class_type: cls,
-        kpi_key: k,
-      });
-    }
+  // Keep any rubric rows for KPIs NOT in kpiKeys untouched (future-proof)
+  for (const r of allRubrics ?? []) {
+    const kk = asText(r.kpi_key);
+    if (!kk) continue;
+    if (kpiKeys.includes(kk)) continue;
+    out.push(r);
   }
 
-  const rubricRows: any[] = [];
-  for (const cls of CLASSES) {
-    const byKpi = state.rubricByClass?.[cls] ?? {};
-    for (const k of Object.keys(byKpi)) {
-      const byBand = byKpi[k] ?? {};
-      for (const band of Object.keys(byBand)) {
-        const row = byBand[band];
-        rubricRows.push({
-          ...row,
-          class_type: cls,
-          kpi_key: k,
-          band_key: band,
-        });
-      }
-    }
-  }
-
-  return { kpiDefs, classConfig, rubricRows };
-}
-
-function indexBy<T extends Record<string, any>>(rows: T[], keyFn: (r: T) => string) {
-  const m = new Map<string, T>();
-  for (const r of rows ?? []) m.set(keyFn(r), r);
-  return m;
-}
-
-function keyOfKpiDef(r: any) {
-  return safeKey(r?.kpi_key);
-}
-function keyOfCfg(r: any) {
-  return `${safeKey(r?.class_type)}|${safeKey(r?.kpi_key)}`;
-}
-function keyOfRubric(r: any) {
-  return `${safeKey(r?.class_type)}|${safeKey(r?.kpi_key)}|${safeKey(r?.band_key)}`;
-}
-
-function shallowPick(obj: any, fields: string[]) {
-  const out: any = {};
-  for (const f of fields) out[f] = obj?.[f] ?? null;
   return out;
 }
 
-// Build a minimal diff payload: only changed rows, including null-clears.
-function buildDiff(current: Snapshot, baseline: Snapshot): Snapshot {
-  const cfgFields = ["class_type", "kpi_key", "enabled", "weight_percent", "threshold", "threshold_value", "weight", "grade_value"];
-  const rubFields = ["class_type", "kpi_key", "band_key", "min_value", "max_value", "score_value", "color_hex"];
-  const defFields = ["kpi_key", "label", "customer_label", "direction", "unit", "min_value", "max_value", "raw_label_identifier", "no_data_behavior"];
+export default function MetricsConsoleGrid({ initial }: { initial: InitialPayload }) {
+  const [kpiDefs, setKpiDefs] = useState<AnyRow[]>(initial.kpiDefs ?? []);
+  const [classConfig, setClassConfig] = useState<AnyRow[]>(initial.classConfig ?? []);
+  const [rubricRows, setRubricRows] = useState<AnyRow[]>(initial.rubricRows ?? []);
 
-  const baseDef = indexBy(baseline.kpiDefs ?? [], keyOfKpiDef);
-  const baseCfg = indexBy(baseline.classConfig ?? [], keyOfCfg);
-  const baseRub = indexBy(baseline.rubricRows ?? [], keyOfRubric);
+  const [activeClass, setActiveClass] = useState<ClassType>("P4P");
+  const [openRubricKey, setOpenRubricKey] = useState<string | null>(null);
 
-  const kpiDefsChanged: any[] = [];
-  for (const row of current.kpiDefs ?? []) {
-    const k = keyOfKpiDef(row);
-    if (!k) continue;
-    const cur = shallowPick(row, defFields);
-    const prev = baseDef.get(k);
-    const prevPick = prev ? shallowPick(prev, defFields) : null;
-    if (!prevPick || JSON.stringify(cur) !== JSON.stringify(prevPick)) kpiDefsChanged.push(cur);
-  }
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  const classConfigChanged: any[] = [];
-  for (const row of current.classConfig ?? []) {
-    const k = keyOfCfg(row);
-    if (!k) continue;
-    const cur = shallowPick(row, cfgFields);
-    const prev = baseCfg.get(k);
-    const prevPick = prev ? shallowPick(prev, cfgFields) : null;
-    if (!prevPick || JSON.stringify(cur) !== JSON.stringify(prevPick)) classConfigChanged.push(cur);
-  }
+  useEffect(() => {
+    setKpiDefs(initial.kpiDefs ?? []);
+    setClassConfig(initial.classConfig ?? []);
+    setRubricRows(initial.rubricRows ?? []);
+  }, [initial.kpiDefs, initial.classConfig, initial.rubricRows]);
 
-  const rubricRowsChanged: any[] = [];
-  for (const row of current.rubricRows ?? []) {
-    const k = keyOfRubric(row);
-    if (!k) continue;
-    const cur = shallowPick(row, rubFields);
-    const prev = baseRub.get(k);
-    const prevPick = prev ? shallowPick(prev, rubFields) : null;
-    if (!prevPick || JSON.stringify(cur) !== JSON.stringify(prevPick)) rubricRowsChanged.push(cur);
-  }
+  const kpiDefsByKey = useMemo(() => {
+    const m: Record<string, AnyRow> = {};
+    for (const d of kpiDefs ?? []) {
+      const key = kpiKeyFromDef(d);
+      if (key) m[key] = d;
+    }
+    return m;
+  }, [kpiDefs]);
 
-  return { kpiDefs: kpiDefsChanged, classConfig: classConfigChanged, rubricRows: rubricRowsChanged };
-}
+  const allKpiKeys = useMemo(() => {
+    return (kpiDefs ?? [])
+      .map(kpiKeyFromDef)
+      .filter((k) => !!k)
+      .sort((a, b) => a.localeCompare(b));
+  }, [kpiDefs]);
 
-export default function MetricsConsoleGrid({ initial }: Props) {
-  const [state, setState] = React.useState<GridState>(() => buildStateFromInitial(initial));
-  const [colorsOpen, setColorsOpen] = React.useState(false);
+  // Detect config column names (we only edit columns that exist in DB rows)
+  const cfgKeyHints = useMemo(() => {
+    const sample = (classConfig ?? [])[0] ?? null;
 
-  const baselineRef = React.useRef<Snapshot>(snapshotFromPayload(initial));
+    // ONE checkbox: “Show in report”
+    const showKey =
+      firstExistingKey(sample, ["in_report", "show_in_report", "is_in_report"]) ??
+      firstExistingKey(sample, ["is_enabled", "enabled", "is_active", "active"]);
 
-  const [saving, setSaving] = React.useState(false);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [saveOkAt, setSaveOkAt] = React.useState<number | null>(null);
+    const weightKey = firstExistingKey(sample, ["weight", "weight_value", "weight_points", "weight_pct"]);
+    const orderKey = firstExistingKey(sample, ["display_order", "sort_order", "order_index", "ui_order"]);
+    const thresholdKey = firstExistingKey(sample, [
+      "threshold",
+      "threshold_value",
+      "target_threshold",
+      "stretch_threshold",
+    ]);
+    const labelOverrideKey = firstExistingKey(sample, ["label_override", "kpi_label", "display_label", "label"]);
 
-  React.useEffect(() => {
-    setState(buildStateFromInitial(initial));
-    baselineRef.current = snapshotFromPayload(initial);
-    setSaveError(null);
-    setSaveOkAt(null);
-  }, [initial]);
+    // Tie-breaker (single select)
+    const tieKey = firstExistingKey(sample, ["is_tiebreaker", "tie_breaker", "is_tie_breaker"]);
 
-  const kpiKeys = React.useMemo(() => Object.keys(state?.kpiDefsByKey ?? {}).sort(), [state?.kpiDefsByKey]);
+    return { showKey, weightKey, orderKey, thresholdKey, labelOverrideKey, tieKey };
+  }, [classConfig]);
 
-  const hasChanges = React.useMemo(() => {
-    const current = flattenStateToPayload(state);
-    const diff = buildDiff(current, baselineRef.current);
-    return diff.kpiDefs.length > 0 || diff.classConfig.length > 0 || diff.rubricRows.length > 0;
-  }, [state]);
+  const cfgByClassAndKpi = useMemo(() => {
+    const map: Record<string, AnyRow> = {};
+    for (const r of classConfig ?? []) {
+      const ct = asText(r.class_type).toUpperCase();
+      const kk = asText(r.kpi_key);
+      if (!ct || !kk) continue;
+      map[`${ct}::${kk}`] = r;
+    }
+    return map;
+  }, [classConfig]);
 
-  function handleRevert() {
-    const base = baselineRef.current;
-    const nextInitial: InitialPayload = {
-      kpiDefs: Array.isArray(base?.kpiDefs) ? base.kpiDefs : [],
-      classConfig: Array.isArray(base?.classConfig) ? base.classConfig : [],
-      rubricRows: Array.isArray(base?.rubricRows) ? base.rubricRows : [],
-    };
+  const rubricByClassAndKpi = useMemo(() => {
+    const map: Record<string, AnyRow[]> = {};
+    for (const r of rubricRows ?? []) {
+      const ct = asText(r.class_type).toUpperCase();
+      const kk = asText(r.kpi_key);
+      if (!ct || !kk) continue;
+      const k = `${ct}::${kk}`;
+      if (!map[k]) map[k] = [];
+      map[k].push(r);
+    }
 
-    setState(buildStateFromInitial(nextInitial));
-    setSaveError(null);
-    setSaveOkAt(null);
-  }
+    for (const k of Object.keys(map)) {
+      map[k] = map[k].sort((a, b) => asText(a.band_key).localeCompare(asText(b.band_key)));
+    }
 
-  async function handleSave() {
-    try {
-      setSaving(true);
-      setSaveError(null);
-      setSaveOkAt(null);
+    return map;
+  }, [rubricRows]);
 
-      const current = flattenStateToPayload(state);
-      const diff = buildDiff(current, baselineRef.current);
+  // Render ALL KPI defs as rows for the active class.
+  const rowsForActive = useMemo(() => {
+    const out = allKpiKeys.map((kpiKey) => {
+      const cfg = cfgByClassAndKpi[`${activeClass}::${kpiKey}`] ?? null;
+      return { kpiKey, cfg };
+    });
 
-      if (diff.kpiDefs.length === 0 && diff.classConfig.length === 0 && diff.rubricRows.length === 0) {
-        setSaveOkAt(Date.now());
-        return;
+    const { orderKey, weightKey } = cfgKeyHints;
+
+    out.sort((a, b) => {
+      const ac = a.cfg;
+      const bc = b.cfg;
+
+      if (orderKey) {
+        const ao = ac ? (toNumberOrNull(ac[orderKey]) ?? 999999) : 999999;
+        const bo = bc ? (toNumberOrNull(bc[orderKey]) ?? 999999) : 999999;
+        if (ao !== bo) return ao - bo;
       }
+
+      if (weightKey) {
+        const aw = ac ? (toNumberOrNull(ac[weightKey]) ?? -999999) : -999999;
+        const bw = bc ? (toNumberOrNull(bc[weightKey]) ?? -999999) : -999999;
+        if (aw !== bw) return bw - aw;
+      }
+
+      return a.kpiKey.localeCompare(b.kpiKey);
+    });
+
+    return out;
+  }, [allKpiKeys, cfgByClassAndKpi, activeClass, cfgKeyHints]);
+
+  const dirtyCount = useMemo(() => {
+    const a = initial.kpiDefs?.length ?? 0;
+    const b = initial.classConfig?.length ?? 0;
+    const c = initial.rubricRows?.length ?? 0;
+    return Number(a !== kpiDefs.length) + Number(b !== classConfig.length) + Number(c !== rubricRows.length);
+  }, [initial, kpiDefs.length, classConfig.length, rubricRows.length]);
+
+  function upsertClassCfg(kpiKey: string, patch: Partial<AnyRow>) {
+    setClassConfig((prev) => {
+      const idx = prev.findIndex(
+        (r) => asText(r.class_type).toUpperCase() === activeClass && asText(r.kpi_key) === kpiKey
+      );
+
+      if (idx >= 0) {
+        const cur = prev[idx];
+        const next = { ...cur, ...patch };
+        const copy = [...prev];
+        copy[idx] = next;
+        return copy;
+      }
+
+      const base: AnyRow = { class_type: activeClass, kpi_key: kpiKey };
+      for (const k of Object.keys(patch)) base[k] = (patch as any)[k];
+      return [...prev, base];
+    });
+  }
+
+  // Tie-breaker: exactly ONE per class. If column doesn't exist, UI shows "—".
+  function setTieBreakerForClass(kpiKey: string) {
+    const tieKey = cfgKeyHints.tieKey;
+    if (!tieKey) return;
+
+    setClassConfig((prev) => {
+      const next = prev.map((r) => {
+        if (asText(r.class_type).toUpperCase() !== activeClass) return r;
+
+        const rk = asText(r.kpi_key);
+        if (!rk) return r;
+
+        if (!(tieKey in r)) return r;
+
+        return { ...r, [tieKey]: rk === kpiKey };
+      });
+
+      // Ensure the selected KPI gets a row (and tieKey exists) even if config row didn’t exist yet
+      const hasSelected = next.some(
+        (r) => asText(r.class_type).toUpperCase() === activeClass && asText(r.kpi_key) === kpiKey
+      );
+
+      if (!hasSelected) {
+        next.push({ class_type: activeClass, kpi_key: kpiKey, [tieKey]: true });
+      } else {
+        // If selected KPI row exists but lacks the key (because it was created earlier without it),
+        // force it on via upsert behavior.
+        for (let i = 0; i < next.length; i++) {
+          const r = next[i];
+          if (asText(r.class_type).toUpperCase() !== activeClass) continue;
+          if (asText(r.kpi_key) !== kpiKey) continue;
+          if (tieKey in r) break;
+          next[i] = { ...r, [tieKey]: true };
+          break;
+        }
+      }
+
+      return next;
+    });
+  }
+
+  function ensureRubricBandRowsForAllClasses(kpiKey: string) {
+    setRubricRows((prev) => {
+      const existing = new Set(
+        (prev ?? []).map(
+          (r) =>
+            `${asText(r.class_type).toUpperCase()}::${asText(r.kpi_key)}::${asText(r.band_key).toUpperCase()}`
+        )
+      );
+
+      const additions: AnyRow[] = [];
+      for (const ct of CLASS_TABS) {
+        for (const band of BAND_KEYS) {
+          const k = `${ct}::${kpiKey}::${band}`;
+          if (existing.has(k)) continue;
+          additions.push({
+            class_type: ct,
+            kpi_key: kpiKey,
+            band_key: band,
+            min_value: null,
+            max_value: null,
+            score_value: null,
+          });
+        }
+      }
+
+      return additions.length ? [...prev, ...additions] : prev;
+    });
+  }
+
+  // IMPORTANT: rubric editor ALWAYS edits TECH (canonical), regardless of active tab.
+  function updateRubricCell(
+    kpiKey: string,
+    bandKey: BandKey,
+    field: "min_value" | "max_value" | "score_value",
+    value: number | null
+  ) {
+    setRubricRows((prev) =>
+      prev.map((r) => {
+        if (asText(r.class_type).toUpperCase() !== "TECH") return r;
+        if (asText(r.kpi_key) !== kpiKey) return r;
+        if (asText(r.band_key).toUpperCase() !== bandKey) return r;
+        if (!(field in r)) return r;
+        return { ...r, [field]: value };
+      })
+    );
+  }
+
+  async function save() {
+    setSaving(true);
+    setSaveError(null);
+    setSavedAt(null);
+
+    try {
+      // TECH is canonical; replicate TECH → P4P/SMART, never the other way around.
+      const normalizedRubrics = normalizeRubricsFromTech(rubricRows, allKpiKeys);
 
       const res = await fetch("/api/admin/metrics-config", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          op: "SAVE_GRID",
-          payload: diff,
-        }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kpiDefs, classConfig, rubricRows: normalizedRubrics }),
       });
 
       if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        const msg = j?.error ? String(j.error) : "Save failed";
-        const detail = j?.detail ? ` — ${String(j.detail)}` : "";
-        throw new Error(`${msg}${detail}`);
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error?.message || j?.error || `Save failed (${res.status})`);
       }
 
-      const snap = (await res.json().catch(() => null)) as any;
-
-      if (!snap || !Array.isArray(snap.kpiDefs) || !Array.isArray(snap.classConfig) || !Array.isArray(snap.rubricRows)) {
-        throw new Error("Save succeeded but response payload was invalid");
-      }
-
-      const nextInitial: InitialPayload = {
-        kpiDefs: snap.kpiDefs ?? [],
-        classConfig: (snap.classConfig ?? []).map(normalizeClassConfigRow),
-        rubricRows: snap.rubricRows ?? [],
-      };
-
-      setState(buildStateFromInitial(nextInitial));
-      baselineRef.current = snapshotFromPayload(nextInitial);
-      setSaveOkAt(Date.now());
+      const j = await res.json();
+      setKpiDefs(j.kpiDefs ?? []);
+      setClassConfig(j.classConfig ?? []);
+      setRubricRows(j.rubricRows ?? normalizedRubrics);
+      setSavedAt(new Date().toLocaleString());
     } catch (e: any) {
       setSaveError(e?.message ?? "Save failed");
     } finally {
@@ -316,98 +437,303 @@ export default function MetricsConsoleGrid({ initial }: Props) {
     }
   }
 
-  const canCommit = hasChanges && !saving;
-
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm text-muted-foreground">
-          Legend: <span className="font-medium text-foreground">P</span>=P4P,{" "}
-          <span className="font-medium text-foreground">S</span>=SMART,{" "}
-          <span className="font-medium text-foreground">T</span>=Tech Scorecard
-        </div>
-
+    <div className="w-full space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {hasChanges ? (
-            <div
-              className="text-xs text-amber-800 border border-amber-200 bg-amber-50 px-2 py-1 rounded-md"
-              title="You have edits that are not yet persisted. Use Commit to lock them in."
-            >
-              Unsaved changes
-            </div>
-          ) : null}
-
-          {saveError ? (
-            <div className="text-xs text-red-600 border border-red-200 bg-red-50 px-2 py-1 rounded-md">
-              {saveError}
-            </div>
-          ) : saveOkAt ? (
-            <div className="text-xs text-emerald-700 border border-emerald-200 bg-emerald-50 px-2 py-1 rounded-md">
-              Saved
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            className="px-3 py-1.5 rounded-md text-sm bg-primary text-white disabled:opacity-50"
-            onClick={handleSave}
-            disabled={!canCommit}
-            title={
-              !hasChanges
-                ? "No changes to commit"
-                : "Commit changes (writes only changed rows; null clears are persisted). Response rehydrates the grid to verify canonical DB state."
-            }
-          >
-            {saving ? "Committing…" : "Commit"}
-          </button>
-
-          <button
-            type="button"
-            className="px-3 py-1.5 rounded-md text-sm border hover:bg-muted disabled:opacity-50"
-            onClick={handleRevert}
-            disabled={saving || !hasChanges}
-            title={!hasChanges ? "Nothing to revert" : "Revert unsaved edits back to the last loaded/saved state"}
-          >
-            Revert
-          </button>
-
-          <button
-            type="button"
-            className="px-3 py-1.5 rounded-md text-sm border hover:bg-muted"
-            onClick={() => setColorsOpen(true)}
-            disabled={saving}
-            title="Manage band colors"
-          >
-            Colors
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-lg border bg-background overflow-hidden">
-        <div className="grid grid-cols-[260px_60px_210px_210px_210px_1fr] gap-0 bg-muted/30 border-b">
-          <div className="p-2 border-r text-xs font-medium text-muted-foreground">KPI / Custom label</div>
-
-          <div className="p-2 border-r text-xs font-medium text-muted-foreground leading-tight">
-            <div>P</div>
-            <div>S</div>
-            <div>T</div>
+          <div className="inline-flex rounded-md border bg-background p-1">
+            {CLASS_TABS.map((ct) => (
+              <button
+                key={ct}
+                className={[
+                  "h-8 rounded px-3 text-sm font-medium",
+                  activeClass === ct ? "bg-muted" : "hover:bg-muted/50",
+                ].join(" ")}
+                onClick={() => {
+                  setActiveClass(ct);
+                  setOpenRubricKey(null);
+                }}
+                type="button"
+              >
+                {ct}
+              </button>
+            ))}
           </div>
 
-          <div className="p-2 border-r text-xs font-medium text-muted-foreground">P4P (W+T)</div>
-          <div className="p-2 border-r text-xs font-medium text-muted-foreground">SMART (W+T)</div>
-          <div className="p-2 border-r text-xs font-medium text-muted-foreground">TECH (W+T)</div>
-
-          <div className="p-2 border-r text-xs font-medium text-muted-foreground">Rubric Spill (per class)</div>
+          <div className="text-sm text-muted-foreground">
+            {dirtyCount > 0 ? "Edits pending (length change detected)" : "Ready"}
+            {savedAt ? <span className="ml-2">• Saved {savedAt}</span> : null}
+          </div>
         </div>
 
-        <div>
-          {kpiKeys.map((k) => (
-            <MetricsConsoleRow key={k} kpiKey={k} state={state as any} setState={setState as any} />
-          ))}
+        <button
+          className="inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          onClick={save}
+          disabled={saving}
+          type="button"
+        >
+          {saving ? "Saving…" : "Commit / Save"}
+        </button>
+      </div>
+
+      {saveError ? (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {saveError}
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1160px] w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr className="text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2 text-left">KPI</th>
+                <th className="px-3 py-2 text-left">Label</th>
+                <th className="px-3 py-2 text-center">Show</th>
+                <th className="px-3 py-2 text-right">Weight</th>
+                <th className="px-3 py-2 text-right">Order</th>
+                <th className="px-3 py-2 text-right">Threshold</th>
+                <th className="px-3 py-2 text-center">Tie</th>
+                <th className="px-3 py-2 text-left">Rubric</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rowsForActive.map(({ kpiKey, cfg }) => {
+                const label = kpiLabelFor(kpiKey, kpiDefsByKey);
+                const { showKey, weightKey, orderKey, thresholdKey, labelOverrideKey, tieKey } = cfgKeyHints;
+
+                const show = showKey ? (cfg ? asBool(cfg[showKey]) : false) : false;
+                const weight = weightKey ? (cfg ? toNumberOrNull(cfg[weightKey]) : null) : null;
+                const orderVal = orderKey ? (cfg ? toNumberOrNull(cfg[orderKey]) : null) : null;
+                const thresholdVal = thresholdKey ? (cfg ? toNumberOrNull(cfg[thresholdKey]) : null) : null;
+
+                const isTie = tieKey ? (cfg ? asBool(cfg[tieKey]) : false) : false;
+
+                // Display rubric health from TECH (canonical) so you’re not misled by P4P/SMART.
+                const rubricSet = rubricByClassAndKpi[`TECH::${kpiKey}`] ?? [];
+                const issue = rubricIssueSummary(rubricSet);
+
+                const isOpen = openRubricKey === kpiKey;
+
+                return (
+                  <React.Fragment key={`${activeClass}::${kpiKey}`}>
+                    <tr className="border-t align-top">
+                      <td className="px-3 py-2 font-mono text-xs">{kpiKey}</td>
+
+                      <td className="px-3 py-2">
+                        {labelOverrideKey ? (
+                          <input
+                            className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                            value={asText((cfg?.[labelOverrideKey] ?? "") || label)}
+                            onChange={(e) => upsertClassCfg(kpiKey, { [labelOverrideKey]: e.target.value })}
+                          />
+                        ) : (
+                          <div className="text-sm">{label}</div>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 text-center">
+                        {showKey ? (
+                          <input
+                            type="checkbox"
+                            checked={show}
+                            onChange={(e) => upsertClassCfg(kpiKey, { [showKey]: e.target.checked })}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 text-right">
+                        {weightKey ? (
+                          <input
+                            className="h-8 w-24 rounded-md border bg-background px-2 text-right tabular-nums"
+                            inputMode="decimal"
+                            value={weight ?? ""}
+                            onChange={(e) => upsertClassCfg(kpiKey, { [weightKey]: toNumberOrNull(e.target.value) })}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 text-right">
+                        {orderKey ? (
+                          <input
+                            className="h-8 w-20 rounded-md border bg-background px-2 text-right tabular-nums"
+                            inputMode="numeric"
+                            value={orderVal ?? ""}
+                            onChange={(e) => upsertClassCfg(kpiKey, { [orderKey]: toNumberOrNull(e.target.value) })}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2 text-right">
+                        {thresholdKey ? (
+                          <input
+                            className="h-8 w-28 rounded-md border bg-background px-2 text-right tabular-nums"
+                            inputMode="decimal"
+                            value={thresholdVal ?? ""}
+                            onChange={(e) =>
+                              upsertClassCfg(kpiKey, { [thresholdKey]: toNumberOrNull(e.target.value) })
+                            }
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      {/* Tie-breaker */}
+                      <td className="px-3 py-2 text-center">
+                        {tieKey ? (
+                          <input
+                            type="radio"
+                            name={`tiebreak-${activeClass}`}
+                            checked={isTie}
+                            onChange={() => setTieBreakerForClass(kpiKey)}
+                            title="Tie-breaker KPI for this class"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-3 py-2">
+                        <span
+                          className={[
+                            "inline-flex items-center rounded-full border px-2 py-0.5 text-xs",
+                            issue.level === "ok"
+                              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
+                              : "bg-amber-500/10 border-amber-500/20 text-amber-700",
+                          ].join(" ")}
+                        >
+                          {issue.text}
+                        </span>
+                      </td>
+
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          className="inline-flex h-8 items-center rounded-md border px-2 text-xs hover:bg-muted"
+                          onClick={() => {
+                            ensureRubricBandRowsForAllClasses(kpiKey);
+                            setOpenRubricKey((cur) => (cur === kpiKey ? null : kpiKey));
+                          }}
+                        >
+                          {isOpen ? "Hide rubric" : "Edit rubric (TECH)"}
+                        </button>
+                      </td>
+                    </tr>
+
+                    {isOpen ? (
+                      <tr className="border-t">
+                        <td colSpan={9} className="px-3 pb-3">
+                          <div className="mt-2 rounded-lg border bg-muted/10 p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <div className="text-sm font-semibold">
+                                Rubric • <span className="font-mono text-xs">{kpiKey}</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Canonical = TECH. Edits apply to TECH and replicate to P4P/SMART on Save. Decimals supported.
+                              </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                              <table className="min-w-[760px] w-full text-sm">
+                                <thead className="bg-muted/40">
+                                  <tr className="text-xs uppercase tracking-wide text-muted-foreground">
+                                    <th className="px-2 py-2 text-left">Band</th>
+                                    <th className="px-2 py-2 text-right">Min</th>
+                                    <th className="px-2 py-2 text-right">Max</th>
+                                    <th className="px-2 py-2 text-right">Score</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {BAND_KEYS.map((band) => {
+                                    const rr =
+                                      (rubricByClassAndKpi[`TECH::${kpiKey}`] ?? []).find(
+                                        (r) => asText(r.band_key).toUpperCase() === band
+                                      ) ?? null;
+
+                                    const min = rr ? toNumberOrNull(rr.min_value) : null;
+                                    const max = rr ? toNumberOrNull(rr.max_value) : null;
+                                    const score = rr ? toNumberOrNull(rr.score_value) : null;
+
+                                    return (
+                                      <tr key={band} className="border-t">
+                                        <td className="px-2 py-2 font-mono text-xs">{band}</td>
+
+                                        <td className="px-2 py-2 text-right">
+                                          <input
+                                            className="h-8 w-28 rounded-md border bg-background px-2 text-right tabular-nums"
+                                            inputMode="decimal"
+                                            value={min ?? ""}
+                                            onChange={(e) =>
+                                              updateRubricCell(kpiKey, band, "min_value", toNumberOrNull(e.target.value))
+                                            }
+                                          />
+                                        </td>
+
+                                        <td className="px-2 py-2 text-right">
+                                          <input
+                                            className="h-8 w-28 rounded-md border bg-background px-2 text-right tabular-nums"
+                                            inputMode="decimal"
+                                            value={max ?? ""}
+                                            onChange={(e) =>
+                                              updateRubricCell(kpiKey, band, "max_value", toNumberOrNull(e.target.value))
+                                            }
+                                          />
+                                        </td>
+
+                                        <td className="px-2 py-2 text-right">
+                                          <input
+                                            className="h-8 w-28 rounded-md border bg-background px-2 text-right tabular-nums"
+                                            inputMode="decimal"
+                                            value={score ?? ""}
+                                            onChange={(e) =>
+                                              updateRubricCell(kpiKey, band, "score_value", toNumberOrNull(e.target.value))
+                                            }
+                                          />
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="mt-3 text-xs text-muted-foreground">
+                              Tip: For NO_DATA, leave min/max blank and set score_value as your rubric dictates.
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
+
+              {rowsForActive.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                    No KPI definitions found. (Check metrics_kpi_def)
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <MetricsColorsDrawer open={colorsOpen} onOpenChange={setColorsOpen} />
-    </section>
+      <div className="text-xs text-muted-foreground">
+        Note: All KPIs appear in every class. “Show” controls report inclusion per class. Weights/thresholds accept decimals.
+        Rubrics are canonical in TECH and replicated to P4P/SMART on Save — TECH is never overwritten by other classes.
+        Tie-breaker is single-select per class (if the DB column exists).
+      </div>
+    </div>
   );
 }

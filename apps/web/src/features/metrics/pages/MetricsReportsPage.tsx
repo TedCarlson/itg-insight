@@ -1,7 +1,3 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/features/metrics/pages/MetricsReportsPage.tsx
-
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/shared/data/supabase/server";
@@ -12,10 +8,9 @@ import { PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 
 import FiscalSelector from "@/features/metrics/components/FiscalSelector";
-import ReportsFilterBar from "@/features/metrics/components/reports/ReportsFilterBar";
 import ReportsClientShell from "@/features/metrics/components/reports/ReportsClientShell";
+import ReportsFilterBar from "@/features/metrics/components/reports/ReportsFilterBar";
 import ReportsTabbedTable from "@/features/metrics/components/reports/ReportsTabbedTable";
-
 import ReportSummaryTiles from "@/features/metrics/components/reports/ReportSummaryTiles";
 
 import { numOrInf } from "@/features/metrics/lib/reports/format";
@@ -28,35 +23,43 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type SearchParams = { fiscal?: string; reports_to?: string };
-
-type BatchMeta = {
-  batch_id: string;
-  metric_date: string;
-  fiscal_end_date: string;
+type SearchParams = {
+  fiscal?: string;
+  reports_to?: string;
+  class?: string; // optional future: P4P/SMART/TECH
 };
 
-type UiMasterMetricRow = {
-  batch_id: string | null;
-  class_type: string | null;
-  pc_org_id: string | null;
-  metric_date: string | null;
-  fiscal_end_date: string | null;
+type SnapshotRow = {
+  batch_id: string;
+  class_type: string;
+  pc_org_id: string;
+  metric_date: string;
+  fiscal_end_date: string;
 
-  tech_id: string | null;
-  person_id: string | null;
+  tech_id: string;
+  person_id: string;
 
-  ownership_mode: string | null;
+  ownership_mode: string;
   direct_reports_to_person_id: string | null;
+  itg_rollup_person_id: string | null;
+
+  office_id: string | null;
+  position_title: string | null;
+
+  co_ref: string | null;
+  co_code: string | null;
 
   composite_score: number | null;
   rank_org: number | null;
   population_size: number | null;
+  status_badge: string | null;
 
-  is_totals: boolean | null;
+  is_totals: boolean;
 
-  metrics_json: unknown | null;
-  created_at: string | null;
+  raw_metrics_json: any | null;
+  computed_metrics_json: any | null;
+
+  created_at: string;
 };
 
 function currentFiscalEndDateISO_NY(): string {
@@ -88,30 +91,22 @@ function currentFiscalEndDateISO_NY(): string {
   return `${endYear}-${String(endMonth).padStart(2, "0")}-21`;
 }
 
-function dedupeByTechId(rows: any[]) {
-  const by = new Map<string, any>();
-  for (const r of rows) {
-    const k = String(r.tech_id ?? "");
-    const prev = by.get(k);
-    if (!prev) {
-      by.set(k, r);
-      continue;
-    }
+function metricNum(obj: unknown, key: string): number | null {
+  if (!obj || typeof obj !== "object") return null;
+  const v = (obj as Record<string, unknown>)[key];
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
-    const prevOk = String(prev.status_badge ?? "") === "OK";
-    const curOk = String(r.status_badge ?? "") === "OK";
-    if (curOk && !prevOk) {
-      by.set(k, r);
-      continue;
-    }
-
-    if (curOk === prevOk) {
-      const pr = numOrInf(prev.rank_in_pc);
-      const cr = numOrInf(r.rank_in_pc);
-      if (cr < pr) by.set(k, r);
-    }
-  }
-  return Array.from(by.values());
+function pickStatusBadge(s: { is_totals?: boolean; ownership_mode?: string | null; composite_score?: number | null }) {
+  if (s.is_totals) return { status_badge: "TOTALS", status_sort: 999 };
+  if (String(s.ownership_mode ?? "") !== "ACTIVE") return { status_badge: "UNLINKED", status_sort: 50 };
+  if (s.composite_score == null) return { status_badge: "UNLINKED", status_sort: 50 };
+  return { status_badge: "OK", status_sort: 10 };
 }
 
 function isRubricRowMeaningful(r: any) {
@@ -135,100 +130,160 @@ function filterEmptyRubricGroups(rows: any[]) {
   return out;
 }
 
-function pickStatusBadge(s: { is_totals?: boolean | null; ownership_mode?: string | null; composite_score?: number | null }) {
-  if (s.is_totals) return { status_badge: "TOTALS", status_sort: 999 };
-  if (String(s.ownership_mode ?? "") !== "ACTIVE") return { status_badge: "UNLINKED", status_sort: 50 };
-  if (s.composite_score == null) return { status_badge: "UNLINKED", status_sort: 50 };
-  return { status_badge: "OK", status_sort: 10 };
+function toUiRow(r: SnapshotRow) {
+  const raw = r.raw_metrics_json ?? {};
+  const comp = r.computed_metrics_json ?? {};
+
+  const tnps_score =
+    metricNum(comp, "tnps_score") ??
+    metricNum(comp, "tNPS Rate") ??
+    metricNum(raw, "tnps_score") ??
+    metricNum(raw, "tNPS Rate");
+
+  const ftr_rate =
+    metricNum(comp, "ftr_rate") ??
+    metricNum(comp, "FTR%") ??
+    metricNum(raw, "ftr_rate") ??
+    metricNum(raw, "FTR%");
+
+  const tool_usage_rate =
+    metricNum(comp, "tool_usage_rate") ??
+    metricNum(comp, "ToolUsage") ??
+    metricNum(raw, "tool_usage_rate") ??
+    metricNum(raw, "ToolUsage");
+
+  const total_jobs =
+    metricNum(comp, "Total Jobs") ??
+    metricNum(raw, "Total Jobs") ??
+    metricNum(comp, "total_jobs") ??
+    metricNum(raw, "total_jobs");
+
+  const installs = metricNum(comp, "Installs") ?? metricNum(raw, "Installs") ?? metricNum(comp, "installs") ?? metricNum(raw, "installs");
+  const sros = metricNum(comp, "SROs") ?? metricNum(raw, "SROs") ?? metricNum(comp, "sros") ?? metricNum(raw, "sros");
+  const tcs = metricNum(comp, "TCs") ?? metricNum(raw, "TCs") ?? metricNum(comp, "tcs") ?? metricNum(raw, "tcs");
+
+  const total_ftr_contact_jobs =
+    metricNum(raw, "Total FTR/Contact Jobs") ??
+    metricNum(comp, "Total FTR/Contact Jobs") ??
+    metricNum(raw, "total_ftr_contact_jobs");
+
+  const tnps_surveys = metricNum(raw, "tNPS Surveys") ?? metricNum(comp, "tNPS Surveys") ?? metricNum(raw, "tnps_surveys");
+  const tnps_promoters = metricNum(raw, "Promoters") ?? metricNum(comp, "Promoters") ?? metricNum(raw, "tnps_promoters");
+  const tnps_detractors = metricNum(raw, "Detractors") ?? metricNum(comp, "Detractors") ?? metricNum(raw, "tnps_detractors");
+  const tu_eligible_jobs = metricNum(raw, "TUEligibleJobs") ?? metricNum(comp, "TUEligibleJobs") ?? metricNum(raw, "tu_eligible_jobs");
+
+  const badge = pickStatusBadge({
+    is_totals: Boolean(r.is_totals),
+    ownership_mode: r.ownership_mode ?? null,
+    composite_score: r.composite_score ?? null,
+  });
+
+  return {
+    tech_id: r.tech_id,
+    person_id: r.person_id,
+    reports_to_person_id: r.direct_reports_to_person_id,
+
+    itg_rollup_person_id: r.itg_rollup_person_id,
+
+    ownership_mode: r.ownership_mode,
+    metric_date: r.metric_date,
+    fiscal_end_date: r.fiscal_end_date,
+
+    weighted_score: r.composite_score,
+    rank_in_pc: r.rank_org,
+    population_size: r.population_size,
+
+    tnps_score,
+    ftr_rate,
+    tool_usage_rate,
+
+    total_jobs,
+    installs,
+    sros,
+    tcs,
+
+    total_ftr_contact_jobs,
+    tnps_surveys,
+    tnps_promoters,
+    tnps_detractors,
+    tu_eligible_jobs,
+
+    status_badge: badge.status_badge,
+    status_sort: badge.status_sort,
+  };
 }
 
-function metricNum(metricsJson: unknown, key: string): number | null {
-  if (!metricsJson || typeof metricsJson !== "object") return null;
-  const v = (metricsJson as Record<string, unknown>)[key];
-  if (v == null) return null;
-
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-
-  const s = String(v).trim();
-  if (!s) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+async function getViewerPersonId(sb: any): Promise<string | null> {
+  const { data, error } = await sb.from("user_profile").select("person_id").maybeSingle();
+  if (error) return null;
+  return data?.person_id ? String(data.person_id) : null;
 }
 
-async function loadBatchMetaForFiscal(sb: any, pc_org_id: string, fiscal_end_date: string): Promise<BatchMeta | null> {
+async function loadFiscalOptions(sb: any, pc_org_id: string, classType: string): Promise<string[]> {
   const { data, error } = await sb
-    .from("metrics_raw_batch")
-    .select("batch_id, metric_date, fiscal_end_date, uploaded_at, status")
+    .from("master_kpi_archive_snapshot")
+    .select("fiscal_end_date")
     .eq("pc_org_id", pc_org_id)
+    .eq("class_type", classType)
+    .order("fiscal_end_date", { ascending: false });
+
+  if (error) return [];
+  const opts: string[] = Array.from(new Set((data ?? []).map((r: any) => String(r.fiscal_end_date))));
+  return opts;
+}
+
+async function loadLatestBatchMeta(sb: any, pc_org_id: string, classType: string, fiscal_end_date: string) {
+  const { data, error } = await sb
+    .from("master_kpi_archive_snapshot")
+    .select("batch_id, metric_date, created_at")
+    .eq("pc_org_id", pc_org_id)
+    .eq("class_type", classType)
     .eq("fiscal_end_date", fiscal_end_date)
-    .eq("status", "loaded")
     .order("metric_date", { ascending: false })
-    .order("uploaded_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1);
 
-  if (error) {
-    console.error("[P4P REPORT] metrics_raw_batch current batch error", {
-      message: (error as any)?.message,
-      details: (error as any)?.details,
-      hint: (error as any)?.hint,
-      code: (error as any)?.code,
-      pc_org_id,
-      fiscal_end_date,
-    });
-  }
-
+  if (error) return null;
   const row = data?.[0];
   if (!row?.batch_id) return null;
 
   return {
     batch_id: String(row.batch_id),
     metric_date: String(row.metric_date),
-    fiscal_end_date: String(row.fiscal_end_date),
   };
 }
 
-async function loadPriorBatchMetaSameFiscal(
-  sb: any,
-  pc_org_id: string,
-  fiscal_end_date: string,
-  before_metric_date: string
-): Promise<BatchMeta | null> {
+async function loadPriorBatchMetaSameFiscal(sb: any, pc_org_id: string, classType: string, fiscal_end_date: string, before_metric_date: string) {
   const { data, error } = await sb
-    .from("metrics_raw_batch")
-    .select("batch_id, metric_date, fiscal_end_date, uploaded_at, status")
+    .from("master_kpi_archive_snapshot")
+    .select("batch_id, metric_date, created_at")
     .eq("pc_org_id", pc_org_id)
+    .eq("class_type", classType)
     .eq("fiscal_end_date", fiscal_end_date)
-    .eq("status", "loaded")
     .lt("metric_date", before_metric_date)
     .order("metric_date", { ascending: false })
-    .order("uploaded_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1);
 
-  if (error) {
-    console.error("[P4P REPORT] metrics_raw_batch prior batch error", {
-      message: (error as any)?.message,
-      details: (error as any)?.details,
-      hint: (error as any)?.hint,
-      code: (error as any)?.code,
-      pc_org_id,
-      fiscal_end_date,
-      before_metric_date,
-    });
-  }
-
+  if (error) return null;
   const row = data?.[0];
   if (!row?.batch_id) return null;
 
   return {
     batch_id: String(row.batch_id),
     metric_date: String(row.metric_date),
-    fiscal_end_date: String(row.fiscal_end_date),
   };
 }
 
-async function loadRowsForBatchFromView(sb: any, pc_org_id: string, batch_id: string): Promise<any[]> {
+async function loadSnapshotRows(
+  sb: any,
+  pc_org_id: string,
+  classType: string,
+  fiscal_end_date: string,
+  batch_id: string
+): Promise<SnapshotRow[]> {
   const { data, error } = await sb
-    .from("ui_master_metric_v")
+    .from("master_kpi_archive_snapshot")
     .select(
       [
         "batch_id",
@@ -240,83 +295,72 @@ async function loadRowsForBatchFromView(sb: any, pc_org_id: string, batch_id: st
         "person_id",
         "ownership_mode",
         "direct_reports_to_person_id",
+        "itg_rollup_person_id",
+        "office_id",
+        "position_title",
+        "co_ref",
+        "co_code",
         "composite_score",
         "rank_org",
         "population_size",
+        "status_badge",
         "is_totals",
-        "metrics_json",
+        "raw_metrics_json",
+        "computed_metrics_json",
         "created_at",
       ].join(",")
     )
     .eq("pc_org_id", pc_org_id)
-    .eq("class_type", "P4P")
-    .eq("batch_id", batch_id);
+    .eq("class_type", classType)
+    .eq("fiscal_end_date", fiscal_end_date)
+    .eq("batch_id", batch_id)
+    .eq("is_totals", false);
 
-  if (error) {
-    console.error("[P4P REPORT] ui_master_metric_v rows error", {
-      message: (error as any)?.message,
-      details: (error as any)?.details,
-      hint: (error as any)?.hint,
-      code: (error as any)?.code,
-      pc_org_id,
-      batch_id,
-    });
+  if (error) return [];
+  return (data ?? []) as any;
+}
+
+async function scopeRowsForViewer(sb: any, pc_org_id: string, rows: any[]) {
+  // is_owner
+  const ownerRes = await sb.rpc("is_owner");
+  const isOwner = ownerRes?.error ? false : Boolean(ownerRes?.data);
+  if (isOwner) return { scopeLabel: "ORG", rows };
+
+  // perms (non-owner)
+  const apiClient: any = (sb as any).schema ? (sb as any).schema("api") : sb;
+
+  const permRes = await apiClient.rpc("has_any_pc_org_permission", {
+    p_pc_org_id: pc_org_id,
+    p_permission_keys: ["metrics_manage", "roster_manage", "leadership_manage"],
+  });
+
+  const allowed = permRes?.error ? false : Boolean(permRes?.data);
+  if (allowed) return { scopeLabel: "ORG", rows };
+
+  // fallback: infer role from row linkage
+  const viewerPersonId = await getViewerPersonId(sb);
+  if (!viewerPersonId) return { scopeLabel: "TECH", rows: [] as any[] };
+
+  const itgHas = rows.some((r) => String(r.itg_rollup_person_id ?? "") === viewerPersonId);
+  if (itgHas) {
+    return {
+      scopeLabel: "ITG_SUPERVISOR",
+      rows: rows.filter((r) => String(r.itg_rollup_person_id ?? "") === viewerPersonId),
+    };
   }
 
-  const rows = (data ?? []) as UiMasterMetricRow[];
-
-  const out: any[] = [];
-  for (const r of rows) {
-    const tech_id = String(r.tech_id ?? "");
-    if (!tech_id) continue;
-
-    const is_totals = Boolean(r.is_totals);
-    if (is_totals) continue;
-
-    const badge = pickStatusBadge({
-      is_totals,
-      ownership_mode: r.ownership_mode ?? null,
-      composite_score: r.composite_score ?? null,
-    });
-
-    const mj = r.metrics_json ?? {};
-
-    out.push({
-      tech_id,
-      person_id: r.person_id ?? null,
-      reports_to_person_id: r.direct_reports_to_person_id ?? null,
-
-      ownership_mode: r.ownership_mode ?? null,
-      metric_date: r.metric_date ?? null,
-      fiscal_end_date: r.fiscal_end_date ?? null,
-
-      weighted_score: r.composite_score ?? null,
-      rank_in_pc: r.rank_org ?? null,
-      population_size: r.population_size ?? null,
-
-      tnps_score: metricNum(mj, "tnps_score") ?? metricNum(mj, "tNPS Rate"),
-      ftr_rate: metricNum(mj, "ftr_rate") ?? metricNum(mj, "FTR%"),
-      tool_usage_rate: metricNum(mj, "tool_usage_rate") ?? metricNum(mj, "ToolUsage"),
-
-      total_jobs: metricNum(mj, "Total Jobs"),
-      installs: metricNum(mj, "Installs"),
-      sros: metricNum(mj, "SROs"),
-      tcs: metricNum(mj, "TCs"),
-
-      total_ftr_contact_jobs: metricNum(mj, "Total FTR/Contact Jobs"),
-            // tNPS breakdown (raw keys)
-      tnps_surveys: metricNum(mj, "tNPS Surveys"),
-      tnps_promoters: metricNum(mj, "Promoters"),
-      tnps_detractors: metricNum(mj, "Detractors"),
-      tu_eligible_jobs: metricNum(mj, "TUEligibleJobs"),
-
-      job_volume_band: null,
-      status_badge: badge.status_badge,
-      status_sort: badge.status_sort,
-    });
+  const bpHas = rows.some((r) => String(r.reports_to_person_id ?? "") === viewerPersonId);
+  if (bpHas) {
+    return {
+      scopeLabel: "BP_SUPERVISOR",
+      rows: rows.filter((r) => String(r.reports_to_person_id ?? "") === viewerPersonId),
+    };
   }
 
-  return dedupeByTechId(out);
+  return {
+    scopeLabel: "TECH",
+    rows: rows.filter((r) => String(r.person_id ?? "") === viewerPersonId),
+  };
 }
 
 export default async function MetricsReportsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -328,78 +372,130 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
   const admin = supabaseAdmin();
   const pc_org_id = scopeAuth.selected_pc_org_id;
 
-  const selectedReportsTo = sp.reports_to ?? "ALL";
+  const classType =
+    String(sp.class ?? "P4P").toUpperCase() === "SMART"
+      ? "SMART"
+      : String(sp.class ?? "P4P").toUpperCase() === "TECH"
+        ? "TECH"
+        : "P4P";
 
-  const { data: fiscalRowsRaw, error: fiscalErr } = await sb
-    .from("metrics_raw_batch")
-    .select("fiscal_end_date")
-    .eq("pc_org_id", pc_org_id)
-    .eq("status", "loaded");
-
-  if (fiscalErr) {
-    console.error("[P4P REPORT] metrics_raw_batch fiscal options error", {
-      message: (fiscalErr as any)?.message,
-      details: (fiscalErr as any)?.details,
-      hint: (fiscalErr as any)?.hint,
-      code: (fiscalErr as any)?.code,
-      pc_org_id,
-    });
-  }
-
-  const fiscalOptions = Array.from(new Set((fiscalRowsRaw ?? []).map((r: any) => String(r.fiscal_end_date)))).sort((a, b) =>
-    a > b ? -1 : 1
-  );
-
-  if (fiscalOptions.length === 0) {
-    return (
-      <PageShell>
-        <Card>No reporting batches found.</Card>
-      </PageShell>
-    );
-  }
+  const fiscalOptions = await loadFiscalOptions(sb, pc_org_id, classType);
 
   const currentFiscal = currentFiscalEndDateISO_NY();
   const defaultFiscal = fiscalOptions.includes(currentFiscal) ? currentFiscal : fiscalOptions[0];
-  const selectedFiscal = sp.fiscal ?? defaultFiscal;
+  const selectedFiscal = sp.fiscal ?? defaultFiscal ?? currentFiscal;
 
-  const currentBatch = await loadBatchMetaForFiscal(sb, pc_org_id, selectedFiscal);
-  if (!currentBatch) {
+  const presetKeys = Object.keys(GLOBAL_BAND_PRESETS);
+  const { data: sel } = await admin.from("metrics_band_style_selection").select("preset_key").eq("selection_key", "GLOBAL").maybeSingle();
+  const activeKey = sel?.preset_key && presetKeys.includes(sel.preset_key) ? sel.preset_key : presetKeys[0] ?? "MODERN";
+  const activePreset = GLOBAL_BAND_PRESETS[activeKey] ?? GLOBAL_BAND_PRESETS[presetKeys[0] ?? "MODERN"];
+
+  const { data: rubricRowsRaw } = await admin
+    .from("metrics_class_kpi_rubric")
+    .select("class_type,kpi_key,band_key,min_value,max_value,score_value")
+    .eq("class_type", "TECH");
+
+  const rubricRowsAll = filterEmptyRubricGroups(rubricRowsRaw ?? []);
+  const distinctKeys = Array.from(new Set(rubricRowsAll.map((r: any) => String(r.kpi_key))));
+
+  const tnpsKey = resolveRubricKey(distinctKeys, ["tnps", "nps"]) ?? "tnps_score";
+  const ftrKey = resolveRubricKey(distinctKeys, ["ftr"]) ?? "ftr_rate";
+  const toolKey = resolveRubricKey(distinctKeys, ["tool"]) ?? "tool_usage_rate";
+
+  const rubricMap = buildRubricMap(rubricRowsAll);
+
+  // If no options yet, render safe empty state
+  if (!fiscalOptions.length) {
     return (
       <PageShell>
-        <Card>No reportable batch found for selected fiscal (P4P).</Card>
+        <ReportsClientShell
+          title="Metrics"
+          subtitle="Reports • one-click landing (snapshot-driven)"
+          preset={activePreset}
+          rubricRows={rubricRowsAll as any}
+          kpis={P4P_KPIS}
+          classType={classType as any}
+        />
+
+        <Card>
+          <div className="flex items-center gap-4 flex-wrap">
+            <FiscalSelector options={[selectedFiscal]} selected={selectedFiscal} />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-sm font-medium">No report data yet</div>
+          <div className="mt-2 text-sm text-[var(--to-ink-muted)]">
+            Wired to <span className="font-mono text-xs">master_kpi_archive_snapshot</span>. When snapshot rows exist, they’ll show here automatically.
+          </div>
+        </Card>
       </PageShell>
     );
   }
 
-  const latestMetricDate = currentBatch.metric_date;
+  const batchMeta = await loadLatestBatchMeta(sb, pc_org_id, classType, selectedFiscal);
+  if (!batchMeta) {
+    return (
+      <PageShell>
+        <ReportsClientShell
+          title="Metrics"
+          subtitle="Reports • one-click landing (snapshot-driven)"
+          preset={activePreset}
+          rubricRows={rubricRowsAll as any}
+          kpis={P4P_KPIS}
+          classType={classType as any}
+        />
 
-  const snapshotRows = await loadRowsForBatchFromView(sb, pc_org_id, currentBatch.batch_id);
+        <Card>
+          <div className="flex items-center gap-4 flex-wrap">
+            <FiscalSelector options={fiscalOptions} selected={selectedFiscal} />
+          </div>
+        </Card>
 
+        <Card>
+          <div className="text-sm font-medium">No reportable batch found for this fiscal</div>
+          <div className="mt-2 text-sm text-[var(--to-ink-muted)]">
+            Fiscal End: <span className="font-mono text-xs">{selectedFiscal}</span>
+          </div>
+        </Card>
+      </PageShell>
+    );
+  }
+
+  const latestMetricDate = batchMeta.metric_date;
+
+  const snapshotRowsRaw = await loadSnapshotRows(sb, pc_org_id, classType, selectedFiscal, batchMeta.batch_id);
+  const snapshotUiRows = snapshotRowsRaw.map(toUiRow);
+
+  const scoped = await scopeRowsForViewer(sb, pc_org_id, snapshotUiRows);
+
+  const selectedReportsTo = sp.reports_to ?? "ALL";
   const applyReportsTo = (arr: any[]) => {
     if (selectedReportsTo === "ALL") return arr;
     return arr.filter((r: any) => String(r.reports_to_person_id ?? "") === selectedReportsTo);
   };
 
-  let filteredRows = applyReportsTo(snapshotRows);
+  let filteredRows = applyReportsTo(scoped.rows);
 
   filteredRows = filteredRows.sort((a: any, b: any) => {
     if (a.status_sort !== b.status_sort) return a.status_sort - b.status_sort;
-
     const ar = numOrInf(a.rank_in_pc);
     const br = numOrInf(b.rank_in_pc);
     if (ar !== br) return ar - br;
-
     return String(a.tech_id).localeCompare(String(b.tech_id));
   });
 
   const okRows = filteredRows.filter((r: any) => r.status_badge === "OK");
   const nonOkRows = filteredRows.filter((r: any) => r.status_badge !== "OK");
 
-  const priorBatch = await loadPriorBatchMetaSameFiscal(sb, pc_org_id, selectedFiscal, latestMetricDate);
+  const priorBatch = await loadPriorBatchMetaSameFiscal(sb, pc_org_id, classType, selectedFiscal, latestMetricDate);
   const priorMetricDate = priorBatch?.metric_date ?? null;
 
-  const priorSnapshotRows = priorBatch ? await loadRowsForBatchFromView(sb, pc_org_id, priorBatch.batch_id) : [];
-  const priorRowsScoped = applyReportsTo(priorSnapshotRows);
+  const priorSnapshotRaw = priorBatch ? await loadSnapshotRows(sb, pc_org_id, classType, selectedFiscal, priorBatch.batch_id) : [];
+  const priorUi = priorSnapshotRaw.map(toUiRow);
+
+  const priorScoped = await scopeRowsForViewer(sb, pc_org_id, priorUi);
+  const priorRowsScoped = applyReportsTo(priorScoped.rows);
 
   const priorByTechId = new Map<string, any>();
   priorRowsScoped.forEach((r: any) => {
@@ -410,26 +506,26 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
     });
   });
 
+  // ---------- FIX: force arrays to string[] (prevents unknown[] -> string[]) ----------
   const ids = new Set<string>();
-  snapshotRows.forEach((r: any) => {
+  (snapshotUiRows ?? []).forEach((r: any) => {
     if (r.person_id) ids.add(String(r.person_id));
     if (r.reports_to_person_id) ids.add(String(r.reports_to_person_id));
   });
 
+  const personIds: string[] = Array.from(ids); // ✅ typed
+
   const personNameById = new Map<string, string>();
   const personMetaById = new Map<string, { affiliation_kind: "company" | "contractor" | null; affiliation_name: string | null }>();
 
-  if (ids.size > 0) {
-    const { data: people } = await admin
-      .from("person")
-      .select("person_id, full_name, co_ref_id, co_code")
-      .in("person_id", Array.from(ids));
+  if (personIds.length > 0) {
+    const { data: people } = await admin.from("person").select("person_id, full_name, co_ref_id, co_code").in("person_id", personIds);
 
     (people ?? []).forEach((p: any) => {
       personNameById.set(String(p.person_id), p.full_name ?? "—");
     });
 
-    const coRefIds = Array.from(
+    const coRefIds: string[] = Array.from(
       new Set(
         (people ?? [])
           .map((p: any) => (p.co_ref_id ? String(p.co_ref_id) : ""))
@@ -437,7 +533,7 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
       )
     );
 
-    const coCodes = Array.from(
+    const coCodes: string[] = Array.from(
       new Set(
         (people ?? [])
           .map((p: any) => (p.co_code ? String(p.co_code) : ""))
@@ -451,21 +547,13 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
     const contractorByCode = new Map<string, string>();
 
     if (coRefIds.length > 0) {
-      const { data: companies } = await admin
-        .from("company")
-        .select("company_id, company_name, company_code")
-        .in("company_id", coRefIds);
-
+      const { data: companies } = await admin.from("company").select("company_id, company_name, company_code").in("company_id", coRefIds);
       (companies ?? []).forEach((c: any) => {
         companyById.set(String(c.company_id), { name: c.company_name ?? "—", code: c.company_code ?? null });
         if (c.company_code) companyByCode.set(String(c.company_code), c.company_name ?? "—");
       });
 
-      const { data: contractors } = await admin
-        .from("contractor")
-        .select("contractor_id, contractor_name, contractor_code")
-        .in("contractor_id", coRefIds);
-
+      const { data: contractors } = await admin.from("contractor").select("contractor_id, contractor_name, contractor_code").in("contractor_id", coRefIds);
       (contractors ?? []).forEach((c: any) => {
         contractorById.set(String(c.contractor_id), { name: c.contractor_name ?? "—", code: c.contractor_code ?? null });
         if (c.contractor_code) contractorByCode.set(String(c.contractor_code), c.contractor_name ?? "—");
@@ -473,11 +561,7 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
     }
 
     if (coCodes.length > 0) {
-      const { data: companiesByCode } = await admin
-        .from("company")
-        .select("company_code, company_name")
-        .in("company_code", coCodes);
-
+      const { data: companiesByCode } = await admin.from("company").select("company_code, company_name").in("company_code", coCodes);
       (companiesByCode ?? []).forEach((c: any) => {
         if (c.company_code) companyByCode.set(String(c.company_code), c.company_name ?? "—");
       });
@@ -517,31 +601,13 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
       personMetaById.set(pid, { affiliation_kind, affiliation_name });
     });
   }
-
-  const presetKeys = Object.keys(GLOBAL_BAND_PRESETS);
-  const { data: sel } = await admin.from("metrics_band_style_selection").select("preset_key").eq("selection_key", "GLOBAL").maybeSingle();
-  const activeKey = sel?.preset_key && presetKeys.includes(sel.preset_key) ? sel.preset_key : presetKeys[0] ?? "MODERN";
-  const activePreset = GLOBAL_BAND_PRESETS[activeKey] ?? GLOBAL_BAND_PRESETS[presetKeys[0] ?? "MODERN"];
-
-  const { data: rubricRowsRaw } = await admin
-    .from("metrics_class_kpi_rubric")
-    .select("class_type,kpi_key,band_key,min_value,max_value,score_value")
-    .eq("class_type", "P4P");
-
-  const rubricRowsAll = filterEmptyRubricGroups(rubricRowsRaw ?? []);
-  const distinctKeys = Array.from(new Set(rubricRowsAll.map((r: any) => String(r.kpi_key))));
-
-  const tnpsKey = resolveRubricKey(distinctKeys, ["tnps", "nps"]) ?? "tnps_score";
-  const ftrKey = resolveRubricKey(distinctKeys, ["ftr"]) ?? "ftr_rate";
-  const toolKey = resolveRubricKey(distinctKeys, ["tool"]) ?? "tool_usage_rate";
-
-  const rubricMap = buildRubricMap(rubricRowsAll);
+  // ---------- /FIX ----------
 
   const okRowsBanded = applyBandsToRows(okRows, rubricMap, { tnpsKey, ftrKey, toolKey });
   const nonOkRowsBanded = applyBandsToRows(nonOkRows, rubricMap, { tnpsKey, ftrKey, toolKey });
 
   const reportsToMap = new Map<string, string>();
-  snapshotRows.forEach((r: any) => {
+  (scoped.rows ?? []).forEach((r: any) => {
     if (!r.reports_to_person_id) return;
     const id = String(r.reports_to_person_id);
     const name = personNameById.get(id) ?? "—";
@@ -550,15 +616,43 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
 
   const reportsToOptions = Array.from(reportsToMap.entries()).sort((a, b) => a[1].localeCompare(b[1]));
 
+  if (!scoped.rows.length) {
+    return (
+      <PageShell>
+        <ReportsClientShell
+          title="Metrics"
+          subtitle="Reports • one-click landing (snapshot-driven)"
+          preset={activePreset}
+          rubricRows={rubricRowsAll as any}
+          kpis={P4P_KPIS}
+          classType={classType as any}
+        />
+
+        <Card>
+          <div className="flex items-center gap-4 flex-wrap">
+            <FiscalSelector options={fiscalOptions} selected={selectedFiscal} />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="text-sm font-medium">No rows in your scope</div>
+          <div className="mt-2 text-sm text-[var(--to-ink-muted)]">
+            Scope mode: <span className="font-mono text-xs">{scoped.scopeLabel}</span>
+          </div>
+        </Card>
+      </PageShell>
+    );
+  }
+
   return (
     <PageShell>
       <ReportsClientShell
-        title="Reports"
-        subtitle="Metrics •  Ranking + outliers (P4P Manager)"
+        title="Metrics"
+        subtitle={`Reports • ${classType} • Scope: ${scoped.scopeLabel}`}
         preset={activePreset}
-        rubricRows={rubricRowsAll}
+        rubricRows={rubricRowsAll as any}
         kpis={P4P_KPIS}
-        classType="P4P"
+        classType={classType as any}
       />
 
       <Card>
@@ -573,7 +667,7 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
         priorRows={priorRowsScoped}
         kpis={P4P_KPIS}
         preset={activePreset}
-        rubricRows={rubricRowsAll}
+        rubricRows={rubricRowsAll as any}
         rubricKeys={{ tnpsKey, ftrKey, toolKey }}
       />
 
@@ -581,12 +675,12 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
         okRows={okRowsBanded}
         nonOkRows={nonOkRowsBanded}
         personNameById={personNameById}
-        personMetaById={personMetaById}
+        personMetaById={personMetaById as any}
         preset={activePreset}
         kpis={P4P_KPIS}
         latestMetricDate={latestMetricDate}
         priorMetricDate={priorMetricDate}
-        priorSnapshotByTechId={priorByTechId}
+        priorSnapshotByTechId={priorByTechId as any}
       />
     </PageShell>
   );
