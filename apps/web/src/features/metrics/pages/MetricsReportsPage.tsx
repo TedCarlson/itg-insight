@@ -312,7 +312,6 @@ async function loadPriorBatchMetaAnyFiscal(sb: any, pc_org_id: string, classType
   };
 }
 
-
 async function loadSnapshotRows(sb: any, pc_org_id: string, classType: string, fiscal_end_date: string, batch_id: string): Promise<SnapshotRow[]> {
   const { data, error } = await sb
     .from("master_kpi_archive_snapshot")
@@ -357,13 +356,21 @@ async function scopeRowsForViewer(sb: any, pc_org_id: string, rows: any[]) {
   const isOwner = ownerRes?.error ? false : Boolean(ownerRes?.data);
   if (isOwner) return { scopeLabel: "ORG (is_owner)", rows };
 
-  const permRes = await sb.rpc("has_any_pc_org_permission", {
-    p_pc_org_id: pc_org_id,
-    p_permission_keys: ["metrics_manage", "roster_manage", "leadership_manage"],
-  });
+  // ✅ IMPORTANT:
+  // Do NOT rely on api.* RPC exposure drift (e.g. has_any_pc_org_permission) for server scope decisions.
+  // Use the canonical access pass (public.get_access_pass) which already resolves grants → permissions.
+  const passRes = await sb.rpc("get_access_pass", { p_pc_org_id: pc_org_id });
 
-  const allowed = permRes?.error ? false : Boolean(permRes?.data);
-  if (allowed) return { scopeLabel: "ORG (permission)", rows };
+  const permissions: string[] =
+    passRes?.error ? [] : Array.isArray(passRes?.data?.permissions) ? (passRes.data.permissions as any) : [];
+
+  const allowed =
+    permissions.includes("metrics_manage") ||
+    permissions.includes("metrics_access") ||
+    permissions.includes("leadership_manage") ||
+    permissions.includes("roster_manage");
+
+  if (allowed) return { scopeLabel: "ORG (access_pass)", rows };
 
   const viewerPersonId = await getViewerPersonId(sb);
   if (!viewerPersonId) return { scopeLabel: "TECH (no profile)", rows: [] as any[] };

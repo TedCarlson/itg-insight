@@ -1,4 +1,7 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/api/org/rpc/route.ts
+
 import { NextRequest } from "next/server";
 import { supabaseUserClient } from "@/shared/data/supabase/user";
 
@@ -62,6 +65,7 @@ export async function POST(req: NextRequest) {
 
     if (!schema) return json(400, { ok: false, request_id: rid, error: "Invalid schema", code: "invalid_schema" });
     if (!fn) return json(400, { ok: false, request_id: rid, error: "Missing fn", code: "missing_fn" });
+
     if (!RPC_ALLOWLIST.has(fn)) {
       return json(403, { ok: false, request_id: rid, error: "RPC not allowed", code: "rpc_not_allowed", fn });
     }
@@ -76,6 +80,7 @@ export async function POST(req: NextRequest) {
 
     const pcOrgFromArgs = extractPcOrgIdFromArgs(rpcArgs);
 
+    // Elevated users still must have baseline org access (prevents cross-org privilege).
     if (pcOrgFromArgs && elevated) {
       const ok = await canAccessPcOrgUserClient(supabaseUser, pcOrgFromArgs);
       if (!ok) {
@@ -95,18 +100,16 @@ export async function POST(req: NextRequest) {
         return json(409, { ok: false, request_id: rid, error: "No selected org", code: "no_selected_pc_org" });
       }
 
-      if (!elevated) {
-        const allowed = await requirePermission(supabaseUser, selectedPcOrgId as string, "roster_manage");
-        if (!allowed) {
-          return json(403, {
-            ok: false,
-            request_id: rid,
-            error: "Forbidden",
-            code: "forbidden",
-            required_permission: "roster_manage",
-            pc_org_id: selectedPcOrgId,
-          });
-        }
+      const allowed = await requirePermission(supabaseUser, selectedPcOrgId as string, "roster_manage", { elevated });
+      if (!allowed) {
+        return json(403, {
+          ok: false,
+          request_id: rid,
+          error: "Forbidden",
+          code: "forbidden",
+          required_permission: "roster_manage",
+          pc_org_id: selectedPcOrgId,
+        });
       }
 
       return handleOnboardGlobalRead({ rid, fn, schema, rpcArgs });
@@ -122,7 +125,7 @@ export async function POST(req: NextRequest) {
       const scope = ensureOrgScope(pcOrgFromArgs);
       if (!scope.ok) return json(scope.status, scope.body);
 
-      const allowed = await requirePermission(supabaseUser, pcOrgFromArgs, "permissions_manage");
+      const allowed = await requirePermission(supabaseUser, pcOrgFromArgs, "permissions_manage", { elevated });
       if (!allowed) {
         return json(403, {
           ok: false,
@@ -151,7 +154,7 @@ export async function POST(req: NextRequest) {
       const scope = ensureOrgScope(pc_org_id);
       if (!scope.ok) return json(scope.status, scope.body);
 
-      const allowed = await requirePermission(supabaseUser, pc_org_id, "roster_manage");
+      const allowed = await requirePermission(supabaseUser, pc_org_id, "roster_manage", { elevated });
       if (!allowed) {
         return json(403, {
           ok: false,
@@ -163,6 +166,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // IMPORTANT: handler expects ONLY { rid, person_id, pc_org_id, end_date }
       return handlePersonPcOrgEndAssociation({ rid, person_id, pc_org_id, end_date });
     }
 
@@ -171,10 +175,9 @@ export async function POST(req: NextRequest) {
       if (!selectedPcOrgId && !elevated) {
         return json(409, { ok: false, request_id: rid, error: "No selected org", code: "no_selected_pc_org" });
       }
-      if (!elevated) {
-        const allowed = await requirePermission(supabaseUser, selectedPcOrgId as string, "roster_manage");
-        if (!allowed) return json(403, { ok: false, request_id: rid, error: "Forbidden", code: "forbidden" });
-      }
+
+      const allowed = await requirePermission(supabaseUser, selectedPcOrgId as string, "roster_manage", { elevated });
+      if (!allowed) return json(403, { ok: false, request_id: rid, error: "Forbidden", code: "forbidden" });
 
       return handlePersonUpsertServiceRole({ rid, fn: "person_upsert", schema, rpcArgs });
     }
@@ -184,7 +187,7 @@ export async function POST(req: NextRequest) {
       const scope = ensureOrgScope(pcOrgFromArgs);
       if (!scope.ok) return json(scope.status, scope.body);
 
-      const allowed = await requirePermission(supabaseUser, pcOrgFromArgs, "roster_manage");
+      const allowed = await requirePermission(supabaseUser, pcOrgFromArgs, "roster_manage", { elevated });
       if (!allowed) {
         return json(403, {
           ok: false,
@@ -196,12 +199,12 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // ✅ Key fix: membership is written via service role to avoid table permission denied
+      // add_to_roster uses service role (membership table)
       if (fn === "add_to_roster") {
         return handleAddToRosterServiceRole({ rid, schema, rpcArgs });
       }
 
-      // keep everything else as-is (user execution)
+      // everything else: execute as user
       return handleDefaultRpcAsUser({ rid, supabaseUser, schema, fn, rpcArgs });
     }
 

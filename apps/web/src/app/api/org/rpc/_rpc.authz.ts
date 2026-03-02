@@ -1,4 +1,7 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/api/org/rpc/_rpc.authz.ts
+
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import type { RpcSchema } from "./_rpc.types";
 
@@ -48,7 +51,16 @@ export async function canAccessPcOrgUserClient(supabaseUser: any, pc_org_id: str
   return Boolean(data);
 }
 
-export async function requirePermission(supabaseUser: any, pc_org_id: string, permission_key: string): Promise<boolean> {
+export async function requirePermission(
+  supabaseUser: any,
+  pc_org_id: string,
+  permission_key: string,
+  opts?: { elevated?: boolean }
+): Promise<boolean> {
+  // Centralized bypass: owners/admin/dev/director/vp can pass without explicit pc_org_permission_grant rows.
+  // Note: route.ts is still responsible for enforcing baseline org access for elevated users.
+  if (opts?.elevated) return true;
+
   const apiClient: any = (supabaseUser as any).schema ? (supabaseUser as any).schema("api") : supabaseUser;
   const { data, error } = await apiClient.rpc("has_pc_org_permission", {
     p_pc_org_id: pc_org_id,
@@ -58,11 +70,7 @@ export async function requirePermission(supabaseUser: any, pc_org_id: string, pe
   return Boolean(data);
 }
 
-export function makeEnsureOrgScope(args: {
-  rid: string;
-  selectedPcOrgId: string | null;
-  elevated: boolean;
-}) {
+export function makeEnsureOrgScope(args: { rid: string; selectedPcOrgId: string | null; elevated: boolean }) {
   const { rid, selectedPcOrgId, elevated } = args;
 
   return function ensureOrgScope(targetPcOrgId: string, requiredSelected: boolean = true) {

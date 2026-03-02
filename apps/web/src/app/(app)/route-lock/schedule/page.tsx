@@ -1,5 +1,3 @@
-// apps/web/src/app/(app)/route-lock/schedule/page.tsx
-
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { unstable_noStore as noStore } from "next/cache";
@@ -266,6 +264,9 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
     );
   }
 
+  // IMPORTANT FIX:
+  // - assignments with an end_date remain "active for planning" THROUGH their end_date
+  // - i.e., end_date >= today is still active
   const activeRosterTechs: Technician[] = (rosterRows ?? [])
     .map((r: any) => ({
       assignment_id: String(r?.assignment_id ?? "").trim(),
@@ -276,7 +277,12 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       end_date: r?.end_date == null ? null : String(r.end_date),
     }))
     .filter((r) => r.assignment_id && r.tech_id)
-    .filter((r) => r.assignment_active && !r.end_date)
+    .filter((r) => {
+      if (!r.assignment_active) return false;
+      if (!r.end_date) return true;
+      // ISO date compare works for YYYY-MM-DD
+      return String(r.end_date) >= String(today);
+    })
     .map(({ assignment_active: _a, end_date: _e, ...rest }) => rest);
 
   const rosterAssignmentIds = new Set(activeRosterTechs.map((t) => t.assignment_id));

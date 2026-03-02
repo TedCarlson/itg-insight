@@ -1,6 +1,3 @@
-// RUN THIS
-// Replace the entire file with the contents below.
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -54,6 +51,9 @@ type RowState = {
   notOnRoster: boolean;
   routeId: string; // "" means unset
   days: Record<DayKey, boolean>;
+
+  // staged "purge" flag (delete trigger = dirty)
+  deleteArmed: boolean;
 };
 
 export type ScheduleTotals = {
@@ -148,6 +148,7 @@ function buildRows(
       notOnRoster: !!t.not_on_roster,
       routeId: norm.routeId,
       days: norm.days,
+      deleteArmed: false,
     };
   });
 }
@@ -282,14 +283,39 @@ export function ScheduleGridClient({
   const dirtyRows = useMemo(() => {
     const base = baselineRef.current ?? {};
     return rows.filter((r) => {
+      // delete trigger = dirty
+      if (r.deleteArmed) return true;
+
       const b = base[r.assignmentId];
       if (!b) return true;
       return !rowsEqual(r, b);
     });
   }, [rows]);
 
-  const commitRows = stageAll ? rows : dirtyRows;
+  // Commit set:
+  // - stageAll includes everyone EXCEPT delete-armed rows (those are handled by purge endpoint)
+  // - dirty-only includes delete-armed rows + baseline edits
+  const commitRows = useMemo(() => {
+    const source = stageAll ? rows : dirtyRows;
+    return source;
+  }, [stageAll, rows, dirtyRows]);
+
   const canCommit = !isSaving && (stageAll || dirtyRows.length > 0);
+
+  async function purgeOneTech(techId: string) {
+    const res = await fetch("/api/route-lock/schedule/delete-tech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fiscal_month_id: fiscalMonthId, tech_id: techId }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.ok) {
+      const err = String(json?.error ?? `Purge failed (${res.status})`);
+      throw new Error(err);
+    }
+    return json;
+  }
 
   async function commitChanges() {
     setSaveMsg("");
@@ -301,70 +327,94 @@ export function ScheduleGridClient({
 
     setIsSaving(true);
     try {
-      const payload = {
-        fiscal_month_id: fiscalMonthId,
-        hoursPerDay: defaults.hoursPerDay,
-        unitsPerHour: defaults.unitsPerHour,
-        rows: commitRows.map((r) => ({
-          assignment_id: r.assignmentId,
-          tech_id: r.techId,
-          default_route_id: r.routeId ? r.routeId : null,
-          days: r.days,
-        })),
-      };
+      // 1) purge first (one row at a time)
+      const purgeRows = commitRows.filter((r) => r.deleteArmed);
+      for (const r of purgeRows) {
+        await purgeOneTech(r.techId);
 
-      const res = await fetch("/api/route-lock/schedule/upsert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+        // remove the orphan row immediately from the current grid to "tighten shape"
+        setRows((prev) => prev.filter((x) => x.assignmentId !== r.assignmentId));
 
-      const json = await res.json().catch(() => ({}));
-
-      if (!res.ok || !json?.ok) {
-        const err = String(json?.error ?? `Commit failed (${res.status})`);
-        setSaveMsg(err);
-        toast.push({ variant: "danger", title: "Commit failed", message: err, durationMs: 2600 });
-        return;
+        toast.push({
+          variant: "success",
+          title: "Tech purged",
+          message: `Removed today+forward evidence for Tech ${r.techId} (baseline + exceptions + sweep).`,
+          durationMs: 2200,
+        });
       }
 
-      const inserted = fmtInt(json?.inserted ?? json?.rows_inserted ?? json?.baseline_inserted ?? json?.baseline_upserted);
-      const updated = fmtInt(json?.updated ?? json?.rows_updated ?? json?.baseline_updated);
+      // 2) then upsert remaining schedule edits
+      const upsertRows = commitRows.filter((r) => !r.deleteArmed);
 
-      const sweepUp = fmtInt(
-        json?.sweep?.rows_upserted ??
-          json?.sweep_rows_upserted ??
-          json?.rows_upserted ??
-          json?.sweep_upserted ??
-          json?.sweep?.rows_upserted
-      );
-      const sweepDel = fmtInt(
-        json?.sweep?.rows_deleted ??
-          json?.sweep_rows_deleted ??
-          json?.rows_deleted ??
-          json?.sweep_deleted ??
-          json?.sweep?.rows_deleted
-      );
+      if (upsertRows.length > 0) {
+        const payload = {
+          fiscal_month_id: fiscalMonthId,
+          hoursPerDay: defaults.hoursPerDay,
+          unitsPerHour: defaults.unitsPerHour,
+          rows: upsertRows.map((r) => ({
+            assignment_id: r.assignmentId,
+            tech_id: r.techId,
+            default_route_id: r.routeId ? r.routeId : null,
+            days: r.days,
+          })),
+        };
 
-      const nextBase: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
-      for (const r of rows) {
-        nextBase[r.assignmentId] = { routeId: r.routeId, days: { ...r.days } };
+        const res = await fetch("/api/route-lock/schedule/upsert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok || !json?.ok) {
+          const err = String(json?.error ?? `Commit failed (${res.status})`);
+          setSaveMsg(err);
+          toast.push({ variant: "danger", title: "Commit failed", message: err, durationMs: 2600 });
+          return;
+        }
+
+        const inserted = fmtInt(json?.inserted ?? json?.rows_inserted ?? json?.baseline_inserted ?? json?.baseline_upserted);
+        const updated = fmtInt(json?.updated ?? json?.rows_updated ?? json?.baseline_updated);
+
+        const sweepUp = fmtInt(
+          json?.sweep?.rows_upserted ??
+            json?.sweep_rows_upserted ??
+            json?.rows_upserted ??
+            json?.sweep_upserted ??
+            json?.sweep?.rows_upserted
+        );
+        const sweepDel = fmtInt(
+          json?.sweep?.rows_deleted ??
+            json?.sweep_rows_deleted ??
+            json?.rows_deleted ??
+            json?.sweep_deleted ??
+            json?.sweep?.rows_deleted
+        );
+
+        // update baseline snapshot to current in-memory rows (for non-purged)
+        const nextBase: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
+        for (const r of rows) {
+          if (r.deleteArmed) continue;
+          nextBase[r.assignmentId] = { routeId: r.routeId, days: { ...r.days } };
+        }
+        baselineRef.current = nextBase;
+
+        // Stage All cooldown ONLY when it was used for this commit
+        if (stageAll) {
+          setStageAll(false);
+          setStageAllCooldownUntil(Date.now() + 60_000);
+        }
+
+        toast.push({
+          variant: "success",
+          title: "Schedule saved",
+          message: `Baseline: +${inserted} inserted, ${updated} updated • Sweep: ${sweepUp} upserted, ${sweepDel} deleted`,
+          durationMs: 2600,
+        });
       }
-      baselineRef.current = nextBase;
 
-      // Stage All cooldown ONLY when it was used for this commit
-      if (stageAll) {
-        setStageAll(false);
-        setStageAllCooldownUntil(Date.now() + 60_000);
-      }
-
-      toast.push({
-        variant: "success",
-        title: "Schedule saved",
-        message: `Baseline: +${inserted} inserted, ${updated} updated • Sweep: ${sweepUp} upserted, ${sweepDel} deleted`,
-        durationMs: 2600,
-      });
-
+      // Always refresh after purge/upsert to adopt roster truth + new baseline shape
       router.refresh();
     } catch (e: any) {
       const msg = String(e?.message ?? "Commit failed");
@@ -376,10 +426,10 @@ export function ScheduleGridClient({
   }
 
   // Columns:
-  // TechId | Name | Add/Remove | Route | 7 Days | Stats
+  // TechId | Name | Add/Remove | Route | 7 Days | Stats | Delete
   const gridStyle: CSSProperties = useMemo(
     () => ({
-      gridTemplateColumns: "6rem minmax(14rem,1fr) 5.75rem 11rem repeat(7, 5.25rem) minmax(16rem, 0.9fr)",
+      gridTemplateColumns: "6rem minmax(14rem,1fr) 5.75rem 11rem repeat(7, 5.25rem) minmax(16rem, 0.9fr) 5.25rem",
     }),
     []
   );
@@ -403,6 +453,16 @@ export function ScheduleGridClient({
           ...r,
           days: setAllDays(isAllOff ? true : false),
         };
+      })
+    );
+  }
+
+  function toggleDeleteArmed(assignmentId: string) {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.assignmentId !== assignmentId) return r;
+        if (!r.notOnRoster) return r; // safety
+        return { ...r, deleteArmed: !r.deleteArmed };
       })
     );
   }
@@ -461,10 +521,7 @@ export function ScheduleGridClient({
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
-              className={cls(
-                "to-btn h-8 px-3 text-xs",
-                stageAll ? "to-btn--primary" : "to-btn--secondary"
-              )}
+              className={cls("to-btn h-8 px-3 text-xs", stageAll ? "to-btn--primary" : "to-btn--secondary")}
               disabled={isSaving || isStageAllCooling}
               onClick={() => setStageAll((v) => !v)}
               aria-disabled={isSaving || isStageAllCooling}
@@ -514,6 +571,7 @@ export function ScheduleGridClient({
                 </div>
               ))}
               <div className="whitespace-nowrap">Stats</div>
+              <div className="text-center whitespace-nowrap">Delete</div>
             </DataTableHeader>
           </DataTable>
         </div>
@@ -528,6 +586,8 @@ export function ScheduleGridClient({
               const daysOn = Object.values(r.days).reduce((acc, v) => acc + (v ? 1 : 0), 0);
               const hours = daysOn * defaults.hoursPerDay;
               const units = hours * defaults.unitsPerHour;
+
+              const deleteEnabled = r.notOnRoster;
 
               return (
                 <DataTableRow key={r.assignmentId} gridStyle={gridStyle} className="items-center">
@@ -558,6 +618,7 @@ export function ScheduleGridClient({
                       className="to-btn to-btn--secondary h-7 px-2 text-xs"
                       onClick={() => toggleAllDays(r.assignmentId)}
                       title={isAllOff ? "Add all 7 days" : "Remove all 7 days"}
+                      disabled={r.deleteArmed}
                     >
                       {btnLabel}
                     </button>
@@ -568,6 +629,7 @@ export function ScheduleGridClient({
                       className="to-select h-8 text-xs"
                       value={r.routeId}
                       onChange={(e) => setRoute(r.assignmentId, e.target.value)}
+                      disabled={r.deleteArmed}
                     >
                       <option value="">—</option>
                       {routes.map((rt) => (
@@ -591,6 +653,21 @@ export function ScheduleGridClient({
                   <div className="whitespace-nowrap text-sm">
                     {daysOn} days • {Math.round(units)} units • {hours.toFixed(0)} hours
                   </div>
+
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[var(--to-danger)]"
+                      checked={r.deleteArmed}
+                      disabled={isSaving || !deleteEnabled}
+                      onChange={() => toggleDeleteArmed(r.assignmentId)}
+                      title={
+                        deleteEnabled
+                          ? "Arms a purge: remove today+forward evidence for this tech on Commit."
+                          : "Only available for NOT ON ROSTER rows."
+                      }
+                    />
+                  </div>
                 </DataTableRow>
               );
             })}
@@ -611,6 +688,7 @@ export function ScheduleGridClient({
               </div>
             ))}
 
+            <div />
             <div />
           </DataTableRow>
         </div>
