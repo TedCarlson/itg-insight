@@ -5,16 +5,30 @@
 "use client";
 
 import { useMemo } from "react";
+import { computeP4PTileRollup } from "@/features/metrics/lib/reports/rollup";
 
 type UiRow = {
   tech_id?: string | null;
 
+  // display KPIs (may exist, but tiles will NOT average these anymore)
   tnps_score?: number | null;
   ftr_rate?: number | null;
   tool_usage_rate?: number | null;
 
   status_badge?: string | null;
 
+  // atomic facts (preferred)
+  tnps_surveys?: number | null;
+  tnps_promoters?: number | null;
+  tnps_detractors?: number | null;
+
+  total_ftr_contact_jobs?: number | null;
+  ftr_fail_jobs?: number | null;
+
+  tu_eligible_jobs?: number | null;
+  tu_compliant_jobs?: number | null;
+
+  // raw JSON fallback (your totals row proof shows these keys exist)
   raw_metrics_json?: any | null;
   computed_metrics_json?: any | null;
 };
@@ -56,22 +70,18 @@ function finite(n: unknown): number | null {
   return null;
 }
 
-function avg(nums: Array<number | null | undefined>): number | null {
-  let sum = 0;
-  let c = 0;
-  for (const v of nums) {
-    const n = finite(v);
-    if (n == null) continue;
-    sum += n;
-    c += 1;
-  }
-  if (!c) return null;
-  return sum / c;
+function isTotalsRow(row: any): boolean {
+  const badge = String(row?.status_badge ?? "").toUpperCase();
+  if (badge === "TOTALS") return true;
+  const tech = String(row?.tech_id ?? "").toLowerCase();
+  return tech.includes("totals");
 }
 
-function distinctTechCount(rows: UiRow[]): number {
+function distinctTechCountOk(rows: UiRow[]): number {
   const s = new Set<string>();
   for (const r of rows) {
+    if (String(r.status_badge ?? "") !== "OK") continue;
+    if (isTotalsRow(r)) continue;
     const id = String(r.tech_id ?? "").trim();
     if (id) s.add(id);
   }
@@ -79,10 +89,11 @@ function distinctTechCount(rows: UiRow[]): number {
 }
 
 function techIdSignature(rows: UiRow[]): string {
-  // Stable fingerprint to detect whether rows differ from orgRows
+  // IMPORTANT: ignore totals row(s) so orgRows (which may include totals) can match view rows when no filter applied.
   const ids: string[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
+    if (isTotalsRow(r)) continue;
     const id = String(r.tech_id ?? "").trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
@@ -274,20 +285,21 @@ function TileRow({
   keys: RubricKeys;
   preset: any;
 }) {
-  const okRows = rows.filter((r) => String(r.status_badge ?? "") === "OK");
-  const okPrior = priorRows.filter((r) => String(r.status_badge ?? "") === "OK");
+  // Headcount is "officials" only (OK). Metrics are fact-driven across all rows (OK + outliers).
+  const hc = distinctTechCountOk(rows);
+  const hcPrior = distinctTechCountOk(priorRows);
 
-  const hc = distinctTechCount(okRows);
-  const hcPrior = distinctTechCount(okPrior);
+  const cur = computeP4PTileRollup(rows);
+  const prior = computeP4PTileRollup(priorRows);
 
-  const tnps = avg(okRows.map((r) => r.tnps_score));
-  const tnpsPrior = avg(okPrior.map((r) => r.tnps_score));
+  const tnps = finite(cur.tnps_rate);
+  const tnpsPrior = finite(prior.tnps_rate);
 
-  const ftr = avg(okRows.map((r) => r.ftr_rate));
-  const ftrPrior = avg(okPrior.map((r) => r.ftr_rate));
+  const ftr = finite(cur.ftr_rate);
+  const ftrPrior = finite(prior.ftr_rate);
 
-  const tool = avg(okRows.map((r) => r.tool_usage_rate));
-  const toolPrior = avg(okPrior.map((r) => r.tool_usage_rate));
+  const tool = finite(cur.tool_usage_rate);
+  const toolPrior = finite(prior.tool_usage_rate);
 
   const tnpsBand = bandFromRubric(rubricRows, keys.tnpsKey, tnps);
   const ftrBand = bandFromRubric(rubricRows, keys.ftrKey, ftr);
@@ -299,7 +311,7 @@ function TileRow({
 
       <div className="grid gap-3 md:grid-cols-4">
         <HeadcountTile hc={hc} hcPrior={hcPrior} />
-        <Tile label="tNPS" value={tnps} prior={tnpsPrior} digits={2} band={tnpsBand} preset={preset} />
+        <Tile label="tNPS" value={tnps} prior={tnpsPrior} digits={1} band={tnpsBand} preset={preset} />
         <Tile label="FTR%" value={ftr} prior={ftrPrior} digits={1} band={ftrBand} preset={preset} />
         <Tile label="Tool Usage%" value={tool} prior={toolPrior} digits={1} band={toolBand} preset={preset} />
       </div>
@@ -315,8 +327,8 @@ export default function ReportSummaryTiles(props: Props) {
     const orgSig = orgRows ? techIdSignature(orgRows) : null;
     const viewSig = orgRows ? techIdSignature(props.rows) : null;
 
-    // Hide the second row when there's no Reports To filter.
-    // We can only detect filter state reliably when orgRows are provided.
+    // Hide row 2 when no filter applied:
+    // because orgRows may include totals but signature ignores totals, ALL should match and hide.
     const showSecondRow = orgSig != null && viewSig != null ? orgSig !== viewSig : true;
 
     return {
@@ -330,7 +342,6 @@ export default function ReportSummaryTiles(props: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* CONSTANT: always org totals */}
       <TileRow
         title="Org snapshot"
         rows={memo.orgRows}
@@ -340,7 +351,6 @@ export default function ReportSummaryTiles(props: Props) {
         preset={props.preset}
       />
 
-      {/* MUTABLE: only visible when filter applied */}
       {memo.showSecondRow ? (
         <TileRow
           title="Your view"

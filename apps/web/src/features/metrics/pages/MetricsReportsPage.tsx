@@ -158,6 +158,13 @@ function filterEmptyRubricGroups(rows: any[]) {
   return out;
 }
 
+function isTotalsUiRow(r: any): boolean {
+  const badge = String(r?.status_badge ?? "").toUpperCase();
+  if (badge === "TOTALS") return true;
+  const tech = String(r?.tech_id ?? "").toLowerCase();
+  return tech.includes("totals");
+}
+
 function toUiRow(r: SnapshotRow) {
   const raw = r.raw_metrics_json ?? {};
   const comp = r.computed_metrics_json ?? {};
@@ -187,7 +194,12 @@ function toUiRow(r: SnapshotRow) {
     metricNum(comp, "total_jobs") ??
     metricNum(raw, "total_jobs");
 
-  const installs = metricNum(comp, "Installs") ?? metricNum(raw, "Installs") ?? metricNum(comp, "installs") ?? metricNum(raw, "installs");
+  const installs =
+    metricNum(comp, "Installs") ??
+    metricNum(raw, "Installs") ??
+    metricNum(comp, "installs") ??
+    metricNum(raw, "installs");
+
   const sros = metricNum(comp, "SROs") ?? metricNum(raw, "SROs") ?? metricNum(comp, "sros") ?? metricNum(raw, "sros");
   const tcs = metricNum(comp, "TCs") ?? metricNum(raw, "TCs") ?? metricNum(comp, "tcs") ?? metricNum(raw, "tcs");
 
@@ -234,7 +246,7 @@ function toUiRow(r: SnapshotRow) {
     ftr_rate,
     tool_usage_rate,
 
-    // Aux breakdowns
+    // Aux breakdowns (facts for rollups)
     total_jobs,
     installs,
     sros,
@@ -313,6 +325,9 @@ async function loadPriorBatchMetaAnyFiscal(sb: any, pc_org_id: string, classType
 }
 
 async function loadSnapshotRows(sb: any, pc_org_id: string, classType: string, fiscal_end_date: string, batch_id: string): Promise<SnapshotRow[]> {
+  // ✅ IMPORTANT:
+  // DO NOT filter out totals here.
+  // Tiles need the totals row in payload, while tables will explicitly exclude totals later.
   const { data, error } = await sb
     .from("master_kpi_archive_snapshot")
     .select(
@@ -344,8 +359,7 @@ async function loadSnapshotRows(sb: any, pc_org_id: string, classType: string, f
     .eq("pc_org_id", pc_org_id)
     .eq("class_type", classType)
     .eq("fiscal_end_date", fiscal_end_date)
-    .eq("batch_id", batch_id)
-    .eq("is_totals", false);
+    .eq("batch_id", batch_id);
 
   if (error) return [];
   return (data ?? []) as any;
@@ -587,7 +601,9 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
     return arr.filter((r: any) => String(r.reports_to_person_id ?? "") === selectedReportsTo);
   };
 
-  let filteredRows = applyReportsTo(scoped.rows);
+  // ✅ TABLE / "YOUR VIEW" rows: always exclude totals rows.
+  // Tiles will receive orgRows/priorOrgRows (which DO include totals) for row 1.
+  let filteredRows = applyReportsTo(scoped.rows).filter((r: any) => !isTotalsUiRow(r));
 
   filteredRows = filteredRows.sort((a: any, b: any) => {
     if (a.status_sort !== b.status_sort) return a.status_sort - b.status_sort;
@@ -603,15 +619,17 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
   const priorBatch = await loadPriorBatchMetaAnyFiscal(sb, pc_org_id, classType, latestMetricDate);
   const priorMetricDate = priorBatch?.metric_date ?? null;
 
-  const priorSnapshotRaw = priorBatch ? await loadSnapshotRows(sb, pc_org_id, classType, priorBatch.fiscal_end_date ?? selectedFiscal, priorBatch.batch_id) : [];
+  const priorSnapshotRaw = priorBatch
+    ? await loadSnapshotRows(sb, pc_org_id, classType, priorBatch.fiscal_end_date ?? selectedFiscal, priorBatch.batch_id)
+    : [];
   const priorUi = priorSnapshotRaw.map(toUiRow);
 
   const priorScoped = await scopeRowsForViewer(sb, pc_org_id, priorUi);
-  const priorRowsScoped = applyReportsTo(priorScoped.rows);
+
+  // ✅ Prior "YOUR VIEW" rows: same filter + exclude totals rows.
+  const priorRowsScoped = applyReportsTo(priorScoped.rows).filter((r: any) => !isTotalsUiRow(r));
 
   const priorByTechId = new Map<string, any>();
-  // Store the FULL prior UI row (includes raw_metrics_json / computed_metrics_json)
-  // so the drawer can show fact inputs + compute deltas correctly.
   priorRowsScoped.forEach((r: any) => {
     priorByTechId.set(String(r.tech_id), r);
   });
@@ -698,6 +716,7 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
   const nonOkRowsBanded = applyBandsToRows(nonOkRows, rubricMap, { tnpsKey, ftrKey, toolKey });
 
   const reportsToMap = new Map<string, string>();
+  // Use scoped.rows (can include totals), but totals won’t have reports_to_person_id anyway.
   (scoped.rows ?? []).forEach((r: any) => {
     if (!r.reports_to_person_id) return;
     const id = String(r.reports_to_person_id);
@@ -754,11 +773,11 @@ export default async function MetricsReportsPage({ searchParams }: { searchParam
       </Card>
 
       <ReportSummaryTiles
-        // MUTABLE (table shape)
+        // MUTABLE (table scope)
         rows={filteredRows as any}
         priorRows={priorRowsScoped as any}
 
-        // CONSTANT (org totals, ALL)
+        // CONSTANT (org snapshot: ALL scope) — includes totals row in payload
         orgRows={scoped.rows as any}
         priorOrgRows={priorScoped.rows as any}
 
