@@ -1,251 +1,115 @@
+// RUN THIS
+// Replace the entire file:
+// apps/web/src/features/dispatch-console/page.tsx
+
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PageShell, PageHeader } from "@/components/ui/PageShell";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { TextInput } from "@/components/ui/TextInput";
 import { Notice } from "@/components/ui/Notice";
-import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 
 import { useOrg } from "@/state/org";
 import { useSession } from "@/state/session";
 import { todayInNY } from "@/features/route-lock/calendar/lib/fiscalMonth";
 
-type EventType = "ALL" | "CALL_OUT" | "ADD_IN" | "BP_LOW" | "INCIDENT" | "NOTE" | "TECH_MOVE";
-type EntryType = Exclude<EventType, "ALL">;
+import type { EntryType, EventType, WorkforceRow, WorkforceTab, LogRow } from "./lib/types";
+import { EVENT_ORDER } from "./lib/labels";
 
-type WorkforceTab = "SCHEDULED" | "NOT_SCHEDULED";
+import { useDispatchConsoleData } from "./hooks/useDispatchConsoleData";
+import { useDispatchConsoleDraft } from "./hooks/useDispatchConsoleDraft";
 
-type WorkforceRow = {
-  pc_org_id: string;
-  shift_date: string;
-
-  assignment_id: string;
-  person_id: string;
-  tech_id: string;
-  affiliation_id: string | null;
-
-  full_name: string;
-  co_name: string | null;
-
-  planned_route_id: string | null;
-  planned_route_name: string | null;
-
-  planned_start_time: string | null;
-  planned_end_time: string | null;
-
-  planned_hours: number | null;
-  planned_units: number | null;
-
-  sv_built: boolean | null;
-  sv_route_id: string | null;
-  sv_route_name: string | null;
-
-  checked_in_at: string | null;
-
-  schedule_as_of: string | null;
-  sv_as_of: string | null;
-  check_in_as_of: string | null;
-};
-
-type DaySummary = {
-  pc_org_id: string;
-  shift_date: string;
-
-  tech_count: number;
-  built_count: number;
-  checked_in_count: number;
-
-  call_out_count: number;
-  add_in_count: number;
-  bp_low_count?: number;
-  incident_count: number;
-  note_count: number;
-
-  net_capacity_delta_routes: number;
-
-  quota_hours: number;
-  quota_units: number;
-  quota_routes_required: number;
-  quota_as_of: string | null;
-};
-
-type LogRow = {
-  dispatch_console_log_id: string;
-  pc_org_id: string;
-  shift_date: string;
-
-  // NOTE entries may be org-level (no assignment)
-  assignment_id: string | null;
-  person_id: string | null;
-  tech_id: string | null;
-  affiliation_id: string | null;
-
-  event_type: EntryType;
-  capacity_delta_routes: number;
-  message: string;
-  created_at: string;
-  created_by_user_id: string;
-
-  created_by_name?: string | null;
-};
+import { WorkforcePanel } from "./components/WorkforcePanel";
+import { EntryBar } from "./components/EntryBar";
+import { DayLogPanel } from "./components/DayLogPanel";
 
 function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
-
-function fmtDelta(n: number) {
-  return n > 0 ? `+${n}` : `${n}`;
-}
-
-function labelForEvent(t: LogRow["event_type"]) {
-  if (t === "CALL_OUT") return "Call Out";
-  if (t === "ADD_IN") return "Add In";
-  if (t === "BP_LOW") return "BP-Low";
-  if (t === "INCIDENT") return "Incident";
-  if (t === "TECH_MOVE") return "Tech Move";
-  return "Note";
-}
-
-function labelForEntryType(t: EntryType) {
-  if (t === "CALL_OUT") return "Call Out";
-  if (t === "ADD_IN") return "Add In";
-  if (t === "BP_LOW") return "BP-Low";
-  if (t === "INCIDENT") return "Incident";
-  if (t === "TECH_MOVE") return "Tech Move";
-  return "Note";
-}
-
-function routeLabel(r: { planned_route_name?: string | null; planned_route_id?: string | null }) {
-  const name = (r.planned_route_name ?? "").trim();
-  if (name) return name;
-
-  const id = (r.planned_route_id ?? "").trim();
-  if (id) return `Route ${id.slice(0, 8)}`;
-
-  return "Unassigned";
-}
-
-function buildAutoDraft(entryType: EntryType, tech: WorkforceRow) {
-  const t = String(tech.tech_id ?? "").trim();
-  const n = String(tech.full_name ?? "").trim();
-  const r = routeLabel(tech);
-  return `${labelForEntryType(entryType)} — ${t} • ${n} • ${r}`;
-}
-
-const EVENT_ORDER: EntryType[] = ["CALL_OUT", "ADD_IN", "BP_LOW", "INCIDENT", "TECH_MOVE", "NOTE"];
 
 export default function DispatchConsolePage() {
   const { selectedOrgId } = useOrg();
   const { userId } = useSession();
   const toast = useToast();
 
-  const [shiftDate] = useState<string>(() => todayInNY());
   const pc_org_id = selectedOrgId;
+  const [shiftDate] = useState<string>(() => todayInNY());
 
   const [workforceTab, setWorkforceTab] = useState<WorkforceTab>("SCHEDULED");
-
-  const [loadingWorkforce, setLoadingWorkforce] = useState(false);
-  const [workforce, setWorkforce] = useState<WorkforceRow[]>([]);
-  const [summary, setSummary] = useState<DaySummary | null>(null);
-
-  const [loadingNotScheduled, setLoadingNotScheduled] = useState(false);
-  const [notScheduled, setNotScheduled] = useState<WorkforceRow[]>([]);
-
   const [nameQuery, setNameQuery] = useState("");
   const [routeQuery, setRouteQuery] = useState("");
+  const [logFilter, setLogFilter] = useState<EventType>("ALL");
 
+  // Create-mode selection (page-owned; used for workforce highlight + history filter)
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
 
-  const [logFilter, setLogFilter] = useState<EventType>("ALL");
-  const [loadingLog, setLoadingLog] = useState(false);
-  const [logRows, setLogRows] = useState<LogRow[]>([]);
+  // Data hook
+  const data = useDispatchConsoleData(toast as any);
 
-  const [loadingRollup, setLoadingRollup] = useState(false);
-  const [logRollupRows, setLogRollupRows] = useState<LogRow[]>([]);
+  // Destructure to satisfy exhaustive-deps cleanly (avoid depending on entire `data` object)
+  const {
+    workforce,
+    notScheduled,
+    summary,
+    logRows,
+    logRollupRows,
+    loadingWorkforce,
+    loadingRollup,
+    loadingNotScheduled,
+    loadingLog,
+    loadWorkforce,
+    loadNotScheduled,
+    loadLog,
+    loadLogRollup,
+  } = data;
 
-  const [entryType, setEntryType] = useState<EntryType>("NOTE");
-  const [message, setMessage] = useState("");
+  const displayedWorkforce = useMemo(
+    () => (workforceTab === "SCHEDULED" ? workforce : notScheduled),
+    [workforceTab, workforce, notScheduled]
+  );
 
-  // ✅ Edit mode (row -> top card, Add -> Save)
-  const [editingLogId, setEditingLogId] = useState<string | null>(null);
-
-  const lastAutoDraftRef = useRef<string>("");
-
-  const clearDraft = useCallback(() => {
-    setMessage("");
-    lastAutoDraftRef.current = "";
-    setSelectedAssignmentId(null);
-    setEditingLogId(null);
-  }, []);
-
-  // Restrict entry types when tab = NOT_SCHEDULED
-  useEffect(() => {
-    if (workforceTab !== "NOT_SCHEDULED") return;
-    if (entryType !== "ADD_IN" && entryType !== "NOTE") {
-      setEntryType("ADD_IN");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workforceTab]);
-
-  const displayedWorkforce = workforceTab === "SCHEDULED" ? workforce : notScheduled;
-
-  const selectedTech = useMemo(() => {
+  const selectedTech: WorkforceRow | null = useMemo(() => {
     if (!selectedAssignmentId) return null;
     return displayedWorkforce.find((r) => r.assignment_id === selectedAssignmentId) ?? null;
-  }, [selectedAssignmentId, displayedWorkforce]);
+  }, [displayedWorkforce, selectedAssignmentId]);
 
-  // Only auto-draft when NOT editing
+  const draft = useDispatchConsoleDraft({
+    selectedTech,
+    initialEntryType: "NOTE",
+    selectedAssignmentId,
+    setSelectedAssignmentId,
+  } as any);
+
+  // Auto-draft on tech context change (create-mode only; edit isolated inside hook)
   useEffect(() => {
-    if (!selectedTech) return;
-    if (editingLogId) return;
+    draft.onSelectedTechContext?.();
+  }, [draft, selectedTech?.assignment_id, selectedTech?.planned_route_id, selectedTech?.planned_route_name]);
 
-    const nextAuto = buildAutoDraft(entryType, selectedTech);
-    const cur = message.trim();
-    const lastAuto = lastAutoDraftRef.current.trim();
+  // Initial loads (org/date)
+  useEffect(() => {
+    if (!pc_org_id) return;
+    void loadWorkforce(pc_org_id, shiftDate);
+    void loadLogRollup(pc_org_id, shiftDate);
+  }, [pc_org_id, shiftDate, loadWorkforce, loadLogRollup]);
 
-    const safeToReplace = cur.length === 0 || cur === lastAuto;
+  // Lazy not-scheduled
+  useEffect(() => {
+    if (!pc_org_id) return;
+    if (workforceTab !== "NOT_SCHEDULED") return;
+    void loadNotScheduled(pc_org_id, shiftDate);
+  }, [pc_org_id, shiftDate, workforceTab, loadNotScheduled]);
 
-    if (safeToReplace) {
-      setMessage(nextAuto);
-    }
-
-    lastAutoDraftRef.current = nextAuto;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTech?.assignment_id, selectedTech?.planned_route_id, selectedTech?.planned_route_name, entryType, editingLogId]);
-
-  const filteredWorkforce = useMemo(() => {
-    const qName = nameQuery.trim().toLowerCase();
-    const qRoute = routeQuery.trim().toLowerCase();
-
-    return displayedWorkforce.filter((r) => {
-      if (qName) {
-        const name = (r.full_name ?? "").toLowerCase();
-        const tech = String(r.tech_id ?? "").toLowerCase();
-        const co = (r.co_name ?? "").toLowerCase();
-        if (!name.includes(qName) && !tech.includes(qName) && !co.includes(qName)) return false;
-      }
-
-      if (qRoute) {
-        const routeName = (r.planned_route_name ?? "").toLowerCase();
-        const routeId = String(r.planned_route_id ?? "").toLowerCase();
-        const isUnassigned = !routeName.trim() && !routeId.trim();
-        const routeDisplay = routeLabel(r).toLowerCase();
-
-        if (qRoute === "unassigned" || qRoute === "none") {
-          if (!isUnassigned) return false;
-        } else {
-          if (!routeName.includes(qRoute) && !routeId.includes(qRoute) && !routeDisplay.includes(qRoute)) return false;
-        }
-      }
-
-      return true;
+  // History load (filter + selection)
+  useEffect(() => {
+    if (!pc_org_id) return;
+    void loadLog(pc_org_id, shiftDate, {
+      event_type: logFilter === "ALL" ? undefined : logFilter,
+      assignment_id: selectedAssignmentId,
     });
-  }, [displayedWorkforce, nameQuery, routeQuery]);
+  }, [pc_org_id, shiftDate, logFilter, selectedAssignmentId, loadLog]);
+
+  const panelH = "lg:h-[calc(100vh-220px)]";
 
   const chipsByAssignment = useMemo(() => {
     const m = new Map<string, Set<EntryType>>();
@@ -256,6 +120,7 @@ export default function DispatchConsolePage() {
       set.add(r.event_type as EntryType);
       m.set(aid, set);
     }
+
     const out = new Map<string, EntryType[]>();
     for (const [aid, set] of m.entries()) {
       const ordered = EVENT_ORDER.filter((t) => set.has(t));
@@ -264,196 +129,82 @@ export default function DispatchConsolePage() {
     return out;
   }, [logRollupRows]);
 
-  const loadWorkforce = useCallback(async () => {
+  const loadRefresh = useCallback(() => {
     if (!pc_org_id) return;
-
-    setLoadingWorkforce(true);
-    try {
-      const res = await fetch(
-        `/api/dispatch-console/workforce?pc_org_id=${encodeURIComponent(pc_org_id)}&shift_date=${encodeURIComponent(
-          shiftDate
-        )}`
-      );
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to load workforce");
-
-      const rows = (Array.isArray(json?.rows) ? json.rows : []) as WorkforceRow[];
-      setWorkforce(rows);
-      setSummary((json?.summary ?? null) as DaySummary | null);
-    } catch (e: any) {
-      toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to load workforce", variant: "danger" });
-      setWorkforce([]);
-      setSummary(null);
-    } finally {
-      setLoadingWorkforce(false);
-    }
-  }, [pc_org_id, shiftDate, toast]);
-
-  const loadNotScheduled = useCallback(async () => {
-    if (!pc_org_id) return;
-
-    setLoadingNotScheduled(true);
-    try {
-      const res = await fetch(
-        `/api/dispatch-console/not-scheduled?pc_org_id=${encodeURIComponent(pc_org_id)}&shift_date=${encodeURIComponent(
-          shiftDate
-        )}`
-      );
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to load not scheduled list");
-
-      setNotScheduled((Array.isArray(json?.rows) ? json.rows : []) as WorkforceRow[]);
-    } catch (e: any) {
-      toast.push({
-        title: "Dispatch Console",
-        message: e?.message ?? "Failed to load not scheduled list",
-        variant: "danger",
-      });
-      setNotScheduled([]);
-    } finally {
-      setLoadingNotScheduled(false);
-    }
-  }, [pc_org_id, shiftDate, toast]);
-
-  const loadLogRollup = useCallback(async () => {
-    if (!pc_org_id) return;
-
-    setLoadingRollup(true);
-    try {
-      const qs = new URLSearchParams();
-      qs.set("pc_org_id", pc_org_id);
-      qs.set("shift_date", shiftDate);
-
-      const res = await fetch(`/api/dispatch-console/log?${qs.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to load log rollup");
-
-      setLogRollupRows((Array.isArray(json?.rows) ? json.rows : []) as LogRow[]);
-    } catch (e: any) {
-      toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to load log rollup", variant: "danger" });
-      setLogRollupRows([]);
-    } finally {
-      setLoadingRollup(false);
-    }
-  }, [pc_org_id, shiftDate, toast]);
-
-  const loadLog = useCallback(async () => {
-    if (!pc_org_id) return;
-
-    setLoadingLog(true);
-    try {
-      const qs = new URLSearchParams();
-      qs.set("pc_org_id", pc_org_id);
-      qs.set("shift_date", shiftDate);
-      if (logFilter !== "ALL") qs.set("event_type", logFilter);
-      if (selectedAssignmentId) qs.set("assignment_id", selectedAssignmentId);
-
-      const res = await fetch(`/api/dispatch-console/log?${qs.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to load log");
-
-      setLogRows((Array.isArray(json?.rows) ? json.rows : []) as LogRow[]);
-    } catch (e: any) {
-      toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to load log", variant: "danger" });
-      setLogRows([]);
-    } finally {
-      setLoadingLog(false);
-    }
-  }, [pc_org_id, shiftDate, selectedAssignmentId, logFilter, toast]);
-
-  useEffect(() => {
-    if (!pc_org_id) return;
-    void loadWorkforce();
-    void loadLogRollup();
-  }, [pc_org_id, shiftDate, loadWorkforce, loadLogRollup]);
-
-  // Lazy load not-scheduled list only when the tab is used
-  useEffect(() => {
-    if (!pc_org_id) return;
-    if (workforceTab !== "NOT_SCHEDULED") return;
-    void loadNotScheduled();
-  }, [pc_org_id, workforceTab, loadNotScheduled]);
-
-  useEffect(() => {
-    if (!pc_org_id) return;
-    void loadLog();
-  }, [pc_org_id, shiftDate, selectedAssignmentId, logFilter, loadLog]);
-
-  const beginEdit = useCallback(
-    (row: LogRow) => {
-      setEditingLogId(row.dispatch_console_log_id);
-
-      // Editing should keep filters sane:
-      // - If the entry is tied to an assignment, select it (so Save reflects the right "context")
-      // - If it's an org-level NOTE with no assignment, clear selection
-      const aid = String(row.assignment_id ?? "").trim();
-      setSelectedAssignmentId(aid ? aid : null);
-
-      setEntryType(row.event_type);
-      setMessage(row.message ?? "");
-      lastAutoDraftRef.current = ""; // prevent auto-draft overwrite
-    },
-    []
-  );
+    void loadWorkforce(pc_org_id, shiftDate);
+    void loadLogRollup(pc_org_id, shiftDate);
+    if (workforceTab === "NOT_SCHEDULED") void loadNotScheduled(pc_org_id, shiftDate);
+    void loadLog(pc_org_id, shiftDate, {
+      event_type: logFilter === "ALL" ? undefined : logFilter,
+      assignment_id: selectedAssignmentId,
+    });
+  }, [
+    pc_org_id,
+    shiftDate,
+    workforceTab,
+    logFilter,
+    selectedAssignmentId,
+    loadWorkforce,
+    loadNotScheduled,
+    loadLog,
+    loadLogRollup,
+  ]);
 
   const submit = useCallback(async () => {
     if (!pc_org_id) return;
 
-    const msg = message.trim();
+    const msg = String(draft.message ?? "").trim();
     if (!msg) {
       toast.push({ title: "Dispatch Console", message: "Message is required.", variant: "warning" });
       return;
     }
 
-    // For non-NOTE, we require an assignment selection (same rule as before)
-    if (!editingLogId) {
-      if (entryType !== "NOTE" && !selectedAssignmentId) {
-        toast.push({ title: "Dispatch Console", message: "Select a technician first.", variant: "warning" });
-        return;
-      }
-    } else {
-      // When editing, if the (new) event type is non-NOTE, require assignment too.
-      if (entryType !== "NOTE" && !selectedAssignmentId) {
-        toast.push({ title: "Dispatch Console", message: "Select a technician first.", variant: "warning" });
-        return;
-      }
-    }
-
-    try {
-      if (editingLogId) {
+    // EDIT MODE: NOTE-only edits (message-only)
+    if (draft.editingLogId) {
+      try {
         const res = await fetch("/api/dispatch-console/log", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            dispatch_console_log_id: editingLogId,
+            dispatch_console_log_id: draft.editingLogId,
             pc_org_id,
-            event_type: entryType,
+            event_type: "NOTE",
+            assignment_id: draft.effectiveAssignmentId ?? null,
             message: msg,
           }),
         });
 
         const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to save log entry");
+        if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to save note");
 
-        // Clear edit mode
-        setEditingLogId(null);
-        setMessage("");
-        lastAutoDraftRef.current = "";
+        draft.cancelEdit();
 
-        await loadLog();
-        await loadLogRollup();
-        return;
+        await loadLog(pc_org_id, shiftDate, {
+          event_type: logFilter === "ALL" ? undefined : logFilter,
+          assignment_id: selectedAssignmentId,
+        });
+        await loadLogRollup(pc_org_id, shiftDate);
+      } catch (e: any) {
+        toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to save note", variant: "danger" });
       }
+      return;
+    }
 
-      // Create (POST)
+    // CREATE MODE
+    if (draft.entryType !== "NOTE" && !draft.effectiveAssignmentId) {
+      toast.push({ title: "Dispatch Console", message: "Select a technician first.", variant: "warning" });
+      return;
+    }
+
+    try {
       const res = await fetch("/api/dispatch-console/log", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           pc_org_id,
           shift_date: shiftDate,
-          assignment_id: entryType === "NOTE" ? (selectedAssignmentId ?? null) : selectedAssignmentId,
-          event_type: entryType,
+          assignment_id: draft.entryType === "NOTE" ? (draft.effectiveAssignmentId ?? null) : draft.effectiveAssignmentId,
+          event_type: draft.entryType,
           message: msg,
         }),
       });
@@ -461,36 +212,63 @@ export default function DispatchConsolePage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to add log entry");
 
-      setMessage("");
-      lastAutoDraftRef.current = "";
+      draft.clearDraft();
 
-      await loadWorkforce();
-      if (workforceTab === "NOT_SCHEDULED") {
-        await loadNotScheduled();
-      }
-      await loadLog();
-      await loadLogRollup();
-    } catch (e: any) {
-      toast.push({
-        title: "Dispatch Console",
-        message: e?.message ?? (editingLogId ? "Failed to save entry" : "Failed to add log entry"),
-        variant: "danger",
+      await loadWorkforce(pc_org_id, shiftDate);
+      if (workforceTab === "NOT_SCHEDULED") await loadNotScheduled(pc_org_id, shiftDate);
+
+      await loadLog(pc_org_id, shiftDate, {
+        event_type: logFilter === "ALL" ? undefined : logFilter,
+        assignment_id: selectedAssignmentId,
       });
+      await loadLogRollup(pc_org_id, shiftDate);
+    } catch (e: any) {
+      toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to add log entry", variant: "danger" });
     }
   }, [
     pc_org_id,
     shiftDate,
+    workforceTab,
+    logFilter,
     selectedAssignmentId,
-    entryType,
-    message,
-    editingLogId,
     toast,
+    draft,
     loadWorkforce,
     loadNotScheduled,
     loadLog,
     loadLogRollup,
-    workforceTab,
   ]);
+
+  const deleteNote = useCallback(
+    async (row: LogRow) => {
+      if (!pc_org_id) return;
+
+      try {
+        const res = await fetch("/api/dispatch-console/log", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            dispatch_console_log_id: row.dispatch_console_log_id,
+            pc_org_id,
+          }),
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to delete note");
+
+        if (draft.editingLogId === row.dispatch_console_log_id) draft.cancelEdit();
+
+        await loadLog(pc_org_id, shiftDate, {
+          event_type: logFilter === "ALL" ? undefined : logFilter,
+          assignment_id: selectedAssignmentId,
+        });
+        await loadLogRollup(pc_org_id, shiftDate);
+      } catch (e: any) {
+        toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to delete note", variant: "danger" });
+      }
+    },
+    [pc_org_id, shiftDate, logFilter, selectedAssignmentId, toast, draft, loadLog, loadLogRollup]
+  );
 
   if (!pc_org_id) {
     return (
@@ -503,303 +281,77 @@ export default function DispatchConsolePage() {
     );
   }
 
-  const panelH = "lg:h-[calc(100vh-220px)]";
-
-  const leftEmptyText =
-    workforceTab === "SCHEDULED" ? "No scheduled techs match your filters." : "No roster techs are not scheduled today.";
-
-  const entryOptionsScheduled = [
-    { value: "CALL_OUT" as const, label: "Call Out" },
-    { value: "ADD_IN" as const, label: "Add In" },
-    { value: "BP_LOW" as const, label: "BP-Low" },
-    { value: "INCIDENT" as const, label: "Incident" },
-    { value: "TECH_MOVE" as const, label: "Tech Move" },
-    { value: "NOTE" as const, label: "Note" },
-  ];
-
-  const entryOptionsNotScheduled = [
-    { value: "ADD_IN" as const, label: "Add In" },
-    { value: "NOTE" as const, label: "Note" },
-  ];
-
-  const canSubmit = Boolean(message.trim()) && (entryType === "NOTE" || Boolean(selectedAssignmentId));
-
   return (
     <PageShell>
       <PageHeader title="Dispatch Console" subtitle="Daily workforce + immutable dispatch chronicle." />
 
-      {/* ✅ Even split: 6 / 6 */}
       <div className="grid gap-4 lg:grid-cols-12">
-        {/* LEFT */}
-        <Card className={cls("lg:col-span-6 flex flex-col", panelH)}>
-          <div
-            className="sticky top-0 z-10 border-b bg-[var(--to-surface)] p-4"
-            style={{ borderColor: "var(--to-border)" }}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold">Workforce</div>
-                <div className="text-xs text-[var(--to-ink-muted)]">{shiftDate}</div>
-              </div>
+        <WorkforcePanel
+          panelH={panelH}
+          shiftDate={shiftDate}
+          workforceTab={workforceTab}
+          setWorkforceTab={(v) => {
+            setWorkforceTab(v);
+            // create-only selection — clear highlight; do not touch edit mode
+            setSelectedAssignmentId(null);
+          }}
+          loadingWorkforce={loadingWorkforce}
+          loadingRollup={loadingRollup}
+          loadingNotScheduled={loadingNotScheduled}
+          loadRefresh={loadRefresh}
+          nameQuery={nameQuery}
+          setNameQuery={setNameQuery}
+          routeQuery={routeQuery}
+          setRouteQuery={setRouteQuery}
+          summary={summary}
+          displayedWorkforce={displayedWorkforce}
+          selectedAssignmentId={selectedAssignmentId}
+          onSelectAssignment={(aid) => {
+            if (draft.editingLogId) return; // edit isolated
+            setSelectedAssignmentId(aid);
+          }}
+          chipsByAssignment={chipsByAssignment}
+        />
 
-              <div
-                className="flex items-center gap-2 rounded-full border bg-[var(--to-surface)] p-1"
-                style={{ borderColor: "var(--to-border)" }}
-              >
-                <SegmentedControl<WorkforceTab>
-                  value={workforceTab}
-                  onChange={(v) => {
-                    setWorkforceTab(v);
-                    setSelectedAssignmentId(null);
-                    lastAutoDraftRef.current = "";
-                    setEditingLogId(null);
-                  }}
-                  size="sm"
-                  options={[
-                    { value: "SCHEDULED", label: "Scheduled" },
-                    { value: "NOT_SCHEDULED", label: "Not scheduled" },
-                  ]}
-                />
-                <Button
-                  variant="secondary"
-                  className="h-8 px-3 text-sm"
-                  onClick={() => {
-                    void loadWorkforce();
-                    void loadLogRollup();
-                    if (workforceTab === "NOT_SCHEDULED") void loadNotScheduled();
-                  }}
-                  disabled={loadingWorkforce || loadingRollup || loadingNotScheduled}
-                >
-                  {loadingWorkforce || loadingRollup || loadingNotScheduled ? "Refreshing…" : "Refresh"}
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <TextInput
-                value={nameQuery}
-                onChange={(e) => setNameQuery(e.target.value)}
-                placeholder="Search name / tech id…"
-              />
-              <TextInput
-                value={routeQuery}
-                onChange={(e) => setRouteQuery(e.target.value)}
-                placeholder="Filter route… (name/id/unassigned)"
-              />
-            </div>
-
-            {summary ? (
-              <div className="mt-3 flex flex-nowrap gap-2 overflow-hidden text-[11px]">
-                <Badge className="text-[11px]">{summary.call_out_count} call outs</Badge>
-                <Badge className="text-[11px]">{summary.add_in_count} add ins</Badge>
-                <Badge className="text-[11px]">{(summary.bp_low_count ?? 0)} BP-low</Badge>
-                <Badge className="text-[11px]">{summary.incident_count} incidents</Badge>
-
-                {(() => {
-                  const cap = summary.tech_count + summary.net_capacity_delta_routes;
-                  const below = cap < summary.quota_routes_required;
-                  return (
-                    <Badge className="text-[11px]" variant={below ? "danger" : "neutral"}>
-                      Techs {cap}
-                    </Badge>
-                  );
-                })()}
-
-                <Badge className="text-[11px]">Quota {summary.quota_routes_required} routes</Badge>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex-1 overflow-auto px-4 py-4">
-            {filteredWorkforce.length === 0 ? (
-              <div className="text-sm text-[var(--to-ink-muted)]">{leftEmptyText}</div>
-            ) : (
-              <div className="grid gap-2">
-                {filteredWorkforce.map((r) => {
-                  const active = r.assignment_id === selectedAssignmentId;
-                  const chips = chipsByAssignment.get(r.assignment_id) ?? [];
-
-                  return (
-                    <button
-                      key={r.assignment_id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedAssignmentId(r.assignment_id);
-                        // Selecting a tech should not silently keep edit mode
-                        setEditingLogId(null);
-                      }}
-                      className={cls(
-                        "w-full rounded-xl border px-3 py-2 text-left transition",
-                        active
-                          ? "ring-2 ring-[var(--to-focus)] bg-[var(--to-row-hover)]"
-                          : "hover:bg-[var(--to-row-hover)]"
-                      )}
-                      style={{ borderColor: "var(--to-border)" }}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">
-                            {r.full_name}{" "}
-                            <span className="text-xs text-[var(--to-ink-muted)]">({r.tech_id})</span>
-                          </div>
-
-                          <div className="mt-0.5 text-xs text-[var(--to-ink-muted)]">
-                            {r.planned_hours ?? "—"}h / {r.planned_units ?? "—"}u • {routeLabel(r)}
-                          </div>
-                        </div>
-
-                        {chips.length ? (
-                          <div className="flex flex-wrap justify-end gap-1.5">
-                            {chips.map((t) => (
-                              <Badge key={t}>{labelForEvent(t as any)}</Badge>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div
-            className="sticky bottom-0 border-t bg-[var(--to-surface)] px-4 py-2"
-            style={{ borderColor: "var(--to-border)" }}
-          >
-            <div className="text-[11px] text-[var(--to-ink-muted)]"> </div>
-          </div>
-        </Card>
-
-        {/* RIGHT */}
         <div className={cls("lg:col-span-6 grid gap-4", panelH)}>
-          {/* TOP: entry bar (Add / Save) */}
-          <Card className="border" style={{ borderColor: "var(--to-border)" }}>
-            <div className="p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <SegmentedControl<EntryType>
-                  value={entryType}
-                  onChange={setEntryType}
-                  size="sm"
-                  options={workforceTab === "NOT_SCHEDULED" ? entryOptionsNotScheduled : entryOptionsScheduled}
-                />
+          <EntryBar
+            workforceTab={workforceTab}
+            entryType={draft.entryType}
+            setEntryType={draft.setEntryType}
+            message={draft.message}
+            setMessage={draft.setMessage}
+            editing={draft.editing}
+            canSubmit={draft.canSubmit}
+            onSubmit={submit}
+            onClearOrCancel={() => {
+              if (draft.editingLogId) draft.cancelEdit();
+              else draft.clearDraft();
+            }}
+          />
 
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" className="h-9 px-3" onClick={clearDraft}>
-                    {editingLogId ? "Cancel" : "Clear"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1">
-                  <TextInput
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder={editingLogId ? "Edit the dispatch note…" : "Type the dispatch note…"}
-                  />
-                </div>
-
-                <Button onClick={submit} disabled={!canSubmit} className="h-9 px-4">
-                  {editingLogId ? "Save" : "Add"}
-                </Button>
-              </div>
-
-              {editingLogId ? (
-                <div className="mt-2 text-xs text-[var(--to-ink-muted)]">
-                  Editing entry • only the creator can save changes
-                </div>
-              ) : null}
-            </div>
-          </Card>
-
-          {/* Day log */}
-          <Card className="flex flex-col min-h-0">
-            <div
-              className="sticky top-0 z-10 border-b bg-[var(--to-surface)] p-4"
-              style={{ borderColor: "var(--to-border)" }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Day log</div>
-                  <div className="text-xs text-[var(--to-ink-muted)]">{shiftDate}</div>
-                </div>
-
-                <Button variant="secondary" className="h-8 px-3 text-sm" onClick={() => loadLog()} disabled={loadingLog}>
-                  {loadingLog ? "Refreshing…" : "Refresh"}
-                </Button>
-              </div>
-
-              <div className="mt-3">
-                <SegmentedControl<EventType>
-                  value={logFilter}
-                  onChange={setLogFilter}
-                  size="sm"
-                  options={[
-                    { value: "ALL", label: "All" },
-                    { value: "CALL_OUT", label: "Call Out" },
-                    { value: "ADD_IN", label: "Add In" },
-                    { value: "BP_LOW", label: "BP-Low" },
-                    { value: "INCIDENT", label: "Incident" },
-                    { value: "TECH_MOVE", label: "Tech Move" },
-                    { value: "NOTE", label: "Note" },
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto px-4 py-4 min-h-0">
-              {logRows.length === 0 ? (
-                <div className="text-sm text-[var(--to-ink-muted)]">No entries yet.</div>
-              ) : (
-                <div className="grid gap-2">
-                  {logRows.map((r) => {
-                    const who = (r.created_by_name ?? "").trim();
-                    const whoDisplay = who.length ? who : "Unknown";
-                    const canEdit = !!userId && String(r.created_by_user_id) === String(userId);
-
-                    return (
-                      <div
-                        key={r.dispatch_console_log_id}
-                        className="rounded-xl border px-3 py-2"
-                        style={{ borderColor: "var(--to-border)" }}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge>{labelForEvent(r.event_type)}</Badge>
-                            {r.capacity_delta_routes !== 0 ? <Badge>Δ {fmtDelta(r.capacity_delta_routes)}</Badge> : null}
-                            <span className="text-xs text-[var(--to-ink-muted)]">
-                              {new Date(r.created_at).toLocaleTimeString()} • {whoDisplay}
-                            </span>
-                          </div>
-
-                          {canEdit ? (
-                            <Button
-                              variant="secondary"
-                              className="h-7 px-3 text-xs"
-                              onClick={() => beginEdit(r)}
-                            >
-                              Edit
-                            </Button>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-1 text-sm leading-snug">{r.message}</div>
-                        <div className="mt-1 text-xs text-[var(--to-ink-muted)]">{r.tech_id ?? ""}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div
-              className="sticky bottom-0 border-t bg-[var(--to-surface)] px-4 py-2"
-              style={{ borderColor: "var(--to-border)" }}
-            >
-              <div className="text-[11px] text-[var(--to-ink-muted)]"> </div>
-            </div>
-          </Card>
+          <DayLogPanel
+            panelH={panelH}
+            shiftDate={shiftDate}
+            logFilter={logFilter}
+            setLogFilter={setLogFilter}
+            loadingLog={loadingLog}
+            onRefresh={() =>
+              loadLog(pc_org_id, shiftDate, {
+                event_type: logFilter === "ALL" ? undefined : logFilter,
+                assignment_id: selectedAssignmentId,
+              })
+            }
+            logRows={logRows}
+            userId={userId}
+            onBeginEdit={(row) => {
+              if (row.event_type !== "NOTE") return; // guardrail
+              draft.beginEdit(row);
+            }}
+            onDeleteNote={(row) => {
+              if (row.event_type !== "NOTE") return; // guardrail
+              void deleteNote(row);
+            }}
+          />
         </div>
       </div>
     </PageShell>
