@@ -4,6 +4,7 @@
 
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 import MetricsConsoleGrid from "@/features/metrics-admin/components/MetricsConsoleGrid";
 
@@ -17,78 +18,50 @@ type InitialPayload = {
   rubricRows: any[];
 };
 
-export default async function MetricsAdminPage() {
-  const supabase = await supabaseServer();
+async function isOwner(sb: any) {
+  try {
+    const { data, error } = await sb.rpc("is_owner");
+    if (error) return false;
+    return !!data;
+  } catch {
+    return false;
+  }
+}
 
-  // -------------------------------------------------------------------
-  // Auth Gate
-  // -------------------------------------------------------------------
+async function hasAnyRole(admin: any, auth_user_id: string, roleKeys: string[]) {
+  const { data, error } = await admin.from("user_roles").select("role_key").eq("auth_user_id", auth_user_id);
+  if (error) return false;
+  const roles = (data ?? []).map((r: any) => String(r?.role_key ?? "")).filter(Boolean);
+  return roles.some((rk: string) => roleKeys.includes(rk));
+}
+
+export default async function MetricsAdminPage() {
+  const sb = await supabaseServer();
+
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sb.auth.getUser();
 
   if (!user) redirect("/login");
 
-  // -------------------------------------------------------------------
-  // Owner Gate
-  // -------------------------------------------------------------------
-  const { data: isOwnerData, error: ownerError } = await supabase.rpc("is_owner");
-  if (ownerError || !isOwnerData) redirect("/");
+  // ✅ Admin+ OR Owner gate (matches your “admin + owner always” requirement)
+  const admin = supabaseAdmin();
+  const owner = await isOwner(sb);
+  const elevated = owner || (await hasAnyRole(admin, user.id, ["admin", "dev", "director", "vp"]));
+  if (!elevated) redirect("/");
 
-  // -------------------------------------------------------------------
-  // Fetch KPI Definitions (global)
-  // -------------------------------------------------------------------
-  const { data: kpiDefs, error: kpiError } = await supabase
-    .from("metrics_kpi_def")
-    .select("*")
-    .order("kpi_key");
-
-  if (kpiError) {
-    console.error("Failed to load KPI definitions:", {
-      message: kpiError.message,
-      code: (kpiError as any).code,
-      details: (kpiError as any).details,
-      hint: (kpiError as any).hint,
-    });
-  }
-
-  // -------------------------------------------------------------------
-  // Fetch Class/KPI Config (global)
-  // -------------------------------------------------------------------
-  const { data: classConfig, error: configError } = await supabase
-    .from("metrics_class_kpi_config")
-    .select("*")
-    .order("class_type")
-    .order("kpi_key");
-
-  if (configError) {
-    console.error("Failed to load class config:", {
-      message: configError.message,
-      code: (configError as any).code,
-      details: (configError as any).details,
-      hint: (configError as any).hint,
-    });
-  }
-
-  // -------------------------------------------------------------------
-  // Fetch Rubric Rows (GLOBAL by KPI)
-  // ✅ Source of truth is metrics_kpi_rubric (NOT class-driven)
-  // -------------------------------------------------------------------
-  const { data: rubData, error: rubricError } = await supabase
-    .from("metrics_kpi_rubric")
-    .select("*")
-    .eq("is_active", true)
-    .order("kpi_key")
-    .order("band_key");
-
-  if (rubricError) {
-    console.error("Failed to load rubric rows:", {
-      message: rubricError.message,
-      code: (rubricError as any).code,
-      details: (rubricError as any).details,
-      hint: (rubricError as any).hint,
-    });
-  }
+  // ✅ Use service role reads (stable; avoids future RLS drift)
+  const [{ data: kpiDefs }, { data: classConfig }, { data: rubData }] = await Promise.all([
+    admin.from("metrics_kpi_def").select("*").order("kpi_key"),
+    admin.from("metrics_class_kpi_config").select("*").order("class_type").order("kpi_key"),
+    // ✅ Hydrate legacy rows: treat NULL as active
+    admin
+      .from("metrics_kpi_rubric")
+      .select("*")
+      .or("is_active.is.null,is_active.eq.true")
+      .order("kpi_key")
+      .order("band_key"),
+  ]);
 
   const initial: InitialPayload = {
     kpiDefs: kpiDefs ?? [],

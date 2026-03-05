@@ -1,4 +1,7 @@
+// RUN THIS
+// Replace the entire file:
 // apps/web/src/app/api/admin/metrics-colors/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -8,37 +11,60 @@ export const runtime = "nodejs";
 const TABLE = "metrics_band_style_selection";
 const GLOBAL_SELECTION_KEY = "GLOBAL";
 
-// -------------------------------------------------------------
-// Owner Gate (auth via session client)
-// -------------------------------------------------------------
-async function ownerGate() {
-  const sb = await supabaseServer();
+async function isOwner(sb: any) {
+  try {
+    const { data, error } = await sb.rpc("is_owner");
+    if (error) return false;
+    return !!data;
+  } catch {
+    return false;
+  }
+}
 
+async function hasAnyRole(admin: any, auth_user_id: string, roleKeys: string[]) {
+  const { data, error } = await admin.from("user_roles").select("role_key").eq("auth_user_id", auth_user_id);
+  if (error) return false;
+  const roles = (data ?? []).map((r: any) => String(r?.role_key ?? "")).filter(Boolean);
+  return roles.some((rk: string) => roleKeys.includes(rk));
+}
+
+async function elevatedGate() {
+  const sb = await supabaseServer();
   const {
     data: { user },
   } = await sb.auth.getUser();
 
   if (!user) {
-    return { ok: false as const, sb, status: 401, error: "Unauthorized" };
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "unauthorized" }, { status: 401 }),
+    };
   }
 
-  const { data: isOwner, error } = await sb.rpc("is_owner");
-  if (error || !isOwner) {
-    return { ok: false as const, sb, status: 403, error: "Forbidden" };
+  const admin = supabaseAdmin();
+  const uid = user.id;
+
+  const owner = await isOwner(sb);
+  const elevated = owner || (await hasAnyRole(admin, uid, ["admin", "dev", "director", "vp"]));
+
+  if (!elevated) {
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "forbidden" }, { status: 403 }),
+    };
   }
 
-  return { ok: true as const };
+  return { ok: true as const, admin };
 }
 
 // -------------------------------------------------------------
 // GET — return active preset key (global row)
 // -------------------------------------------------------------
 export async function GET() {
-  const gate = await ownerGate();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const gate = await elevatedGate();
+  if (!gate.ok) return gate.res;
 
-  // IMPORTANT: supabaseAdmin is a FUNCTION in this repo, so call it.
-  const admin = await supabaseAdmin();
+  const admin = gate.admin;
 
   const { data, error } = await admin
     .from(TABLE)
@@ -60,10 +86,10 @@ export async function GET() {
 // POST — overwrite global selection (delete+insert avoids PK-update issues)
 // -------------------------------------------------------------
 export async function POST(req: NextRequest) {
-  const gate = await ownerGate();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  const gate = await elevatedGate();
+  if (!gate.ok) return gate.res;
 
-  const admin = await supabaseAdmin();
+  const admin = gate.admin;
 
   const body = await req.json().catch(() => null);
   const presetKey = String(body?.preset_key ?? "").trim();
@@ -72,15 +98,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing preset_key" }, { status: 400 });
   }
 
-  // Clear existing GLOBAL row (if any)
   const { error: delErr } = await admin.from(TABLE).delete().eq("selection_key", GLOBAL_SELECTION_KEY);
-
   if (delErr) {
     console.error("Selection delete error:", delErr);
     return NextResponse.json({ error: "Failed to clear selection" }, { status: 500 });
   }
 
-  // Insert new GLOBAL row
   const { error: insErr } = await admin.from(TABLE).insert([
     {
       selection_key: GLOBAL_SELECTION_KEY,

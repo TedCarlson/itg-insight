@@ -46,9 +46,9 @@ function kpiKeyFromDef(d: AnyRow): string {
   return asText(d?.kpi_key || d?.kpiKey || d?.key).trim();
 }
 
-function kpiLabelFor(kpiKey: string, kpiDefsByKey: Record<string, AnyRow>): string {
-  const def = kpiDefsByKey[kpiKey];
+function kpiGlobalLabel(def: AnyRow | null | undefined, kpiKey: string): string {
   const label =
+    asText(def?.customer_label) ||
     asText(def?.label) ||
     asText(def?.kpi_label) ||
     asText(def?.display_label) ||
@@ -91,7 +91,6 @@ function rubricIssueSummary(rows: AnyRow[]): { level: "ok" | "warn"; text: strin
 /**
  * ✅ GLOBAL (KPI-anchored) rubric normalization:
  * Ensure each KPI has all band rows present (kpi_key + band_key).
- * Preserves any extra columns present on existing rows (ids, timestamps, is_active, etc.).
  */
 function ensureGlobalRubricBands(allRubrics: AnyRow[], kpiKeys: string[]): AnyRow[] {
   const idx = new Map<string, AnyRow>();
@@ -120,7 +119,7 @@ function ensureGlobalRubricBands(allRubrics: AnyRow[], kpiKeys: string[]): AnyRo
     }
   }
 
-  // Keep any rubric rows for KPIs NOT in kpiKeys untouched (future-proof)
+  // Keep any rubric rows for KPIs NOT in kpiKeys untouched
   for (const r of allRubrics ?? []) {
     const kk = asText(r.kpi_key);
     if (!kk) continue;
@@ -171,7 +170,6 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
   const cfgKeyHints = useMemo(() => {
     const sample = (classConfig ?? [])[0] ?? null;
 
-    // ONE checkbox: “Show in report”
     const showKey =
       firstExistingKey(sample, ["in_report", "show_in_report", "is_in_report"]) ??
       firstExistingKey(sample, ["is_enabled", "enabled", "is_active", "active"]);
@@ -184,10 +182,10 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
       "target_threshold",
       "stretch_threshold",
     ]);
-    const labelOverrideKey = firstExistingKey(sample, ["label_override", "kpi_label", "display_label", "label"]);
     const tieKey = firstExistingKey(sample, ["is_tiebreaker", "tie_breaker", "is_tie_breaker"]);
 
-    return { showKey, weightKey, orderKey, thresholdKey, labelOverrideKey, tieKey };
+    // IMPORTANT: label is GLOBAL only; do NOT discover label override key.
+    return { showKey, weightKey, orderKey, thresholdKey, tieKey };
   }, [classConfig]);
 
   const cfgByClassAndKpi = useMemo(() => {
@@ -220,7 +218,6 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
     return map;
   }, [rubricRows]);
 
-  // Render ALL KPI defs as rows for the active class.
   const rowsForActive = useMemo(() => {
     const out = allKpiKeys.map((kpiKey) => {
       const cfg = cfgByClassAndKpi[`${activeClass}::${kpiKey}`] ?? null;
@@ -258,6 +255,19 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
     return Number(a !== kpiDefs.length) + Number(b !== classConfig.length) + Number(c !== rubricRows.length);
   }, [initial, kpiDefs.length, classConfig.length, rubricRows.length]);
 
+  function upsertKpiDef(kpiKey: string, patch: Partial<AnyRow>) {
+    setKpiDefs((prev) => {
+      const idx = prev.findIndex((d) => kpiKeyFromDef(d) === kpiKey);
+      if (idx < 0) return prev;
+
+      const cur = prev[idx];
+      const next = { ...cur, ...patch };
+      const copy = [...prev];
+      copy[idx] = next;
+      return copy;
+    });
+  }
+
   function upsertClassCfg(kpiKey: string, patch: Partial<AnyRow>) {
     setClassConfig((prev) => {
       const idx = prev.findIndex(
@@ -278,7 +288,6 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
     });
   }
 
-  // Tie-breaker: exactly ONE per class. If column doesn't exist, UI shows "—".
   function setTieBreakerForClass(kpiKey: string) {
     const tieKey = cfgKeyHints.tieKey;
     if (!tieKey) return;
@@ -316,9 +325,6 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
     });
   }
 
-  /**
-   * ✅ Ensure rubric band rows exist (global by KPI)
-   */
   function ensureRubricBandRowsForKpi(kpiKey: string) {
     setRubricRows((prev) => {
       const existing = new Set(
@@ -342,9 +348,6 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
     });
   }
 
-  /**
-   * ✅ Update a single global rubric cell (kpi_key + band_key)
-   */
   function updateRubricCell(
     kpiKey: string,
     bandKey: BandKey,
@@ -355,7 +358,7 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
       prev.map((r) => {
         if (asText(r.kpi_key) !== kpiKey) return r;
         if (asText(r.band_key).toUpperCase() !== bandKey) return r;
-        if (!(field in r)) return { ...r, [field]: value }; // tolerate missing field in existing row shapes
+        if (!(field in r)) return { ...r, [field]: value };
         return { ...r, [field]: value };
       })
     );
@@ -367,7 +370,6 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
     setSavedAt(null);
 
     try {
-      // ✅ Global rubric: ensure full band set per KPI before save
       const normalizedRubrics = ensureGlobalRubricBands(rubricRows, allKpiKeys);
 
       const res = await fetch("/api/admin/metrics-config", {
@@ -454,7 +456,7 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
             <thead className="bg-muted/40">
               <tr className="text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2 text-left">KPI</th>
-                <th className="px-3 py-2 text-left">Label</th>
+                <th className="px-3 py-2 text-left">Label (Global)</th>
                 <th className="px-3 py-2 text-center">Show</th>
                 <th className="px-3 py-2 text-right">Weight</th>
                 <th className="px-3 py-2 text-right">Order</th>
@@ -467,8 +469,9 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
 
             <tbody>
               {rowsForActive.map(({ kpiKey, cfg }) => {
-                const label = kpiLabelFor(kpiKey, kpiDefsByKey);
-                const { showKey, weightKey, orderKey, thresholdKey, labelOverrideKey, tieKey } = cfgKeyHints;
+                const def = kpiDefsByKey[kpiKey] ?? null;
+                const label = kpiGlobalLabel(def, kpiKey);
+                const { showKey, weightKey, orderKey, thresholdKey, tieKey } = cfgKeyHints;
 
                 const show = showKey ? (cfg ? asBool(cfg[showKey]) : false) : false;
                 const weight = weightKey ? (cfg ? toNumberOrNull(cfg[weightKey]) : null) : null;
@@ -488,15 +491,13 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
                       <td className="px-3 py-2 font-mono text-xs">{kpiKey}</td>
 
                       <td className="px-3 py-2">
-                        {labelOverrideKey ? (
-                          <input
-                            className="h-8 w-full rounded-md border bg-background px-2 text-sm"
-                            value={asText((cfg?.[labelOverrideKey] ?? "") || label)}
-                            onChange={(e) => upsertClassCfg(kpiKey, { [labelOverrideKey]: e.target.value })}
-                          />
-                        ) : (
-                          <div className="text-sm">{label}</div>
-                        )}
+                        <input
+                          className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                          value={asText(def?.customer_label ?? "") || label}
+                          onChange={(e) => upsertKpiDef(kpiKey, { customer_label: e.target.value })}
+                          placeholder={asText(def?.label ?? "") || kpiKey}
+                          title="Global label (stored on metrics_kpi_def.customer_label)"
+                        />
                       </td>
 
                       <td className="px-3 py-2 text-center">
@@ -540,19 +541,16 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
                       <td className="px-3 py-2 text-right">
                         {thresholdKey ? (
                           <input
-                            className="h-8 w-28 rounded-md border bg-background px-2 text-right tabular-nums"
+                            className="h-8 w-24 rounded-md border bg-background px-2 text-right tabular-nums"
                             inputMode="decimal"
                             value={thresholdVal ?? ""}
-                            onChange={(e) =>
-                              upsertClassCfg(kpiKey, { [thresholdKey]: toNumberOrNull(e.target.value) })
-                            }
+                            onChange={(e) => upsertClassCfg(kpiKey, { [thresholdKey]: toNumberOrNull(e.target.value) })}
                           />
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
 
-                      {/* Tie-breaker */}
                       <td className="px-3 py-2 text-center">
                         {tieKey ? (
                           <input
@@ -697,8 +695,8 @@ export default function MetricsConsoleGrid({ initial }: { initial: InitialPayloa
       <MetricsColorsDrawer open={colorsDrawerOpen} onOpenChange={setColorsDrawerOpen} />
 
       <div className="text-xs text-muted-foreground">
-        Note: All KPIs appear in every class. “Show” controls report inclusion per class. Weights/thresholds accept decimals.
-        Rubrics are global by KPI (not class-anchored). Tie-breaker is single-select per class (if the DB column exists).
+        Note: Label is GLOBAL (metrics_kpi_def). “Show” controls inclusion per class. Rubrics are global by KPI (not
+        class-anchored). Tie-breaker is single-select per class (if the DB column exists).
       </div>
     </div>
   );
