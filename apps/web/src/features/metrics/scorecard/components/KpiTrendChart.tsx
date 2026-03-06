@@ -5,6 +5,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useOrg } from "@/state/org";
 
 type TrendPoint = {
   metric_date: string;
@@ -14,12 +15,12 @@ type TrendPoint = {
 
 type TrendResponse = {
   kpi_key: string;
-  range_days: number;
+  fiscal_window: "FM" | "3FM" | "12FM";
   direction: "HIGHER_BETTER" | "LOWER_BETTER";
   series: TrendPoint[];
   overlays?: {
-    short_window_days: number;
-    long_window_days: number;
+    short_window_label: string;
+    long_window_label: string;
     short_avg: number | null;
     long_avg: number | null;
     delta: number | null;
@@ -56,23 +57,19 @@ const WINDOW_META: Record<
   FiscalWindow,
   {
     subtitle: string;
-    rangeDays: number;
     compareLabel: string;
   }
 > = {
   FM: {
     subtitle: "current fiscal month",
-    rangeDays: 30,
     compareLabel: "vs recent baseline",
   },
   "3FM": {
     subtitle: "last 3 fiscal months",
-    rangeDays: 90,
     compareLabel: "quarter view",
   },
   "12FM": {
     subtitle: "last 12 fiscal months",
-    rangeDays: 365,
     compareLabel: "annual view",
   },
 };
@@ -136,11 +133,11 @@ function buildPoints(series: TrendPoint[]) {
   const finite = series
     .map((p, i) => ({ i, ...p }))
     .filter((p) => isFiniteNum(p.value)) as Array<{
-    i: number;
-    metric_date: string;
-    value: number;
-    sample: number | null;
-  }>;
+      i: number;
+      metric_date: string;
+      value: number;
+      sample: number | null;
+    }>;
 
   if (finite.length < 2) {
     return {
@@ -209,6 +206,8 @@ export default function KpiTrendChart(props: {
   personId?: string | null;
   paint?: Paint | null;
 }) {
+  const { selectedOrgId } = useOrg();
+
   const [data, setData] = useState<TrendResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [hover, setHover] = useState<PointXY | null>(null);
@@ -247,12 +246,18 @@ export default function KpiTrendChart(props: {
     const controller = new AbortController();
 
     async function run() {
+      if (!selectedOrgId || !personId) {
+        if (alive) setData({ kpi_key: props.kpiKey, fiscal_window: props.fiscalWindow, direction: "HIGHER_BETTER", series: [] });
+        return;
+      }
+
       setLoading(true);
       try {
         const qs = new URLSearchParams();
+        qs.set("pc_org_id", selectedOrgId);
+        qs.set("person_id", personId);
         qs.set("kpi_key", props.kpiKey);
-        qs.set("range_days", String(meta.rangeDays));
-        if (personId) qs.set("person_id", personId);
+        qs.set("fiscal_window", props.fiscalWindow);
 
         const res = await fetch(`/api/metrics/trend?${qs.toString()}`, {
           method: "GET",
@@ -264,7 +269,9 @@ export default function KpiTrendChart(props: {
         const json = (await res.json()) as TrendResponse;
         if (alive) setData(json);
       } catch {
-        if (alive) setData(null);
+        if (alive) {
+          setData({ kpi_key: props.kpiKey, fiscal_window: props.fiscalWindow, direction: "HIGHER_BETTER", series: [] });
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -275,9 +282,36 @@ export default function KpiTrendChart(props: {
       alive = false;
       controller.abort();
     };
-  }, [props.kpiKey, personId, meta.rangeDays]);
+  }, [props.kpiKey, props.fiscalWindow, personId, selectedOrgId]);
 
-  const built = useMemo(() => buildPoints(data?.series ?? []), [data]);
+  const series = useMemo(() => {
+    return data?.series ?? [];
+  }, [data?.series]);
+
+  const stats = useMemo(() => {
+    if (!series.length) {
+      return {
+        current: null,
+        updates: 0,
+        observations: 0,
+      };
+    }
+
+    const current = series[series.length - 1]?.value ?? null;
+
+    const updates = series.length;
+
+    const observations = series.reduce((sum, r) => {
+      return sum + (r.sample ?? 0);
+    }, 0);
+
+    return {
+      current,
+      updates,
+      observations,
+    };
+  }, [series]);
+  const built = useMemo(() => buildPoints(series), [series]);
   const polyline = useMemo(() => polylineFromPoints(built.points), [built.points]);
   const areaPath = useMemo(() => areaPathFromPoints(built.points), [built.points]);
 
@@ -285,9 +319,9 @@ export default function KpiTrendChart(props: {
   const minLabel = isFiniteNum(built.min) ? fmtValue(props.kpiKey, built.min) : "—";
   const maxLabel = isFiniteNum(built.max) ? fmtValue(props.kpiKey, built.max) : "—";
 
-  const updatesCount = data?.series?.filter((p) => isFiniteNum(p.value)).length ?? 0;
+  const updatesCount = series.filter((p) => isFiniteNum(p.value)).length;
   const lastUpdate = last?.metric_date ? fmtMMDD(last.metric_date) : "—";
-  const totalSamples = (data?.series ?? []).reduce((sum, p) => sum + (isFiniteNum(p.sample) ? p.sample : 0), 0);
+  const totalSamples = series.reduce((sum, p) => sum + (isFiniteNum(p.sample) ? p.sample : 0), 0);
   const momentumDelta = data?.overlays?.delta ?? null;
   const momentumState = String(data?.overlays?.state ?? "NO_DATA").toUpperCase();
 
@@ -295,10 +329,10 @@ export default function KpiTrendChart(props: {
     momentumState === "UP"
       ? "Improving"
       : momentumState === "DOWN"
-      ? "Softening"
-      : momentumState === "FLAT"
-      ? "Stable"
-      : "No signal";
+        ? "Softening"
+        : momentumState === "FLAT"
+          ? "Stable"
+          : "No signal";
 
   const waypointEvery = updatesCount > 24 ? 3 : 2;
 
