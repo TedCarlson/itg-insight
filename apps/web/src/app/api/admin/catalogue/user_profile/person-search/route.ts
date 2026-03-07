@@ -12,7 +12,10 @@ async function requireOwnerOrAdmin() {
   } = await sb.auth.getUser();
 
   if (!user || userErr) {
-    return { ok: false as const, status: 401 as const, error: "unauthorized" as const };
+      return NextResponse.json(
+      { ok: false, error: "unauthorized" },
+      { status: 401 }
+    )
   }
 
   let owner = false;
