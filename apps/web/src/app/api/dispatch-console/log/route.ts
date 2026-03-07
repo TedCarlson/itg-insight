@@ -189,7 +189,10 @@ export async function POST(req: NextRequest) {
       .select(SELECT_COLS)
       .single();
 
-    if (ins.error) return jsonError(400, { ok: false, error: "log_insert_failed", supabase: ins.error });
+    if (ins.error) {
+      console.error("DISPATCH INSERT ERROR:", ins.error);
+      return jsonError(400, { ok: false, error: "log_insert_failed", supabase: ins.error });
+    }
 
     const nameMap = await resolveUserLabels(admin, [String(ins.data?.created_by_user_id ?? "")]);
     return NextResponse.json(

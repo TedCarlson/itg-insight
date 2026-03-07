@@ -1,6 +1,7 @@
 import { ADMIN_TABLES } from "../lib/tables";
 import { TableHeader } from "./TableHeader";
 import { PersonTableView } from "./views/PersonTableView";
+import { UserProfileTableView } from "./views/UserProfileTableView";
 import { PcOrgTableView } from "./views/PcOrgTableView";
 import { PcOrgOfficeTableView } from "./views/PcOrgOfficeTableView";
 import { RegionTableView } from "./views/RegionTableView";
@@ -15,6 +16,7 @@ export function TablePlaceholder(props: { tableKey: string }) {
   if (!table) return null;
 
   if (table.key === "person") return <PersonTableView />;
+  if (table.key === "user_profile") return <UserProfileTableView />;
   if (table.key === "pc_org") return <PcOrgTableView />;
   if (table.key === "pc_org_office") return <PcOrgOfficeTableView />;
   if (table.key === "region") return <RegionTableView />;
