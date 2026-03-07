@@ -1,9 +1,6 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/features/metrics/components/reports/ReportsTabbedTable.tsx
-
 "use client";
 
+import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
 
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
@@ -59,7 +56,6 @@ function pickPresetBandStyle(
   preset: any,
   band: BandKey
 ): { borderColor?: string; backgroundColor?: string; color?: string } {
-  // Preferred: SAME SHAPE AS BandChip uses (preset[band] with *_color fields)
   const direct = preset?.[band] ?? null;
   if (direct && typeof direct === "object") {
     const border = String((direct as any).border_color ?? "");
@@ -73,7 +69,6 @@ function pickPresetBandStyle(
     if (Object.keys(out).length) return out;
   }
 
-  // Defensive alternates
   const b = preset?.bands?.[band] ?? preset?.bandStyles?.[band] ?? preset?.band?.[band] ?? null;
 
   const border = b?.border ?? b?.borderColor ?? b?.stroke ?? null;
@@ -185,7 +180,6 @@ function pctOf(total: number | null, part: number | null): string {
   return formatValue({ value: pct, format: "PCT", decimals: 1 });
 }
 
-// ✅ Raw payload sources only (your canonical set)
 type RawField =
   | "Total Jobs"
   | "Installs"
@@ -206,7 +200,7 @@ type FactCol = {
   field: RawField;
   label: string;
   kind: "COUNT" | "RATE";
-  digits?: number; // for RATE only
+  digits?: number;
 };
 
 function kpiGroup(k: KpiDefLike): "TNPS" | "FTR" | "TOOL" | "OTHER" {
@@ -219,7 +213,6 @@ function kpiGroup(k: KpiDefLike): "TNPS" | "FTR" | "TOOL" | "OTHER" {
   return "OTHER";
 }
 
-// ✅ One place, transparent: KPI → allowed raw fact fields
 function factColumnsForKpi(k: KpiDefLike): { groupLabel: string; cols: FactCol[] } {
   const g = kpiGroup(k);
   if (g === "TNPS") {
@@ -254,7 +247,6 @@ function factColumnsForKpi(k: KpiDefLike): { groupLabel: string; cols: FactCol[]
     };
   }
 
-  // If a KPI isn't one of the three, we show nothing in the drawer (by design).
   return { groupLabel: kpiLabel(k), cols: [] };
 }
 
@@ -262,13 +254,11 @@ function rawNumFromRow(row: AnyRow, field: RawField): number | null {
   const raw = row?.raw_metrics_json ?? null;
   const comp = row?.computed_metrics_json ?? null;
 
-  // Prefer raw payload; fallback to comp if present (still the same payload key)
   const v =
     (raw && typeof raw === "object" ? (raw as any)[field] : undefined) ??
     (comp && typeof comp === "object" ? (comp as any)[field] : undefined) ??
     (row as any)?.[field];
 
-  // handle computed shape { value: ... }
   if (v && typeof v === "object") {
     const vv = (v as any).value;
     return toNumberOrNull(vv);
@@ -310,14 +300,12 @@ export default function ReportsTabbedTable(props: Props) {
     []
   );
 
-  // Drawer columns: ONLY allowed raw payload fact fields for the KPIs present in the table
   const drawerGroups = useMemo(() => {
     const groups = kpis.map(factColumnsForKpi).filter((g) => g.cols.length > 0);
     return groups;
   }, [kpis]);
 
   const drawerColsFlat = useMemo(() => {
-    // flatten while retaining group label (for header rendering)
     const flat: Array<FactCol & { groupLabel: string }> = [];
     for (const g of drawerGroups) {
       for (const c of g.cols) flat.push({ ...c, groupLabel: g.groupLabel });
@@ -369,16 +357,12 @@ export default function ReportsTabbedTable(props: Props) {
               const fullName = personId ? personNameById.get(personId) ?? "—" : "—";
               const prior = priorSnapshotByTechId.get(techId) ?? null;
 
-              // Work mix (raw payload sources)
               const wmTotal = rawNumFromRow(r, "Total Jobs") ?? totalJobs;
               const installs = rawNumFromRow(r, "Installs");
               const tcs = rawNumFromRow(r, "TCs");
               const sros = rawNumFromRow(r, "SROs");
 
-              const priorTotal = prior ? rawNumFromRow(prior, "Total Jobs") : null;
-              const priorInstalls = prior ? rawNumFromRow(prior, "Installs") : null;
-              const priorTcs = prior ? rawNumFromRow(prior, "TCs") : null;
-              const priorSros = prior ? rawNumFromRow(prior, "SROs") : null;
+              const canOpenMirror = Boolean(personId);
 
               return (
                 <Fragment key={`${techId}-${idx}`}>
@@ -436,10 +420,22 @@ export default function ReportsTabbedTable(props: Props) {
                     <tr className={idx % 2 === 1 ? "bg-[var(--to-surface-2)]" : undefined}>
                       <td colSpan={4 + kpis.length} className="py-3">
                         <div className="rounded-2xl border border-[var(--to-border)] bg-[var(--to-surface-2)] p-4">
-                          {/* Header: Full name + Work mix tile */}
                           <div className="flex flex-wrap items-start justify-between gap-4">
                             <div>
-                              <div className="text-base font-semibold text-[var(--to-ink)]">{fullName}</div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-base font-semibold text-[var(--to-ink)]">{fullName}</div>
+
+                                {canOpenMirror ? (
+                                  <Link
+                                    href={`/metrics/tech-scorecard/${personId}`}
+                                    className="inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium text-[var(--to-ink-muted)] hover:bg-[var(--to-surface)]"
+                                    title="Open technician mirror"
+                                  >
+                                    Open Scorecard
+                                  </Link>
+                                ) : null}
+                              </div>
+
                               <div className="mt-0.5 text-xs text-[var(--to-ink-muted)]">
                                 Tech <span className="font-mono">{techId}</span>
                               </div>
@@ -479,11 +475,9 @@ export default function ReportsTabbedTable(props: Props) {
                             </div>
                           </div>
 
-                          {/* Simple facts table (ONLY raw payload sources) */}
                           <div className="mt-4 overflow-auto">
                             <table className="min-w-[980px] w-full text-sm">
                               <thead>
-                                {/* Group header row */}
                                 <tr className="border-b border-[var(--to-border)] text-[11px] text-[var(--to-ink-muted)]">
                                   <th className="py-2 pr-3 text-left font-medium">Row</th>
                                   {drawerGroups.map((g) => (
@@ -497,7 +491,6 @@ export default function ReportsTabbedTable(props: Props) {
                                   ))}
                                 </tr>
 
-                                {/* Column header row */}
                                 <tr className="border-b border-[var(--to-border)] text-[11px] text-[var(--to-ink-muted)]">
                                   <th className="py-2 pr-3 text-left font-medium"> </th>
                                   {drawerColsFlat.map((c, i) => (
@@ -511,7 +504,6 @@ export default function ReportsTabbedTable(props: Props) {
                               <tbody>
                                 {(["Current", "Prior", "Delta"] as const).map((rowLabel) => {
                                   const isDelta = rowLabel === "Delta";
-                                  const src = rowLabel === "Prior" ? prior : r;
 
                                   return (
                                     <tr key={rowLabel} className="border-b border-[var(--to-border)] last:border-b-0">
@@ -542,13 +534,10 @@ export default function ReportsTabbedTable(props: Props) {
                                     </tr>
                                   );
                                 })}
-
-                                {/* Work mix row lives as tile only (per your request); keep table clean */}
                               </tbody>
                             </table>
                           </div>
 
-                          {/* Optional small hint (kept minimal) */}
                           <div className="mt-2 text-[11px] text-[var(--to-ink-muted)]">
                             Drawer shows raw payload fact fields only (no rank plumbing).
                           </div>

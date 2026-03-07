@@ -1,13 +1,10 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/features/metrics/scorecard/components/KpiTrendChart.tsx
-
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useOrg } from "@/state/org";
 
 type TrendPoint = {
+  fiscal_month: string;
   metric_date: string;
   value: number | null;
   sample: number | null;
@@ -105,7 +102,12 @@ function fmtMMDD(dateStr: string) {
 
 function looksLikeRate(kpiKey: string) {
   const lower = kpiKey.toLowerCase();
-  return lower.endsWith("_rate") || lower.endsWith("_pct") || lower.includes("rate") || lower.includes("pct");
+  return (
+    lower.endsWith("_rate") ||
+    lower.endsWith("_pct") ||
+    lower.includes("rate") ||
+    lower.includes("pct")
+  );
 }
 
 function fmtValue(kpiKey: string, v: number | null): string {
@@ -118,26 +120,62 @@ function fmtValue(kpiKey: string, v: number | null): string {
   return v.toFixed(1);
 }
 
-function fmtDelta(kpiKey: string, delta: number | null) {
-  if (!isFiniteNum(delta)) return "—";
+function toSemanticDelta(
+  rawDelta: number | null,
+  direction: "HIGHER_BETTER" | "LOWER_BETTER" | undefined
+): number | null {
+  if (!isFiniteNum(rawDelta)) return null;
+  return direction === "LOWER_BETTER" ? rawDelta * -1 : rawDelta;
+}
+
+function fmtSemanticDelta(kpiKey: string, semanticDelta: number | null) {
+  if (!isFiniteNum(semanticDelta)) return "—";
+
   if (looksLikeRate(kpiKey)) {
-    const pct = delta <= 1.5 && delta >= -1.5 ? delta * 100 : delta;
+    const pct =
+      semanticDelta <= 1.5 && semanticDelta >= -1.5
+        ? semanticDelta * 100
+        : semanticDelta;
     const sign = pct > 0 ? "+" : "";
     return `${sign}${pct.toFixed(Math.abs(pct) >= 10 ? 0 : 1)}%`;
   }
-  const sign = delta > 0 ? "+" : "";
-  return `${sign}${delta.toFixed(1)}`;
+
+  const sign = semanticDelta > 0 ? "+" : "";
+  return `${sign}${semanticDelta.toFixed(1)}`;
+}
+
+function sampleLabelForKpi(kpiKey: string) {
+  switch (kpiKey) {
+    case "ftr_rate":
+      return "FTR jobs in range";
+    case "tool_usage_rate":
+      return "TU eligible jobs in range";
+    case "tnps_score":
+      return "tNPS surveys in range";
+    case "met_rate":
+      return "MET appts in range";
+    case "contact_48hr_rate":
+      return "48hr contact jobs in range";
+    case "pht_pure_pass_rate":
+    case "soi_rate":
+    case "repeat_rate":
+    case "rework_rate":
+      return "Jobs in range";
+    default:
+      return "Observations in range";
+  }
 }
 
 function buildPoints(series: TrendPoint[]) {
   const finite = series
     .map((p, i) => ({ i, ...p }))
     .filter((p) => isFiniteNum(p.value)) as Array<{
-      i: number;
-      metric_date: string;
-      value: number;
-      sample: number | null;
-    }>;
+    i: number;
+    fiscal_month: string;
+    metric_date: string;
+    value: number;
+    sample: number | null;
+  }>;
 
   if (finite.length < 2) {
     return {
@@ -152,7 +190,11 @@ function buildPoints(series: TrendPoint[]) {
   const maxRaw = Math.max(...vals);
 
   const spanRaw = maxRaw - minRaw;
-  const pad = spanRaw === 0 ? Math.max(Math.abs(maxRaw) * 0.02, 1) : Math.max(spanRaw * 0.18, 0.5);
+  const pad =
+    spanRaw === 0
+      ? Math.max(Math.abs(maxRaw) * 0.02, 1)
+      : Math.max(spanRaw * 0.18, 0.5);
+
   const min = minRaw - pad;
   const max = maxRaw + pad;
   const span = max - min || 1;
@@ -164,7 +206,14 @@ function buildPoints(series: TrendPoint[]) {
     const x = PAD_L + (p.i / Math.max(1, finite.length - 1)) * plotW;
     const yNorm = (p.value - min) / span;
     const y = PAD_T + (1 - clamp01(yNorm)) * plotH;
-    return { i: p.i, x, y, value: p.value, metric_date: p.metric_date, sample: p.sample ?? null };
+    return {
+      i: p.i,
+      x,
+      y,
+      value: p.value,
+      metric_date: p.metric_date,
+      sample: p.sample ?? null,
+    };
   });
 
   return { points, min: minRaw, max: maxRaw };
@@ -181,9 +230,9 @@ function areaPathFromPoints(points: PointXY[]) {
   const first = points[0];
   const last = points[points.length - 1];
   const line = points.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ");
-  return `M ${first.x.toFixed(2)} ${baseY.toFixed(2)} L ${first.x.toFixed(2)} ${first.y.toFixed(
+  return `M ${first.x.toFixed(2)} ${baseY.toFixed(2)} L ${first.x.toFixed(
     2
-  )} ${line} L ${last.x.toFixed(2)} ${baseY.toFixed(2)} Z`;
+  )} ${first.y.toFixed(2)} ${line} L ${last.x.toFixed(2)} ${baseY.toFixed(2)} Z`;
 }
 
 function nearestPoint(points: PointXY[], mouseX: number) {
@@ -198,6 +247,20 @@ function nearestPoint(points: PointXY[], mouseX: number) {
     }
   }
   return best;
+}
+
+function observationsByFiscalMonthMax(series: TrendPoint[]) {
+  const maxByMonth = new Map<string, number>();
+
+  for (const row of series) {
+    if (!isFiniteNum(row.sample)) continue;
+    const prior = maxByMonth.get(row.fiscal_month) ?? 0;
+    if (row.sample > prior) maxByMonth.set(row.fiscal_month, row.sample);
+  }
+
+  let total = 0;
+  for (const v of maxByMonth.values()) total += v;
+  return total;
 }
 
 export default function KpiTrendChart(props: {
@@ -247,7 +310,14 @@ export default function KpiTrendChart(props: {
 
     async function run() {
       if (!selectedOrgId || !personId) {
-        if (alive) setData({ kpi_key: props.kpiKey, fiscal_window: props.fiscalWindow, direction: "HIGHER_BETTER", series: [] });
+        if (alive) {
+          setData({
+            kpi_key: props.kpiKey,
+            fiscal_window: props.fiscalWindow,
+            direction: "HIGHER_BETTER",
+            series: [],
+          });
+        }
         return;
       }
 
@@ -270,7 +340,12 @@ export default function KpiTrendChart(props: {
         if (alive) setData(json);
       } catch {
         if (alive) {
-          setData({ kpi_key: props.kpiKey, fiscal_window: props.fiscalWindow, direction: "HIGHER_BETTER", series: [] });
+          setData({
+            kpi_key: props.kpiKey,
+            fiscal_window: props.fiscalWindow,
+            direction: "HIGHER_BETTER",
+            series: [],
+          });
         }
       } finally {
         if (alive) setLoading(false);
@@ -284,33 +359,7 @@ export default function KpiTrendChart(props: {
     };
   }, [props.kpiKey, props.fiscalWindow, personId, selectedOrgId]);
 
-  const series = useMemo(() => {
-    return data?.series ?? [];
-  }, [data?.series]);
-
-  const stats = useMemo(() => {
-    if (!series.length) {
-      return {
-        current: null,
-        updates: 0,
-        observations: 0,
-      };
-    }
-
-    const current = series[series.length - 1]?.value ?? null;
-
-    const updates = series.length;
-
-    const observations = series.reduce((sum, r) => {
-      return sum + (r.sample ?? 0);
-    }, 0);
-
-    return {
-      current,
-      updates,
-      observations,
-    };
-  }, [series]);
+  const series = useMemo(() => data?.series ?? [], [data?.series]);
   const built = useMemo(() => buildPoints(series), [series]);
   const polyline = useMemo(() => polylineFromPoints(built.points), [built.points]);
   const areaPath = useMemo(() => areaPathFromPoints(built.points), [built.points]);
@@ -321,8 +370,10 @@ export default function KpiTrendChart(props: {
 
   const updatesCount = series.filter((p) => isFiniteNum(p.value)).length;
   const lastUpdate = last?.metric_date ? fmtMMDD(last.metric_date) : "—";
-  const totalSamples = series.reduce((sum, p) => sum + (isFiniteNum(p.sample) ? p.sample : 0), 0);
-  const momentumDelta = data?.overlays?.delta ?? null;
+  const observations = observationsByFiscalMonthMax(series);
+
+  const rawMomentumDelta = data?.overlays?.delta ?? null;
+  const semanticMomentumDelta = toSemanticDelta(rawMomentumDelta, data?.direction);
   const momentumState = String(data?.overlays?.state ?? "NO_DATA").toUpperCase();
 
   const momentumLabel =
@@ -335,6 +386,7 @@ export default function KpiTrendChart(props: {
           : "No signal";
 
   const waypointEvery = updatesCount > 24 ? 3 : 2;
+  const observationsLabel = sampleLabelForKpi(props.kpiKey);
 
   return (
     <div
@@ -418,7 +470,17 @@ export default function KpiTrendChart(props: {
 
               {Array.from({ length: 4 }).map((_, idx) => {
                 const y = PAD_T + (idx / 3) * (HEIGHT - PAD_T - PAD_B);
-                return <line key={idx} x1={PAD_L} x2={WIDTH - PAD_R} y1={y} y2={y} stroke={grid} strokeWidth="1" />;
+                return (
+                  <line
+                    key={idx}
+                    x1={PAD_L}
+                    x2={WIDTH - PAD_R}
+                    y1={y}
+                    y2={y}
+                    stroke={grid}
+                    strokeWidth="1"
+                  />
+                );
               })}
 
               <text x={10} y={PAD_T + 10} fontSize="12" fill={labelInk}>
@@ -560,7 +622,7 @@ export default function KpiTrendChart(props: {
               Momentum
             </div>
             <div className="mt-1 text-xl font-semibold" style={{ color: accentInk }}>
-              {fmtDelta(props.kpiKey, momentumDelta)}
+              {fmtSemanticDelta(props.kpiKey, semanticMomentumDelta)}
             </div>
             <div className="text-sm" style={{ color: "var(--to-ink-muted)" }}>
               {momentumLabel} • {meta.compareLabel}
@@ -584,10 +646,10 @@ export default function KpiTrendChart(props: {
               Observations
             </div>
             <div className="mt-1 text-xl font-semibold" style={{ color: "var(--to-ink)" }}>
-              {totalSamples || "—"}
+              {observations || "—"}
             </div>
             <div className="text-sm" style={{ color: "var(--to-ink-muted)" }}>
-              total contributing samples
+              {observationsLabel}
             </div>
           </div>
         </div>

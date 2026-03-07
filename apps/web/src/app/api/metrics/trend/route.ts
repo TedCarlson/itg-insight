@@ -61,10 +61,7 @@ function pickBestTechId(assignments: AssignmentRow[], today: string): string | n
   const current = assignments.filter((a) => isActiveWindow(a, today) && a?.tech_id);
   const pool = current.length ? current : assignments.filter((a) => a?.tech_id);
 
-  pool.sort((a, b) =>
-    String(b?.start_date ?? "").localeCompare(String(a?.start_date ?? ""))
-  );
-
+  pool.sort((a, b) => String(b?.start_date ?? "").localeCompare(String(a?.start_date ?? "")));
   const best = pool[0]?.tech_id ? String(pool[0].tech_id).trim() : "";
   return best || null;
 }
@@ -94,9 +91,7 @@ function sampleFieldForKpi(kpiKey: string): keyof FactRow | null {
   }
 }
 
-function directionForKpi(
-  kpiKey: string
-): "HIGHER_BETTER" | "LOWER_BETTER" {
+function directionForKpi(kpiKey: string): "HIGHER_BETTER" | "LOWER_BETTER" {
   if (
     kpiKey === "contact_48hr_rate" ||
     kpiKey === "repeat_rate" ||
@@ -128,18 +123,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  if (!["FM", "3FM", "12FM"].includes(fiscal_window)) {
+    return NextResponse.json({ error: "Invalid fiscal_window" }, { status: 400 });
+  }
+
   const sb = await supabaseServer();
   const admin = supabaseAdmin();
   const today = isoToday();
 
-  /**
-   * Resolve tech_id from assignment
-   */
-  const { data: assignments } = await admin
+  const { data: assignments, error: asgErr } = await admin
     .from("assignment")
     .select("tech_id,start_date,end_date,active")
     .eq("pc_org_id", pc_org_id)
-    .eq("person_id", person_id);
+    .eq("person_id", person_id)
+    .limit(200);
+
+  if (asgErr) {
+    return NextResponse.json({ error: asgErr.message }, { status: 500 });
+  }
 
   const tech_id = pickBestTechId((assignments ?? []) as AssignmentRow[], today);
 
@@ -149,19 +150,27 @@ export async function GET(req: NextRequest) {
       fiscal_window,
       direction: directionForKpi(kpi_key),
       series: [],
-      overlays: { short_avg: null, long_avg: null, delta: null, state: "NO_DATA" },
+      overlays: {
+        short_window_label: "recent",
+        long_window_label: "baseline",
+        short_avg: null,
+        long_avg: null,
+        delta: null,
+        state: "NO_DATA",
+      },
     });
   }
 
-  /**
-   * Find current fiscal month
-   */
-  const { data: currentFiscal } = await sb
+  const { data: currentFiscal, error: curErr } = await sb
     .from("fiscal_month_dim")
     .select("month_key,start_date,end_date")
     .lte("start_date", today)
     .gte("end_date", today)
     .maybeSingle();
+
+  if (curErr) {
+    return NextResponse.json({ error: curErr.message }, { status: 500 });
+  }
 
   if (!currentFiscal) {
     return NextResponse.json({
@@ -169,65 +178,113 @@ export async function GET(req: NextRequest) {
       fiscal_window,
       direction: directionForKpi(kpi_key),
       series: [],
-      overlays: { short_avg: null, long_avg: null, delta: null, state: "NO_DATA" },
+      overlays: {
+        short_window_label: "recent",
+        long_window_label: "baseline",
+        short_avg: null,
+        long_avg: null,
+        delta: null,
+        state: "NO_DATA",
+      },
     });
   }
 
-  /**
-   * Determine fiscal window
-   */
-  const monthLimit =
-    fiscal_window === "FM" ? 1 : fiscal_window === "3FM" ? 3 : 12;
+  const monthLimit = fiscal_window === "FM" ? 1 : fiscal_window === "3FM" ? 3 : 12;
 
-  const { data: months } = await sb
+  const { data: months, error: monthErr } = await sb
     .from("fiscal_month_dim")
     .select("month_key,end_date")
-    .lte("month_key", currentFiscal.month_key)
+    .lte("month_key", String((currentFiscal as FiscalMonthRow).month_key))
     .order("month_key", { ascending: false })
     .limit(monthLimit);
 
-  const fiscalEndDates = (months ?? []).map((m: any) =>
-    String(m.end_date).slice(0, 10)
+  if (monthErr) {
+    return NextResponse.json({ error: monthErr.message }, { status: 500 });
+  }
+
+  const fiscalRows = (months ?? []) as Array<Pick<FiscalMonthRow, "month_key" | "end_date">>;
+  const fiscalEndDates = fiscalRows.map((m) => String(m.end_date).slice(0, 10));
+  const fiscalMonthByEndDate = new Map(
+    fiscalRows.map((m) => [String(m.end_date).slice(0, 10), String(m.month_key)] as const)
   );
 
-  /**
-   * Load facts
-   */
-  const { data: facts } = await sb
+  if (!fiscalEndDates.length) {
+    return NextResponse.json({
+      kpi_key,
+      fiscal_window,
+      direction: directionForKpi(kpi_key),
+      series: [],
+      overlays: {
+        short_window_label: "recent",
+        long_window_label: "baseline",
+        short_avg: null,
+        long_avg: null,
+        delta: null,
+        state: "NO_DATA",
+      },
+    });
+  }
+
+  const { data: facts, error: factErr } = await sb
     .from("metrics_tech_fact_day")
-    .select("*")
+    .select(`
+      metric_date,
+      fiscal_end_date,
+      tnps_score,
+      ftr_rate,
+      tool_usage_rate,
+      contact_48hr_rate,
+      pht_pure_pass_rate,
+      met_rate,
+      soi_rate,
+      repeat_rate,
+      rework_rate,
+      tnps_surveys,
+      total_ftr_contact_jobs,
+      tu_eligible_jobs,
+      total_met_appts,
+      total_jobs
+    `)
     .eq("pc_org_id", pc_org_id)
     .eq("tech_id", tech_id)
     .in("fiscal_end_date", fiscalEndDates)
     .order("metric_date", { ascending: true });
 
+  if (factErr) {
+    return NextResponse.json({ error: factErr.message }, { status: 500 });
+  }
+
   const sampleField = sampleFieldForKpi(kpi_key);
   const factRows = (facts ?? []) as FactRow[];
 
-  const series = factRows.map((row) => ({
-    metric_date: String(row.metric_date).slice(0, 10),
-    value: numOrNull((row as any)[kpi_key]),
-    sample: sampleField ? numOrNull((row as any)[sampleField]) : null,
-  }));
+  const series = factRows.map((row) => {
+    const fiscalEndDate = String(row.fiscal_end_date).slice(0, 10);
+    const valueRaw = row[kpi_key as keyof FactRow];
+    const sampleRaw = sampleField ? row[sampleField] : null;
+
+    return {
+      fiscal_month: fiscalMonthByEndDate.get(fiscalEndDate) ?? fiscalEndDate.slice(0, 7),
+      metric_date: String(row.metric_date).slice(0, 10),
+      value: numOrNull(valueRaw),
+      sample: numOrNull(sampleRaw),
+    };
+  });
 
   const values = series
     .map((s) => s.value)
-    .filter((v): v is number => typeof v === "number");
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
 
   const shortSlice = values.slice(-Math.min(3, values.length));
   const longSlice = values;
 
   const short_avg = average(shortSlice);
   const long_avg = average(longSlice);
-  const delta =
-    short_avg !== null && long_avg !== null ? short_avg - long_avg : null;
+  const delta = short_avg !== null && long_avg !== null ? short_avg - long_avg : null;
 
   let state = "NO_DATA";
-
   if (delta !== null) {
     if (Math.abs(delta) < 0.0001) state = "FLAT";
-    else if (directionForKpi(kpi_key) === "HIGHER_BETTER")
-      state = delta > 0 ? "UP" : "DOWN";
+    else if (directionForKpi(kpi_key) === "HIGHER_BETTER") state = delta > 0 ? "UP" : "DOWN";
     else state = delta < 0 ? "UP" : "DOWN";
   }
 
@@ -237,6 +294,8 @@ export async function GET(req: NextRequest) {
     direction: directionForKpi(kpi_key),
     series,
     overlays: {
+      short_window_label: "recent",
+      long_window_label: "baseline",
       short_avg,
       long_avg,
       delta,

@@ -10,7 +10,7 @@ export default function MomentumGlyph(props: { momentum: ScorecardTile["momentum
     m.state === "UP"
       ? "Improving"
       : m.state === "DOWN"
-        ? "Declining"
+        ? "Softening"
         : m.state === "AT_RISK"
           ? "At risk"
           : m.state === "FLAT"

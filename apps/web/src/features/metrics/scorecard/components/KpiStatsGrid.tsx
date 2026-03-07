@@ -1,7 +1,3 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/features/metrics/scorecard/components/KpiStatsGrid.tsx
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +7,7 @@ import type { ScorecardTile } from "../lib/scorecard.types";
 type FiscalWindow = "FM" | "3FM" | "12FM";
 
 type TrendPoint = {
+  fiscal_month: string;
   metric_date: string;
   value: number | null;
   sample: number | null;
@@ -52,6 +49,35 @@ function fmtValue(kpiKey: string, v: number | null): string {
 
 function fmtDate(s: string) {
   return String(s || "").slice(0, 10) || "—";
+}
+
+function fmtFiscalMonth(s: string) {
+  return String(s || "").trim() || "—";
+}
+
+function sampleLabelForKpi(kpiKey: string) {
+  switch (kpiKey) {
+    case "ftr_rate":
+      return "FTR Jobs";
+    case "tool_usage_rate":
+      return "TU Eligible";
+    case "tnps_score":
+      return "Surveys";
+    case "met_rate":
+      return "MET Appts";
+    case "contact_48hr_rate":
+      return "48hr Jobs";
+    case "pht_pure_pass_rate":
+      return "Jobs";
+    case "soi_rate":
+      return "Jobs";
+    case "repeat_rate":
+      return "Jobs";
+    case "rework_rate":
+      return "Jobs";
+    default:
+      return "Count";
+  }
 }
 
 export default function KpiStatsGrid(props: {
@@ -112,13 +138,15 @@ export default function KpiStatsGrid(props: {
     [data]
   );
 
+  const sampleLabel = sampleLabelForKpi(tile.kpi_key);
+
   return (
     <div className="rounded-2xl border p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium">Period detail</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            One metric date per row for the selected window
+            Fiscal month is the primary container. Metric dates are checkpoints inside it.
           </div>
         </div>
 
@@ -131,16 +159,18 @@ export default function KpiStatsGrid(props: {
         <table className="min-w-full border-collapse text-sm">
           <thead className="bg-muted/40">
             <tr>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Fiscal Month</th>
               <th className="px-3 py-2 text-left font-medium text-muted-foreground">Metric Date</th>
-              <th className="px-3 py-2 text-right font-medium text-muted-foreground">{tile.kpi_key}</th>
-              <th className="px-3 py-2 text-right font-medium text-muted-foreground">Samples</th>
+              <th className="px-3 py-2 text-right font-medium text-muted-foreground">{tile.label}</th>
+              <th className="px-3 py-2 text-right font-medium text-muted-foreground">{sampleLabel}</th>
             </tr>
           </thead>
 
           <tbody>
             {rows.length > 0 ? (
               rows.map((row, idx) => (
-                <tr key={`${row.metric_date}-${idx}`} className="border-t">
+                <tr key={`${row.fiscal_month}-${row.metric_date}-${idx}`} className="border-t">
+                  <td className="px-3 py-2 tabular-nums">{fmtFiscalMonth(row.fiscal_month)}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDate(row.metric_date)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {fmtValue(tile.kpi_key, row.value)}
@@ -152,7 +182,7 @@ export default function KpiStatsGrid(props: {
               ))
             ) : (
               <tr>
-                <td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
                   {loading ? "Loading period detail…" : "No period detail for the selected window."}
                 </td>
               </tr>

@@ -24,11 +24,11 @@ export default function TechScorecardClient(props: {
 
   return (
     <div className="space-y-4">
-      <ScorecardIdentityCard header={payload.header} />
-
       <div className="rounded-2xl border bg-card p-4">
         <PersonJumpSelect />
       </div>
+
+      <ScorecardIdentityCard header={payload.header} />
 
       <ScorecardOrgPills
         personId={payload.header.person_id}
