@@ -1,50 +1,75 @@
 // apps/web/src/app/api/route-lock/routes/list/route.ts
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
 
+import { requireAccessPass } from "@/shared/access/requireAccessPass";
+import { requireModule } from "@/shared/access/access";
+
 export const runtime = "nodejs";
 
-async function guardSelectedOrgRosterManage() {
+async function resolveSelectedPcOrg(req: NextRequest) {
   const sb = await supabaseServer();
   const {
     data: { user },
     error: userErr,
   } = await sb.auth.getUser();
 
-  if (!user || userErr) return { ok: false as const, status: 401, error: "unauthorized" };
+  if (!user || userErr) {
+    return { ok: false as const, status: 401, error: "unauthorized" };
+  }
 
-  const { data: profile, error: profileErr } = await sb
+  const admin = supabaseAdmin();
+  const { data: profile, error: profileErr } = await admin
     .from("user_profile")
     .select("selected_pc_org_id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
-  if (profileErr) return { ok: false as const, status: 500, error: profileErr.message };
+  if (profileErr) {
+    return { ok: false as const, status: 500, error: profileErr.message };
+  }
 
-  const pc_org_id = (profile?.selected_pc_org_id ?? null) as string | null;
-  if (!pc_org_id) return { ok: false as const, status: 409, error: "no selected org" };
+  const pc_org_id = String(profile?.selected_pc_org_id ?? "").trim();
+  if (!pc_org_id) {
+    return { ok: false as const, status: 409, error: "no selected org" };
+  }
 
-  const apiClient: any = (sb as any).schema ? (sb as any).schema("api") : sb;
-  const { data: allowed, error: permErr } = await apiClient.rpc("has_pc_org_permission", {
-    p_pc_org_id: pc_org_id,
-    p_permission_key: "roster_manage",
-  });
+  try {
+    const pass = await requireAccessPass(req, pc_org_id);
+    requireModule(pass, "route_lock");
 
-  if (permErr || !allowed) return { ok: false as const, status: 403, error: "forbidden" };
+    return {
+      ok: true as const,
+      pc_org_id,
+      auth_user_id: String(pass.auth_user_id ?? user.id),
+    };
+  } catch (err: any) {
+    const status = Number(err?.status ?? 500);
 
-  return { ok: true as const, pc_org_id, auth_user_id: user.id };
+    if (status === 401) return { ok: false as const, status: 401, error: "unauthorized" };
+    if (status === 403) return { ok: false as const, status: 403, error: "forbidden" };
+    if (status === 400) return { ok: false as const, status: 400, error: String(err?.message ?? "invalid_pc_org_id") };
+
+    return { ok: false as const, status: 500, error: "access_error" };
+  }
 }
 
-async function handler() {
+async function handler(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url) return NextResponse.json({ ok: false, error: "missing NEXT_PUBLIC_SUPABASE_URL" }, { status: 500 });
-  if (!service) return NextResponse.json({ ok: false, error: "missing SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
+  if (!url) {
+    return NextResponse.json({ ok: false, error: "missing NEXT_PUBLIC_SUPABASE_URL" }, { status: 500 });
+  }
+  if (!service) {
+    return NextResponse.json({ ok: false, error: "missing SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
+  }
 
-  const guard = await guardSelectedOrgRosterManage();
-  if (!guard.ok) return NextResponse.json({ ok: false, error: guard.error }, { status: guard.status });
+  const guard = await resolveSelectedPcOrg(req);
+  if (!guard.ok) {
+    return NextResponse.json({ ok: false, error: guard.error }, { status: guard.status });
+  }
 
   const admin = supabaseAdmin();
 
@@ -112,10 +137,10 @@ async function handler() {
   });
 }
 
-export async function GET() {
-  return handler();
+export async function GET(req: NextRequest) {
+  return handler(req);
 }
 
-export async function POST() {
-  return handler();
+export async function POST(req: NextRequest) {
+  return handler(req);
 }
