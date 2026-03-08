@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     if (!pc_org_id) return jsonError(400, { ok: false, error: "missing_pc_org_id" });
     if (!shift_date || !isISODate(shift_date)) return jsonError(400, { ok: false, error: "invalid_shift_date" });
 
-    const pass = await requireAccessPass(req);
+    const pass = await requireAccessPass(req, pc_org_id);
     requireModule(pass, "dispatch_console");
 
     const admin = supabaseAdmin();
@@ -134,15 +134,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const pass = await requireAccessPass(req);
-    requireModule(pass, "dispatch_console");
-
-    const userId = pass.auth_user_id;
-
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") return jsonError(400, { ok: false, error: "invalid_json" });
 
     const pc_org_id = String((body as any).pc_org_id ?? "");
+    const pass = await requireAccessPass(req, pc_org_id);
+    requireModule(pass, "dispatch_console");
+
+    const userId = pass.auth_user_id;
+
     const shift_date = String((body as any).shift_date ?? "");
     const assignment_id_raw = (body as any).assignment_id;
     const assignment_id = assignment_id_raw === null || assignment_id_raw === undefined ? "" : String(assignment_id_raw);
@@ -258,16 +258,16 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const pass = await requireAccessPass(req);
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") return jsonError(400, { ok: false, error: "invalid_json" });
+
+    const pc_org_id = String((body as any).pc_org_id ?? "").trim();
+    const pass = await requireAccessPass(req, pc_org_id);
     requireModule(pass, "dispatch_console");
 
     const userId = pass.auth_user_id;
 
-    const body = await req.json().catch(() => null);
-    if (!body || typeof body !== "object") return jsonError(400, { ok: false, error: "invalid_json" });
-
     const dispatch_console_log_id = String((body as any).dispatch_console_log_id ?? "").trim();
-    const pc_org_id = String((body as any).pc_org_id ?? "").trim();
     const event_type = String((body as any).event_type ?? "").trim();
     const message = String((body as any).message ?? "").trim();
 
@@ -313,11 +313,6 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const pass = await requireAccessPass(req);
-    requireModule(pass, "dispatch_console");
-
-    const userId = pass.auth_user_id;
-
     const pc_org_id_qs = req.nextUrl.searchParams.get("pc_org_id") ?? "";
     const id_qs = req.nextUrl.searchParams.get("dispatch_console_log_id") ?? "";
 
@@ -325,6 +320,11 @@ export async function DELETE(req: NextRequest) {
 
     const pc_org_id = String((body as any)?.pc_org_id ?? pc_org_id_qs ?? "").trim();
     const dispatch_console_log_id = String((body as any)?.dispatch_console_log_id ?? id_qs ?? "").trim();
+
+    const pass = await requireAccessPass(req, pc_org_id);
+    requireModule(pass, "dispatch_console");
+
+    const userId = pass.auth_user_id;
 
     if (!dispatch_console_log_id) return jsonError(400, { ok: false, error: "missing_dispatch_console_log_id" });
     if (!pc_org_id) return jsonError(400, { ok: false, error: "missing_pc_org_id" });

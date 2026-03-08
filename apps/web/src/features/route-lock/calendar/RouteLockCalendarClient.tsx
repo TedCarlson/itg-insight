@@ -1,7 +1,6 @@
-// apps/web/src/features/route-lock/calendar/RouteLockCalendarClient.tsx
-
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 
@@ -33,7 +32,7 @@ type Day = {
 
 type UnitMode = "routes" | "hours" | "units";
 type DayState = "planned" | "built" | "actual";
-type LockVerdict = "MET" | "MISSED" | "NEAR" | "NA";
+type LockVerdict = "MET" | "MISS" | "NEAR" | "NA";
 type LockMeta = { verdict: LockVerdict; note?: "Routes+Units" | "Units needed" };
 
 function weekdayShort(iso: string): string {
@@ -76,12 +75,6 @@ function chipLabel(state: DayState): string {
   return "Planned";
 }
 
-function schLabelForState(state: DayState): string {
-  if (state === "actual") return "Routes";
-  if (state === "built") return "Routed";
-  return "On Schedule";
-}
-
 function safePct(num: number, den: number): number | null {
   if (!den) return null;
   const p = num / den;
@@ -100,14 +93,14 @@ function pillClassPlannedBuilt(deltaRoutes: number | null) {
 function pillClassActual(verdict: LockVerdict) {
   if (verdict === "MET") return "bg-[rgba(16,185,129,0.16)] border-[rgba(16,185,129,0.35)]";
   if (verdict === "NEAR") return "bg-[rgba(234,179,8,0.18)] border-[rgba(234,179,8,0.40)]";
-  if (verdict === "MISSED") return "bg-[rgba(239,68,68,0.20)] border-[rgba(239,68,68,0.45)]";
+  if (verdict === "MISS") return "bg-[rgba(239,68,68,0.20)] border-[rgba(239,68,68,0.45)]";
   return "bg-[var(--to-surface-2)] border-[var(--to-border)]";
 }
 
 function verdictTextClass(verdict: LockVerdict) {
   if (verdict === "MET") return "text-[rgba(16,185,129,0.95)]";
   if (verdict === "NEAR") return "text-[rgba(234,179,8,0.95)]";
-  if (verdict === "MISSED") return "text-[rgba(239,68,68,0.95)]";
+  if (verdict === "MISS") return "text-[rgba(239,68,68,0.95)]";
   return "text-[var(--to-ink-muted)]";
 }
 
@@ -119,11 +112,6 @@ function deltaTextClassPlannedBuilt(deltaRoutes: number | null) {
   return "text-[rgba(239,68,68,0.95)]";
 }
 
-/**
- * Actual lock:
- * - Routes (actual_techs) vs quota_routes is first-class.
- * - If within 10% short on routes, units can carry (actual_units vs quota_units).
- */
 function computeActualLock(d: Day): LockMeta {
   const quotaRoutes = n(d.quota_routes);
   if (quotaRoutes === null) return { verdict: "NA" };
@@ -131,10 +119,8 @@ function computeActualLock(d: Day): LockMeta {
   const actualRoutes = n(d.actual_techs);
   if (actualRoutes === null) return { verdict: "NA" };
 
-  // pass on routes
   if (actualRoutes >= quotaRoutes) return { verdict: "MET" };
 
-  // within 10% routes short?
   const within10Pct = actualRoutes >= quotaRoutes * 0.9;
 
   const quotaUnits = n(d.quota_units) ?? (n(d.quota_hours) === null ? null : (n(d.quota_hours) as number) * 12);
@@ -142,10 +128,9 @@ function computeActualLock(d: Day): LockMeta {
 
   if (within10Pct && quotaUnits !== null && actualUnits !== null) {
     if (actualUnits >= quotaUnits) return { verdict: "MET", note: "Routes+Units" };
-    return { verdict: "NEAR", note: "Units needed" };
   }
 
-  return { verdict: "MISSED" };
+  return { verdict: "MISS" };
 }
 
 function valueForMode(args: { mode: UnitMode; state: DayState; d: Day }) {
@@ -183,7 +168,14 @@ function valueForMode(args: { mode: UnitMode; state: DayState; d: Day }) {
   return { sch, quota, delta };
 }
 
-export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) {
+export function RouteLockCalendarClient(props: {
+  fiscal: Fiscal;
+  days: Day[];
+  todayIso: string;
+  prevHref?: string | null;
+  currentHref?: string | null;
+  nextHref?: string | null;
+}) {
   const [mode, setMode] = useState<UnitMode>("routes");
 
   const byWeek = useMemo(() => {
@@ -191,7 +183,7 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
     if (!days.length) return [];
 
     const start = new Date(`${days[0].date}T00:00:00Z`);
-    const pad = start.getUTCDay(); // 0=Sun
+    const pad = start.getUTCDay();
     const padded: Array<Day | null> = Array.from({ length: pad }).map(() => null);
 
     const all = [...padded, ...days];
@@ -206,12 +198,10 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
   return (
     <div className="space-y-4">
       <Card>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-sm font-semibold">Calendar • {fiscalLabel}</div>
-            <div className="text-xs text-[var(--to-ink-muted)]">
-              Planned → Built → Actual. Verdict label renders only on Actual.
-            </div>
+            <div className="text-sm font-semibold">Route Lock • {fiscalLabel}</div>
+            <div className="text-xs text-[var(--to-ink-muted)]">Planned → Built → Actual.</div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -220,6 +210,24 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
               <option value="hours">Hours</option>
               <option value="units">Units</option>
             </select>
+
+            {props.prevHref ? (
+              <Link href={props.prevHref} className="to-btn to-btn--secondary h-8 px-3 text-xs">
+                Previous
+              </Link>
+            ) : null}
+
+            {props.currentHref ? (
+              <Link href={props.currentHref} className="to-btn to-btn--secondary h-8 px-3 text-xs">
+                Current
+              </Link>
+            ) : null}
+
+            {props.nextHref ? (
+              <Link href={props.nextHref} className="to-btn to-btn--secondary h-8 px-3 text-xs">
+                Next
+              </Link>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -239,9 +247,8 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
               {week.map((d, di) => {
                 if (!d) return <div key={di} className="min-h-[118px] border-b border-r border-[var(--to-border)]" />;
 
+                const isToday = d.date === props.todayIso;
                 const state = stateForDay(d);
-
-                // For tint on Planned/Built we use *routes* delta only (as designed).
                 const routesSch = state === "actual" ? n(d.actual_techs) : n(d.scheduled_routes);
                 const routesQuota = n(d.quota_routes);
                 const deltaRoutes = routesSch === null || routesQuota === null ? null : routesSch - routesQuota;
@@ -250,12 +257,10 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
 
                 const pillClass = state === "actual" ? pillClassActual(lock.verdict) : pillClassPlannedBuilt(deltaRoutes);
 
-                // Verdict label ONLY for Actual
                 let verdictLabel: string | null = null;
                 if (state === "actual") {
                   if (lock.verdict === "MET") verdictLabel = lock.note === "Routes+Units" ? "MET (Routes+Units)" : "MET";
-                  if (lock.verdict === "NEAR") verdictLabel = "NEAR (Units needed)";
-                  if (lock.verdict === "MISSED") verdictLabel = "MISSED";
+                  if (lock.verdict === "MISS") verdictLabel = "MISS";
                 }
 
                 const schQuotaDelta = valueForMode({ mode, state, d });
@@ -269,7 +274,12 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
                 return (
                   <div
                     key={d.date}
-                    className="min-h-[118px] border-b border-r border-[var(--to-border)] px-3 py-2 bg-transparent"
+                    className={[
+                      "min-h-[118px] border-b border-r border-[var(--to-border)] px-3 py-2 bg-transparent",
+                      isToday
+                        ? "bg-[rgba(59,130,246,0.07)] shadow-[inset_0_0_0_2px_rgba(59,130,246,0.55)]"
+                        : "",
+                    ].join(" ")}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -300,7 +310,6 @@ export function RouteLockCalendarClient(props: { fiscal: Fiscal; days: Day[] }) 
                     <div className="mt-2 space-y-1 text-xs tabular-nums">
                       <div className="flex justify-between">
                         <span className="text-[var(--to-ink-muted)]">Capacity</span>
-                        <span className="text-[var(--to-ink-muted)] mr-auto ml-2 text-[10px]">{schLabelForState(state)}</span>
                         <span>{fmt(mode, schQuotaDelta.sch)}</span>
                       </div>
 

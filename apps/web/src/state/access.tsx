@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useOrg } from "./org";
 
 type AccessPass = {
@@ -25,46 +25,81 @@ type AccessContextType = {
 
 const AccessContext = createContext<AccessContextType | undefined>(undefined);
 
+async function fetchAccessPass(selectedOrgId: string): Promise<AccessPass | null> {
+  const res = await fetch(`/api/access-pass?pc_org_id=${encodeURIComponent(selectedOrgId)}`, {
+    method: "GET",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+  });
+
+  const text = await res.text();
+
+  if (!res.ok) {
+    console.log("access-pass error:", res.status, text);
+    return null;
+  }
+
+  try {
+    return text ? (JSON.parse(text) as AccessPass) : null;
+  } catch {
+    console.log("access-pass parse error:", text);
+    return null;
+  }
+}
+
 export function AccessProvider({ children }: { children: React.ReactNode }) {
   const { selectedOrgId } = useOrg();
-  const [accessPass, setAccessPass] = useState<AccessPass | null>(null);
+  const [accessPassState, setAccessPassState] = useState<AccessPass | null>(null);
+  const requestSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!selectedOrgId) {
-      setAccessPass(null);
+      setAccessPassState(null);
       return;
     }
 
-    const res = await fetch(`/api/access-pass?pc_org_id=${encodeURIComponent(selectedOrgId)}`, {
-      method: "GET",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-    });
+    const requestSeq = ++requestSeqRef.current;
+    const next = await fetchAccessPass(selectedOrgId);
 
-    const text = await res.text();
-
-    if (!res.ok) {
-      console.log("access-pass error:", res.status, text);
-      return;
-    }
-
-    let payload: any = null;
-    try {
-      payload = text ? JSON.parse(text) : null;
-    } catch {
-      console.log("access-pass parse error:", text);
-      setAccessPass(null);
-      return;
-    }
-
-    setAccessPass(payload ?? null);
+    if (requestSeq !== requestSeqRef.current) return;
+    setAccessPassState(next);
   }, [selectedOrgId]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!selectedOrgId) return;
 
-  return <AccessContext.Provider value={{ accessPass, refresh }}>{children}</AccessContext.Provider>;
+    let cancelled = false;
+    const requestSeq = ++requestSeqRef.current;
+
+    fetchAccessPass(selectedOrgId)
+      .then((next) => {
+        if (cancelled) return;
+        if (requestSeq !== requestSeqRef.current) return;
+        setAccessPassState(next);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.log("access-pass fetch failure:", err);
+        if (requestSeq !== requestSeqRef.current) return;
+        setAccessPassState(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrgId]);
+
+  const accessPass = selectedOrgId ? accessPassState : null;
+
+  const contextValue = useMemo<AccessContextType>(
+    () => ({
+      accessPass,
+      refresh,
+    }),
+    [accessPass, refresh]
+  );
+
+  return <AccessContext.Provider value={contextValue}>{children}</AccessContext.Provider>;
 }
 
 export function useAccessPass() {
