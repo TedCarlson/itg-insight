@@ -12,7 +12,6 @@ import { PersonTab } from "./row-module/PersonTab";
 import { OrgTab } from "./row-module/OrgTab";
 import { AssignmentTab } from "./row-module/AssignmentTab";
 import { LeadershipTab } from "./row-module/LeadershipTab";
-import { InviteTab } from "./row-module/InviteTab";
 
 import { type TabKey, buildTitle } from "./rosterRowModule.helpers";
 
@@ -21,7 +20,6 @@ import { usePersonTab } from "../hooks/row-module/usePersonTab";
 import { useAssignmentTab } from "../hooks/row-module/useAssignmentTab";
 import { useOrgTab, type OrgMeta } from "../hooks/row-module/useOrgTab";
 import { useLeadershipTab } from "../hooks/row-module/useLeadershipTab";
-import { useInviteTab } from "../hooks/row-module/useInviteTab";
 
 /** ---- Static component (must be outside render) ---- */
 function Pill({ label, ok, title }: { label: string; ok: boolean; title: string }) {
@@ -201,26 +199,6 @@ function RosterRowModuleInner({
     orgMeta,
   });
 
-  const personEmails =
-    String((person as any)?.person?.emails ?? (row as any)?.emails ?? (row as any)?.email ?? "").trim() || null;
-
-  const invite = useInviteTab({
-    open,
-    row,
-    assignmentId: assignmentId ? String(assignmentId) : null,
-    personEmails,
-  });
-
-  const inferredEmail = useMemo(() => {
-    const s = String((person as any)?.person?.emails ?? (row as any)?.emails ?? (row as any)?.email ?? "").trim();
-    if (!s) return "";
-    const first = s
-      .split(/[;,\n]+/)
-      .map((x) => x.trim())
-      .filter(Boolean)[0];
-    return first ?? "";
-  }, [person, row]);
-
   // ---------------- Pills / record status ----------------
 
   const personOk = !!String(((person as any).personDraft ?? (person as any).person ?? {})?.full_name ?? "").trim();
@@ -242,7 +220,6 @@ function RosterRowModuleInner({
       { value: "org" as const, label: "Org" },
       { value: "leadership" as const, label: "Leadership" },
       { value: "assignment" as const, label: "Assignments" },
-      { value: "invite" as const, label: "Invite" },
     ],
     []
   );
@@ -278,14 +255,6 @@ function RosterRowModuleInner({
       return;
     }
   };
-
-  const startAssignment =
-    typeof (assignment as any)?.startAssignment === "function" ? (assignment as any).startAssignment : undefined;
-  const endAssignment =
-    typeof (assignment as any)?.endAssignment === "function" ? (assignment as any).endAssignment : undefined;
-
-  const startingAssignment = Boolean((assignment as any)?.startingAssignment);
-  const endingAssignment = Boolean((assignment as any)?.endingAssignment);
 
   return (
     <Modal
@@ -349,33 +318,11 @@ function RosterRowModuleInner({
             />
           ) : null}
 
-          {tab === "invite" ? (
-            <InviteTab
-              row={row}
-              assignmentId={assignmentId ? String(assignmentId) : null}
-              inferredEmail={inferredEmail}
-              inviteEmail={(invite as any).inviteEmail}
-              setInviteEmail={(invite as any).setInviteEmail}
-              inviteStatus={(invite as any).inviteStatus}
-              invitePill={(invite as any).invitePill}
-              inviteErr={(invite as any).inviteErr}
-              inviteOk={(invite as any).inviteOk}
-              sendInvite={(invite as any).sendInvite}
-              status={(invite as any).status}
-              statusLoading={(invite as any).statusLoading}
-              statusErr={(invite as any).statusErr}
-              loadStatus={(invite as any).loadStatus}
-              inviteButtonLabel={(invite as any).inviteButtonLabel}
-              inviteDisabledReason={(invite as any).inviteDisabledReason}
-            />
-          ) : null}
-
           {tab === "org" ? (
             <OrgTab
               row={row}
               pcOrgName={pcOrgName}
               orgStartDate={orgStartDate}
-              // ✅ THREAD THE META VALUES INTO THE ORG TAB
               msoName={(org as any).msoName ?? null}
               divisionName={(org as any).divisionName ?? null}
               regionName={(org as any).regionName ?? null}

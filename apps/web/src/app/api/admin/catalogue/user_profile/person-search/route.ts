@@ -12,10 +12,7 @@ async function requireOwnerOrAdmin() {
   } = await sb.auth.getUser();
 
   if (!user || userErr) {
-      return NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 }
-    )
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
   let owner = false;
@@ -52,6 +49,10 @@ async function requireOwnerOrAdmin() {
   return NextResponse.json({ ok: true }, { status: 200 });
 }
 
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
 export async function GET(req: NextRequest) {
   const gate = await requireOwnerOrAdmin();
   if (gate.status !== 200) {
@@ -68,8 +69,13 @@ export async function GET(req: NextRequest) {
     .limit(25);
 
   if (q) {
-    const escaped = q.replace(/[%_]/g, "");
-    query = query.or(`full_name.ilike.%${escaped}%,emails.ilike.%${escaped}%`);
+    const escaped = q.replace(/[%_]/g, "").trim();
+
+    if (isUuid(escaped)) {
+      query = query.eq("person_id", escaped);
+    } else {
+      query = query.or(`full_name.ilike.%${escaped}%,emails.ilike.%${escaped}%,person_id.eq.${escaped}`);
+    }
   }
 
   const res = await query;

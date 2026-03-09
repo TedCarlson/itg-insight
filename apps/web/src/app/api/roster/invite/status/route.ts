@@ -81,11 +81,11 @@ async function guardSelectedOrgRosterManage(): Promise<GuardOk | GuardFail> {
   }
   if (ownerRow?.auth_user_id) return { ok: true, pc_org_id, auth_user_id: userId, apiClient };
 
-  // Role bypass (keep aligned with existing patterns)
+  // Role bypass
   const roleAllowed = await hasAnyRole(admin, userId, ["admin", "dev", "director", "manager", "vp"]);
   if (roleAllowed) return { ok: true, pc_org_id, auth_user_id: userId, apiClient };
 
-  // roster_manage grant via boolean RPC (no direct table reads)
+  // roster_manage grant via boolean RPC
   const { data: allowedByGrant, error: grantErr } = await apiClient.rpc("has_any_pc_org_permission", {
     p_pc_org_id: pc_org_id,
     p_permission_keys: ["roster_manage"],
@@ -151,11 +151,12 @@ async function handler(req: NextRequest) {
   }
 
   const invited = Boolean(inviteRow?.invite_id);
+  const invited_at = inviteRow?.invited_at ? String(inviteRow.invited_at) : null;
   const resolvedPersonId = String(inviteRow?.person_id ?? person_id ?? "").trim() || null;
 
   // 2) user_profile existence (by person_id)
-  let profileExists = false;
-  let profileAuthUserId: string | null = null;
+  let has_profile_row = false;
+  let auth_user_id: string | null = null;
 
   if (resolvedPersonId) {
     const { data: prof, error: profErr } = await admin
@@ -171,32 +172,43 @@ async function handler(req: NextRequest) {
       );
     }
 
-    profileExists = Boolean(prof?.person_id);
-    profileAuthUserId = prof?.auth_user_id ? String(prof.auth_user_id).trim() : null;
+    has_profile_row = Boolean(prof?.person_id);
+    auth_user_id = prof?.auth_user_id ? String(prof.auth_user_id).trim() : null;
   }
 
-  // 3) Logged-in status is NOT tracked yet (per your note) — placeholder only
-  const hasLoggedIn = null as null;
+  // 3) Auth status
+  let last_sign_in_at: string | null = null;
+  let auth_email: string | null = null;
+  let has_logged_in = false;
+
+  if (auth_user_id) {
+    try {
+      const { data: authData, error: authErr } = await admin.auth.admin.getUserById(auth_user_id);
+
+      if (!authErr) {
+        auth_email = authData?.user?.email ? String(authData.user.email) : null;
+        last_sign_in_at = authData?.user?.last_sign_in_at ? String(authData.user.last_sign_in_at) : null;
+        has_logged_in = Boolean(last_sign_in_at);
+      }
+    } catch {
+      // keep null/defaults
+    }
+  }
 
   return NextResponse.json({
     ok: true,
-    pc_org_id: guard.pc_org_id,
-
-    // input echo
-    requested: { assignment_id, person_id, email },
-
-    // results
     invited,
-    invite: inviteRow ?? null,
-
-    profile_exists: profileExists,
-    profile_auth_user_id: profileAuthUserId,
-
-    has_logged_in: hasLoggedIn,
-
+    invited_at,
+    has_profile_row,
+    auth_user_id,
+    has_logged_in,
+    last_sign_in_at,
+    auth_email,
     debug: dbg({
-      auth_user_id: guard.auth_user_id,
+      pc_org_id: guard.pc_org_id,
+      requested: { assignment_id, person_id, email },
       resolved_person_id: resolvedPersonId,
+      checked_auth_user_id: auth_user_id,
     }),
   });
 }
