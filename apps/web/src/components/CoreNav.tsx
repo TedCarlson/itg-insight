@@ -9,6 +9,7 @@ import {
   BarChart3,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   Home,
   LogOut,
   MapPin,
@@ -104,6 +105,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
       { key: "routelock", label: "Route Lock", href: "/route-lock", icon: CalendarDays },
       { key: "metrics", label: "Metrics", href: "/metrics", icon: BarChart3 },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console", icon: ClipboardCheck },
+      { key: "fieldlog", label: "Field Log", href: "/field-log", icon: ClipboardList },
     ];
   }, [lob]);
 
