@@ -35,11 +35,14 @@ export function FieldLogSupervisorActionsCard(
 
   if (!canApprove) return null;
 
+  const xmApprovalRequired = xmAllowed && xmDeclared;
+  const approvalBlocked = xmApprovalRequired && !xmLinkValid;
+
   return (
     <section className="rounded-2xl border bg-card p-5">
       <div className="text-base font-semibold">Supervisor Actions</div>
 
-      {xmAllowed && xmDeclared && !xmLinkValid ? (
+      {xmApprovalRequired ? (
         <div className="mt-3 space-y-3">
           <input
             value={xmLink}
@@ -47,9 +50,16 @@ export function FieldLogSupervisorActionsCard(
             placeholder="https://xm.optek.comcast.net/..."
             className="w-full rounded-xl border px-3 py-3"
           />
-          <div className="text-xs text-muted-foreground">
-            Append valid XM link before approval if using XM evidence path.
-          </div>
+
+          {approvalBlocked ? (
+            <div className="text-sm font-medium text-red-600">
+              XM link required before approval. Append a valid XM link to continue.
+            </div>
+          ) : (
+            <div className="text-sm font-medium text-green-600">
+              XM link validated. Ready for approval.
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -70,9 +80,11 @@ export function FieldLogSupervisorActionsCard(
       <div className="mt-4 grid gap-2">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || approvalBlocked}
           onClick={() => void onApprove()}
-          className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
+          className={`rounded-xl px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
+            approvalBlocked ? "bg-slate-400" : "bg-blue-600"
+          }`}
         >
           {busy ? "Working…" : "Approve"}
         </button>

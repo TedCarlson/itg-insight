@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "@/state/session";
 import { useOrg } from "@/state/org";
 import { FieldLogTimelineCard } from "../components/FieldLogTimelineCard";
@@ -24,6 +26,9 @@ import type {
 
 export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload }) {
   const { initialData } = props;
+  const searchParams = useSearchParams();
+  const fromReview = searchParams.get("from") === "review";
+
   const { userId } = useSession();
   const { selectedOrgId } = useOrg();
 
@@ -133,6 +138,11 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         throw new Error(json.error || "Failed to approve Field Log.");
       }
 
+      if (fromReview) {
+        window.location.href = "/field-log/review";
+        return;
+      }
+
       await refreshDetail();
       await loadTimeline();
       setXmLink("");
@@ -173,6 +183,11 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       const json = (await res.json()) as FieldLogApiResponse;
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Failed to request follow-up.");
+      }
+
+      if (fromReview) {
+        window.location.href = "/field-log/review";
+        return;
       }
 
       await refreshDetail();
@@ -218,6 +233,17 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
   return (
     <div className="space-y-4">
+      {fromReview ? (
+        <div>
+          <Link
+            href="/field-log/review"
+            className="inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            ← Back to Review Queue
+          </Link>
+        </div>
+      ) : null}
+
       <FieldLogDetailHeaderCard
         jobNumber={data.job_number}
         categoryLabel={data.category_label}

@@ -172,7 +172,7 @@ export function FieldLogReviewClient() {
           return (
             <Link
               key={row.report_id}
-              href={`/field-log/${row.report_id}`}
+              href={`/field-log/${row.report_id}?from=review`}
               className={`block rounded-2xl border bg-card p-4 transition hover:bg-muted/40 ${borderClass}`}
             >
               <div className="flex items-start justify-between gap-3">
