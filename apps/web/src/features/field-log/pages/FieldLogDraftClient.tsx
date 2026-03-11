@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFieldLogRuntime } from "../hooks/useFieldLogRuntime";
 import type { FieldLogRule } from "../lib/fieldLog.types";
 
@@ -28,6 +28,14 @@ type LocalPhoto = {
   photoLabelKey: string | null;
 };
 
+type LocationState = {
+  gpsLat: number | null;
+  gpsLng: number | null;
+  gpsAccuracyM: number | null;
+  capturedAt: number | null;
+  error: string | null;
+};
+
 function makeFakePath(reportId: string, fileName: string) {
   return `field-log/${reportId}/${Date.now()}-${fileName}`;
 }
@@ -36,6 +44,23 @@ function needsSubcategory(rule: FieldLogRule | null, subcategoryKey: string | nu
   if (!rule) return false;
   if (!rule.require_subcategory) return false;
   return !subcategoryKey;
+}
+
+function hasCapturedLocation(location: LocationState) {
+  return location.gpsLat != null && location.gpsLng != null;
+}
+
+function formatLocationStatus(location: LocationState, capturingLocation: boolean) {
+  if (capturingLocation) return "Capturing location…";
+  if (hasCapturedLocation(location)) return "Location captured";
+  if (location.error) return location.error;
+  return "Location not captured";
+}
+
+function formatCapturedAt(value: number | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  return d.toLocaleTimeString();
 }
 
 export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
@@ -55,18 +80,36 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [capturingLocation, setCapturingLocation] = useState(false);
+  const [location, setLocation] = useState<LocationState>({
+    gpsLat: null,
+    gpsLng: null,
+    gpsAccuracyM: null,
+    capturedAt: null,
+    error: null,
+  });
 
   const requiredPhotoCount = rule?.min_photo_count ?? 0;
   const canUseXm = rule?.xm_allowed ?? false;
   const photoRequirements = rule?.photo_requirements ?? [];
+  const locationRequired = !!rule?.location_required;
 
   const photoCountText = useMemo(() => {
     return `${photos.length}/${requiredPhotoCount}`;
   }, [photos.length, requiredPhotoCount]);
 
-  async function saveBaseFields() {
+  const locationStatusText = useMemo(() => {
+    return formatLocationStatus(location, capturingLocation);
+  }, [location, capturingLocation]);
+
+  async function saveBaseFields(locationOverride?: Partial<LocationState>) {
+    const gpsLat = locationOverride?.gpsLat ?? location.gpsLat;
+    const gpsLng = locationOverride?.gpsLng ?? location.gpsLng;
+    const gpsAccuracyM = locationOverride?.gpsAccuracyM ?? location.gpsAccuracyM;
+
     const res = await fetch("/api/field-log/draft/base", {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
         reportId,
         jobNumber: jobNumber.trim(),
@@ -74,6 +117,9 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         comment: comment.trim() || null,
         evidenceDeclared: useXm ? "xm_platform" : photos.length > 0 ? "field_upload" : "none",
         xmDeclared: useXm,
+        gpsLat,
+        gpsLng,
+        gpsAccuracyM,
       }),
     });
 
@@ -83,11 +129,80 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     }
   }
 
+  async function captureLocation(options?: { persist?: boolean; force?: boolean }) {
+    const persist = options?.persist ?? true;
+    const force = options?.force ?? false;
+
+    if (!force && hasCapturedLocation(location)) {
+      return location;
+    }
+
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      const next = {
+        gpsLat: null,
+        gpsLng: null,
+        gpsAccuracyM: null,
+        capturedAt: null,
+        error: "Location services unavailable on this device.",
+      };
+      setLocation(next);
+      return next;
+    }
+
+    setCapturingLocation(true);
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+
+      const next: LocationState = {
+        gpsLat: position.coords.latitude,
+        gpsLng: position.coords.longitude,
+        gpsAccuracyM: position.coords.accuracy,
+        capturedAt: Date.now(),
+        error: null,
+      };
+
+      setLocation(next);
+
+      if (persist) {
+        await saveBaseFields(next);
+      }
+
+      return next;
+    } catch (err: any) {
+      let message = "Location capture failed.";
+
+      if (err?.code === 1) message = "Location permission denied.";
+      else if (err?.code === 2) message = "Location unavailable.";
+      else if (err?.code === 3) message = "Location request timed out.";
+
+      const next: LocationState = {
+        gpsLat: null,
+        gpsLng: null,
+        gpsAccuracyM: null,
+        capturedAt: null,
+        error: message,
+      };
+
+      setLocation(next);
+      return next;
+    } finally {
+      setCapturingLocation(false);
+    }
+  }
+
   async function addAttachment(file: File, photoLabelKey: string | null) {
     const filePath = makeFakePath(reportId, file.name);
 
     const res = await fetch("/api/field-log/attachment", {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
         reportId,
         photoLabelKey,
@@ -127,7 +242,11 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         setUseXm(false);
       }
 
-      await saveBaseFields();
+      if (locationRequired && !hasCapturedLocation(location)) {
+        await captureLocation({ persist: true });
+      } else {
+        await saveBaseFields();
+      }
 
       for (const file of files) {
         await addAttachment(file, photoLabelKey);
@@ -168,15 +287,29 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
 
     setSubmitting(true);
     try {
-      await saveBaseFields();
+      let activeLocation = location;
+
+      if (locationRequired && !hasCapturedLocation(activeLocation)) {
+        activeLocation = await captureLocation({ persist: true, force: true });
+      } else {
+        await saveBaseFields();
+      }
+
+      if (locationRequired && !hasCapturedLocation(activeLocation)) {
+        throw new Error("Location capture is required before submit.");
+      }
 
       const res = await fetch("/api/field-log/submit", {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           reportId,
           comment: comment.trim() || null,
           evidenceDeclared: useXm ? "xm_platform" : photos.length > 0 ? "field_upload" : "none",
           xmDeclared: useXm,
+          gpsLat: activeLocation.gpsLat,
+          gpsLng: activeLocation.gpsLng,
+          gpsAccuracyM: activeLocation.gpsAccuracyM,
         }),
       });
 
@@ -194,6 +327,12 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       setSubmitting(false);
     }
   }
+
+  useEffect(() => {
+    if (!locationRequired) return;
+    void captureLocation({ persist: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportId, locationRequired]);
 
   return (
     <div className="space-y-6">
@@ -233,6 +372,38 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               {type.toUpperCase()}
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-2xl border bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold">Location</div>
+            <div className="text-sm text-muted-foreground">
+              {locationRequired ? "Required for this submission." : "Optional for this submission."}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void captureLocation({ persist: true, force: true })}
+            disabled={capturingLocation || saving || submitting}
+            className="rounded-xl border px-3 py-2 text-sm font-medium disabled:opacity-60"
+          >
+            {capturingLocation ? "Capturing…" : "Refresh Location"}
+          </button>
+        </div>
+
+        <div className="rounded-xl bg-muted/40 p-3 text-sm">
+          <div className="font-medium">{locationStatusText}</div>
+          {location.capturedAt ? (
+            <div className="mt-1 text-muted-foreground">
+              Captured at {formatCapturedAt(location.capturedAt)}
+            </div>
+          ) : null}
+          {location.error ? (
+            <div className="mt-1 text-red-600">{location.error}</div>
+          ) : null}
         </div>
       </section>
 
@@ -328,7 +499,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
 
       <button
         type="button"
-        disabled={saving || submitting}
+        disabled={saving || submitting || (locationRequired && capturingLocation)}
         onClick={() => void onSubmit()}
         className="w-full rounded-2xl bg-blue-600 px-4 py-4 font-semibold text-white disabled:opacity-60"
       >
