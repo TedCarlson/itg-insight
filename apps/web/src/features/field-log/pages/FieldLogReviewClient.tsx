@@ -22,6 +22,9 @@ type QueueRow = {
   job_type: string | null;
   evidence_badge: string;
   submitted_at: string | null;
+  tech_full_name?: string | null;
+  tech_id?: string | null;
+  approved_by_full_name?: string | null;
 };
 
 type QueueResponse = {
@@ -168,6 +171,7 @@ export function FieldLogReviewClient() {
         {rows.map((row) => {
           const chip = getStatusChip(row.status);
           const borderClass = getStatusBorder(row.status);
+          const showApprovedBy = row.status === "approved" && !!row.approved_by_full_name;
 
           return (
             <Link
@@ -176,8 +180,16 @@ export function FieldLogReviewClient() {
               className={`block rounded-2xl border bg-card p-4 transition hover:bg-muted/40 ${borderClass}`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <div className="text-base font-semibold">{row.job_number}</div>
+
+                  {row.tech_full_name || row.tech_id ? (
+                    <div className="mt-1 text-sm text-foreground">
+                      {row.tech_id ? `${row.tech_id} • ` : ""}
+                      {row.tech_full_name ?? "Unknown Technician"}
+                    </div>
+                  ) : null}
+
                   <div className="mt-1 text-sm text-muted-foreground">
                     {row.category_label ?? "Field Log"}
                     {row.subcategory_label ? ` • ${row.subcategory_label}` : ""}
@@ -196,6 +208,12 @@ export function FieldLogReviewClient() {
                 {row.job_type ? `Job Type: ${row.job_type.toUpperCase()} • ` : ""}
                 {row.evidence_badge}
               </div>
+
+              {showApprovedBy ? (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  Approved by {row.approved_by_full_name}
+                </div>
+              ) : null}
 
               <div className="mt-3 text-xs font-medium text-muted-foreground">
                 Opens review detail

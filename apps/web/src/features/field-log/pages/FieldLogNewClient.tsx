@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useFieldLogRuntime } from "../hooks/useFieldLogRuntime";
 import { useSession } from "@/state/session";
 import { useOrg } from "@/state/org";
+import { useAccessPass } from "@/state/access";
+import { SubjectTechPicker } from "../components/SubjectTechPicker";
+import type { TechSearchRow } from "../hooks/useTechSearch";
 
 type DraftResponse = {
   ok: boolean;
@@ -11,23 +14,45 @@ type DraftResponse = {
   error?: string;
 };
 
+function canAssignSubjectTech(accessPass: any) {
+  if (!accessPass) return false;
+  if (accessPass.is_admin || accessPass.is_app_owner || accessPass.is_owner) return true;
+
+  const perms = accessPass.permissions ?? [];
+  return perms.some(
+    (p: string) =>
+      p.includes("manage") ||
+      p === "roster_view" ||
+      p === "dispatch_view" ||
+      p === "metrics_view" ||
+      p === "route_lock_view",
+  );
+}
+
 export default function FieldLogNewClient() {
   const { categories, getSubcategoriesForCategory, getRuleForSelection } =
     useFieldLogRuntime();
 
   const { userId } = useSession();
   const { selectedOrgId } = useOrg();
+  const { accessPass } = useAccessPass();
 
   const [categoryKey, setCategoryKey] = useState<string | null>(null);
   const [subcategoryKey, setSubcategoryKey] = useState<string | null>(null);
 
   const [jobNumber, setJobNumber] = useState("");
   const [jobType, setJobType] = useState<"install" | "tc" | "sro" | "">("");
-
   const [creating, setCreating] = useState(false);
+
+  const [techQuery, setTechQuery] = useState("");
+  const [selectedTech, setSelectedTech] = useState<TechSearchRow | null>(null);
 
   const subcategories = getSubcategoriesForCategory(categoryKey);
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
+
+  const showSubjectTechPicker = useMemo(() => {
+    return canAssignSubjectTech(accessPass);
+  }, [accessPass]);
 
   async function createDraft() {
     if (!categoryKey) return;
@@ -40,6 +65,11 @@ export default function FieldLogNewClient() {
 
     if (!selectedOrgId) {
       alert("Please select a PC scope before creating a Field Log.");
+      return;
+    }
+
+    if (showSubjectTechPicker && !selectedTech) {
+      alert("Select the technician this Field Log belongs to.");
       return;
     }
 
@@ -56,6 +86,9 @@ export default function FieldLogNewClient() {
           subcategoryKey,
           jobNumber: jobNumber.trim(),
           jobType: jobType || null,
+          subjectPersonId: selectedTech?.person_id ?? null,
+          subjectFullName: selectedTech?.full_name ?? null,
+          subjectTechId: selectedTech?.tech_id ?? null,
         }),
       });
 
@@ -122,6 +155,25 @@ export default function FieldLogNewClient() {
         </section>
       ) : null}
 
+      <SubjectTechPicker
+        enabled={showSubjectTechPicker}
+        pcOrgId={selectedOrgId}
+        query={techQuery}
+        selectedTech={selectedTech}
+        onQueryChange={(value) => {
+          setTechQuery(value);
+          setSelectedTech(null);
+        }}
+        onSelect={(row) => {
+          setSelectedTech(row);
+          setTechQuery(`${row.full_name ?? "Unknown"} • Tech ID: ${row.tech_id ?? "—"}`);
+        }}
+        onClear={() => {
+          setSelectedTech(null);
+          setTechQuery("");
+        }}
+      />
+
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Job Info</h2>
 
@@ -164,9 +216,14 @@ export default function FieldLogNewClient() {
       ) : null}
 
       <button
-        disabled={!categoryKey || !jobNumber.trim() || creating}
+        disabled={
+          !categoryKey ||
+          !jobNumber.trim() ||
+          creating ||
+          (showSubjectTechPicker && !selectedTech)
+        }
         onClick={() => void createDraft()}
-        className="w-full rounded-xl bg-blue-600 p-4 font-semibold text-white"
+        className="w-full rounded-xl bg-blue-600 p-4 font-semibold text-white disabled:opacity-60"
       >
         {creating ? "Creating…" : "Continue"}
       </button>

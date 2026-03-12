@@ -18,11 +18,16 @@ import { FieldLogSubmissionCard } from "../components/FieldLogSubmissionCard";
 import { FieldLogRuleContextCard } from "../components/FieldLogRuleContextCard";
 import { FieldLogNotDoneDetailCard } from "../components/FieldLogNotDoneDetailCard";
 import { FieldLogPostCallDetailCard } from "../components/FieldLogPostCallDetailCard";
+import { ALLOW_SUPERVISOR_PROXY_UPLOAD } from "../lib/rolloutFlags";
 import type {
   FieldLogApiResponse,
   FieldLogDetailPayload,
   FieldLogTimelineEvent,
 } from "../lib/fieldLogDetail.types";
+
+function makeProxyPath(reportId: string, fileName: string) {
+  return `field-log/${reportId}/${Date.now()}-${fileName}`;
+}
 
 export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload }) {
   const { initialData } = props;
@@ -34,6 +39,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
   const [data, setData] = useState<FieldLogDetailPayload>(initialData);
   const [busy, setBusy] = useState(false);
+  const [proxyUploading, setProxyUploading] = useState(false);
   const [xmLink, setXmLink] = useState("");
   const [timeline, setTimeline] = useState<FieldLogTimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
@@ -51,6 +57,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     data.status === "pending_review" ||
     data.status === "tech_followup_required" ||
     data.status === "sup_followup_required";
+
+  const canUseSupervisorProxyUpload =
+    ALLOW_SUPERVISOR_PROXY_UPLOAD && fromReview && canApprove;
 
   const refreshDetail = useCallback(async () => {
     const res = await fetch(
@@ -229,6 +238,42 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     }
   }
 
+  async function onSupervisorPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    setProxyUploading(true);
+    try {
+      for (const file of files) {
+        const res = await fetch("/api/field-log/attachment", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            reportId: data.report_id,
+            photoLabelKey: null,
+            filePath: makeProxyPath(data.report_id, file.name),
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            fileSizeBytes: file.size,
+          }),
+        });
+
+        const json = (await res.json()) as FieldLogApiResponse;
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Failed to add supervisor attachment.");
+        }
+      }
+
+      await refreshDetail();
+      await loadTimeline();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload photo for technician.");
+    } finally {
+      setProxyUploading(false);
+      e.target.value = "";
+    }
+  }
+
   const chip = getStatusChip(data.status);
 
   return (
@@ -331,6 +376,34 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             onRequestTechFollowup={() => requestFollowup("tech")}
             onRequestSupervisorFollowup={() => requestFollowup("supervisor")}
           />
+
+          {canUseSupervisorProxyUpload ? (
+            <section className="rounded-2xl border bg-card p-5">
+              <div className="text-base font-semibold">Supervisor Upload (Adoption Mode)</div>
+              <div className="mt-2 text-sm text-muted-foreground">
+                Upload technician photos on their behalf while onboarding and access rollout are in progress.
+              </div>
+
+              <label className="mt-4 block rounded-xl border border-dashed px-4 py-4 text-sm">
+                <div className="font-medium">Upload Photo for Technician</div>
+                <div className="mt-1 text-muted-foreground">
+                  Select one or more images from this device.
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="mt-3 block w-full text-sm"
+                  disabled={proxyUploading || busy}
+                  onChange={(e) => void onSupervisorPickFiles(e)}
+                />
+              </label>
+
+              <div className="mt-3 text-xs text-muted-foreground">
+                Temporary rollout support. Intended for supervisor-assisted submissions only.
+              </div>
+            </section>
+          ) : null}
 
           <FieldLogTechFollowupCard
             busy={busy}

@@ -11,6 +11,9 @@ type CreateDraftBody = {
   subcategoryKey?: string | null;
   jobNumber?: string;
   jobType?: string | null;
+  subjectPersonId?: string | null;
+  subjectFullName?: string | null;
+  subjectTechId?: string | null;
 };
 
 function badRequest(message: string) {
@@ -32,6 +35,10 @@ export async function POST(req: NextRequest) {
   const subcategoryKey = body.subcategoryKey?.trim() || null;
   const jobNumber = body.jobNumber?.trim();
   const jobType = body.jobType?.trim() || null;
+
+  const subjectPersonId = body.subjectPersonId?.trim() || null;
+  const subjectFullName = body.subjectFullName?.trim() || null;
+  const subjectTechId = body.subjectTechId?.trim() || null;
 
   if (!createdByUserId) {
     return badRequest("createdByUserId is required.");
@@ -67,6 +74,9 @@ export async function POST(req: NextRequest) {
     p_subcategory_key: subcategoryKey,
     p_job_number: jobNumber,
     p_job_type: jobType,
+    p_subject_person_id: subjectPersonId,
+    p_subject_full_name: subjectFullName,
+    p_subject_tech_id: subjectTechId,
   });
 
   if (error) {

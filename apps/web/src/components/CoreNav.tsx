@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
+  ArrowLeft,
   BarChart3,
   CalendarDays,
   ClipboardCheck,
@@ -54,8 +55,26 @@ function rememberLob(lob: "FULFILLMENT" | "LOCATE") {
   }
 }
 
+function getFieldLogBackHref(pathname: string, fromReview: boolean) {
+  const isFieldLogDetail =
+    pathname.startsWith("/field-log/") &&
+    !pathname.startsWith("/field-log/review") &&
+    !pathname.startsWith("/field-log/mine") &&
+    !pathname.startsWith("/field-log/new") &&
+    !pathname.startsWith("/field-log/draft");
+
+  if (isFieldLogDetail && fromReview) {
+    return "/field-log/review";
+  }
+
+  return "/field-log";
+}
+
 export default function CoreNav({ lob }: CoreNavProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const fromReview = searchParams.get("from") === "review";
+
   const { ready, signedIn, email, isOwner } = useSession();
   const { selectedOrgId } = useOrg();
   const { canManageConsole } = useOrgConsoleAccess();
@@ -140,6 +159,9 @@ export default function CoreNav({ lob }: CoreNavProps) {
     },
     [isOwner, pathname, switching]
   );
+
+  const showFieldLogBack = pathname.startsWith("/field-log") && pathname !== "/field-log";
+  const fieldLogBackHref = getFieldLogBackHref(pathname, fromReview);
 
   if (shouldHideForRoute) return null;
   if (!ready || !signedIn) return null;
@@ -284,14 +306,25 @@ export default function CoreNav({ lob }: CoreNavProps) {
 
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 border-b bg-background/80 backdrop-blur">
         <div className="flex items-center justify-between px-4 py-3">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="rounded-md border px-2 py-2 hover:bg-muted"
-            aria-label="Open menu"
-          >
-            <Menu className="h-4 w-4" />
-          </button>
+          {showFieldLogBack ? (
+            <Link
+              href={fieldLogBackHref}
+              prefetch={false}
+              className="rounded-md border px-2 py-2 hover:bg-muted"
+              aria-label="Back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="rounded-md border px-2 py-2 hover:bg-muted"
+              aria-label="Open menu"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+          )}
 
           <Link href={homeHref} prefetch={false} className="text-sm font-semibold">
             Insight

@@ -1,0 +1,1 @@
+export const ALLOW_SUPERVISOR_PROXY_UPLOAD = true;
