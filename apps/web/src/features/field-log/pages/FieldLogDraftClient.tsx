@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/shared/data/supabase/client";
 import { useFieldLogRuntime } from "../hooks/useFieldLogRuntime";
 import type { FieldLogRule } from "../lib/fieldLog.types";
 
@@ -36,8 +37,13 @@ type LocationState = {
   error: string | null;
 };
 
-function makeFakePath(reportId: string, fileName: string) {
-  return `field-log/${reportId}/${Date.now()}-${fileName}`;
+function makeStoragePath(reportId: string, fileName: string) {
+  const safeName = fileName.replace(/\s+/g, "-");
+  return `${reportId}/${Date.now()}-${safeName}`;
+}
+
+function makeDbFilePath(objectPath: string) {
+  return `field-log/${objectPath}`;
 }
 
 function needsSubcategory(rule: FieldLogRule | null, subcategoryKey: string | null) {
@@ -66,6 +72,7 @@ function formatCapturedAt(value: number | null) {
 export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const { reportId, categoryKey, subcategoryKey, initialJobNumber, initialJobType } = props;
   const { getRuleForSelection } = useFieldLogRuntime();
+  const supabase = useMemo(() => createClient(), []);
 
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
 
@@ -197,8 +204,27 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     }
   }
 
+  async function uploadFileToStorage(file: File) {
+    const objectPath = makeStoragePath(reportId, file.name);
+
+    const { error } = await supabase.storage.from("field-log").upload(objectPath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "application/octet-stream",
+    });
+
+    if (error) {
+      throw new Error(error.message || "Failed to upload file.");
+    }
+
+    return {
+      objectPath,
+      dbFilePath: makeDbFilePath(objectPath),
+    };
+  }
+
   async function addAttachment(file: File, photoLabelKey: string | null) {
-    const filePath = makeFakePath(reportId, file.name);
+    const { dbFilePath } = await uploadFileToStorage(file);
 
     const res = await fetch("/api/field-log/attachment", {
       method: "POST",
@@ -206,7 +232,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       body: JSON.stringify({
         reportId,
         photoLabelKey,
-        filePath,
+        filePath: dbFilePath,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
         fileSizeBytes: file.size,
@@ -223,7 +249,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       {
         id: `${Date.now()}-${file.name}`,
         fileName: file.name,
-        filePath,
+        filePath: dbFilePath,
         photoLabelKey,
       },
     ]);
