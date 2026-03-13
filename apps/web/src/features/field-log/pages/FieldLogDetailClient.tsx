@@ -15,7 +15,6 @@ import { FieldLogTechFollowupCard } from "../components/FieldLogTechFollowupCard
 import { FieldLogDetailHeaderCard } from "../components/FieldLogDetailHeaderCard";
 import { FieldLogCommentCard } from "../components/FieldLogCommentCard";
 import { FieldLogSubmissionCard } from "../components/FieldLogSubmissionCard";
-import { FieldLogRuleContextCard } from "../components/FieldLogRuleContextCard";
 import { FieldLogNotDoneDetailCard } from "../components/FieldLogNotDoneDetailCard";
 import { FieldLogPostCallDetailCard } from "../components/FieldLogPostCallDetailCard";
 import { ALLOW_SUPERVISOR_PROXY_UPLOAD } from "../lib/rolloutFlags";
@@ -307,7 +306,12 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         chipLabel={chip.label}
         chipClassName={chip.className}
         statusTitle={niceStatus(data.status)}
-        activeInstruction={data.rule?.active_text_instruction ?? null}
+        minPhotoCount={data.rule?.min_photo_count}
+        xmAllowed={data.rule?.xm_allowed}
+        commentRequired={data.rule?.comment_required}
+        locationRequired={data.rule?.location_required}
+        toleranceMeters={data.rule?.location_tolerance_m}
+        photoRequirements={data.rule?.photo_requirements}
       />
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -331,17 +335,6 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           <FieldLogCommentCard
             comment={data.comment}
             followupNote={data.followup_note}
-          />
-
-          <FieldLogRuleContextCard
-            minPhotoCount={data.rule?.min_photo_count}
-            xmAllowed={data.rule?.xm_allowed}
-            commentRequired={data.rule?.comment_required}
-            locationRequired={data.rule?.location_required}
-            toleranceMeters={data.rule?.location_tolerance_m}
-            showUcode={data.rule?.show_ucode}
-            selectedUcode={data.not_done?.selected_ucode}
-            photoRequirements={data.rule?.photo_requirements}
           />
 
           <FieldLogNotDoneDetailCard

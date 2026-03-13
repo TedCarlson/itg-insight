@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/shared/data/supabase/client";
+import { FieldLogPhotoOverlay } from "./FieldLogPhotoOverlay";
 
 type Attachment = {
   attachment_id: string;
@@ -41,6 +42,7 @@ export function FieldLogAttachmentsCard(props: {
 
   const supabase = useMemo(() => createClient(), []);
   const [resolved, setResolved] = useState<ResolvedAttachment[]>([]);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,72 +89,120 @@ export function FieldLogAttachmentsCard(props: {
     };
   }, [attachments, supabase]);
 
+  const overlayPhotos = useMemo(
+    () =>
+      resolved.filter((item) => isImage(item.mime_type) && !!item.signedUrl).map((item) => ({
+        attachment_id: item.attachment_id,
+        file_name: item.file_name,
+        signedUrl: item.signedUrl,
+      })),
+    [resolved],
+  );
+
+  const openOverlayAt = useCallback(
+    (attachmentId: string) => {
+      const index = overlayPhotos.findIndex((item) => item.attachment_id === attachmentId);
+      if (index >= 0) {
+        setOpenIndex(index);
+      }
+    },
+    [overlayPhotos],
+  );
+
+  const closeOverlay = useCallback(() => {
+    setOpenIndex(null);
+  }, []);
+
+  const goPrev = useCallback(() => {
+    setOpenIndex((prev) => {
+      if (prev == null) return prev;
+      return prev > 0 ? prev - 1 : prev;
+    });
+  }, []);
+
+  const goNext = useCallback(() => {
+    setOpenIndex((prev) => {
+      if (prev == null) return prev;
+      return prev < overlayPhotos.length - 1 ? prev + 1 : prev;
+    });
+  }, [overlayPhotos.length]);
+
   return (
-    <section className="rounded-2xl border bg-card p-5">
-      <div className="text-base font-semibold">Attachments</div>
+    <>
+      <section className="rounded-2xl border bg-card p-5">
+        <div className="text-base font-semibold">Attachments</div>
 
-      {resolved.length ? (
-        <div className="mt-3 space-y-3">
-          {resolved.map((item) => {
-            const canOpen = !!item.signedUrl;
-            const image = isImage(item.mime_type);
+        {resolved.length ? (
+          <div className="mt-3 space-y-3">
+            {resolved.map((item) => {
+              const canOpen = !!item.signedUrl;
+              const image = isImage(item.mime_type);
 
-            return (
-              <div key={item.attachment_id} className="rounded-xl border p-3 text-sm">
-                {image && item.signedUrl ? (
-                  <a
-                    href={item.signedUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mb-3 block"
-                  >
-                    <div className="relative h-40 w-full overflow-hidden rounded-lg">
-                      <Image
-                        src={item.signedUrl}
-                        alt={item.file_name ?? "Field Log attachment"}
-                        fill
-                        unoptimized
-                        className="object-cover"
-                      />
-                    </div>
-                  </a>
-                ) : null}
-
-                <div className="font-medium">{item.file_name ?? item.file_path}</div>
-
-                <div className="mt-1 text-muted-foreground">
-                  {item.photo_label_key ?? "general_evidence"}
-                </div>
-
-                <div className="mt-1 text-muted-foreground">
-                  Uploaded: {fmtDate(item.uploaded_at)}
-                </div>
-
-                <div className="mt-3">
-                  {canOpen ? (
-                    <a
-                      href={item.signedUrl!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
+              return (
+                <div key={item.attachment_id} className="rounded-xl border p-3 text-sm">
+                  {image && item.signedUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => openOverlayAt(item.attachment_id)}
+                      className="mb-3 block w-full text-left"
                     >
-                      Open attachment
-                    </a>
-                  ) : (
-                    <div className="text-xs text-muted-foreground">
-                      Attachment preview unavailable.
-                    </div>
-                  )}
+                      <div className="relative h-40 w-full overflow-hidden rounded-lg">
+                        <Image
+                          src={item.signedUrl}
+                          alt={item.file_name ?? "Field Log attachment"}
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      </div>
+                    </button>
+                  ) : null}
+
+                  <div className="font-medium">{item.file_name ?? item.file_path}</div>
+
+                  <div className="mt-1 text-muted-foreground">
+                    {item.photo_label_key ?? "general_evidence"}
+                  </div>
+
+                  <div className="mt-1 text-muted-foreground">
+                    Uploaded: {fmtDate(item.uploaded_at)}
+                  </div>
+
+                  <div className="mt-3">
+                    {canOpen ? (
+                      <a
+                        href={item.signedUrl!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
+                      >
+                        Open attachment
+                      </a>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">
+                        Attachment preview unavailable.
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="mt-3 text-sm text-muted-foreground">
-          No attachments recorded.
-        </div>
-      )}
-    </section>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-3 text-sm text-muted-foreground">
+            No attachments recorded.
+          </div>
+        )}
+      </section>
+
+      <FieldLogPhotoOverlay
+        open={openIndex != null}
+        photos={overlayPhotos}
+        activeIndex={openIndex ?? 0}
+        onClose={closeOverlay}
+        onPrev={goPrev}
+        onNext={goNext}
+      />
+    </>
   );
 }
