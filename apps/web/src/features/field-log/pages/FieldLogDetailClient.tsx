@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/state/session";
 import { useOrg } from "@/state/org";
+import { useAccessPass } from "@/state/access";
 import { createClient } from "@/shared/data/supabase/client";
 import { FieldLogTimelineCard } from "../components/FieldLogTimelineCard";
 import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
@@ -33,6 +34,18 @@ function makeDbFilePath(objectPath: string) {
   return `field-log/${objectPath}`;
 }
 
+function canViewTimeline(accessPass: any) {
+  if (!accessPass) return false;
+  if (accessPass.is_admin || accessPass.is_app_owner || accessPass.is_owner) return true;
+
+  const perms = Array.isArray(accessPass.permissions) ? accessPass.permissions : [];
+  return (
+    perms.includes("leadership_manage") ||
+    perms.includes("permissions_manage") ||
+    perms.includes("metrics_manage")
+  );
+}
+
 export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload }) {
   const { initialData } = props;
   const searchParams = useSearchParams();
@@ -40,6 +53,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
   const { userId } = useSession();
   const { selectedOrgId } = useOrg();
+  const { accessPass } = useAccessPass();
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<FieldLogDetailPayload>(initialData);
@@ -50,6 +64,8 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const [timelineLoading, setTimelineLoading] = useState(true);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [followupNote, setFollowupNote] = useState("");
+
+  const showTimeline = useMemo(() => canViewTimeline(accessPass), [accessPass]);
 
   const canApprove = useMemo(() => {
     return data.status === "pending_review" || data.status === "sup_followup_required";
@@ -84,6 +100,13 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   }, [data.report_id]);
 
   const loadTimeline = useCallback(async () => {
+    if (!showTimeline) {
+      setTimeline([]);
+      setTimelineLoading(false);
+      setTimelineError(null);
+      return;
+    }
+
     setTimelineError(null);
 
     try {
@@ -107,19 +130,21 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     } finally {
       setTimelineLoading(false);
     }
-  }, [data.report_id]);
+  }, [data.report_id, showTimeline]);
 
   useEffect(() => {
-    setTimelineLoading(true);
+    setTimelineLoading(showTimeline);
     void loadTimeline();
-  }, [loadTimeline]);
+  }, [loadTimeline, showTimeline]);
 
   useFieldLogPolling({
     enabled: shouldPollDetail,
     intervalMs: 15000,
     onTick: async () => {
       await refreshDetail();
-      await loadTimeline();
+      if (showTimeline) {
+        await loadTimeline();
+      }
     },
   });
 
@@ -158,7 +183,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       }
 
       await refreshDetail();
-      await loadTimeline();
+      if (showTimeline) {
+        await loadTimeline();
+      }
       setXmLink("");
       setFollowupNote("");
     } catch (err) {
@@ -205,7 +232,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       }
 
       await refreshDetail();
-      await loadTimeline();
+      if (showTimeline) {
+        await loadTimeline();
+      }
       setFollowupNote("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to request follow-up.");
@@ -235,7 +264,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       }
 
       await refreshDetail();
-      await loadTimeline();
+      if (showTimeline) {
+        await loadTimeline();
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to resubmit.");
     } finally {
@@ -284,7 +315,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       }
 
       await refreshDetail();
-      await loadTimeline();
+      if (showTimeline) {
+        await loadTimeline();
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to upload photo for technician.");
     } finally {
@@ -362,11 +395,13 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
           <FieldLogReviewActionsCard actions={data.actions ?? []} />
 
-          <FieldLogTimelineCard
-            timeline={timeline}
-            loading={timelineLoading}
-            error={timelineError}
-          />
+          {showTimeline ? (
+            <FieldLogTimelineCard
+              timeline={timeline}
+              loading={timelineLoading}
+              error={timelineError}
+            />
+          ) : null}
 
           <FieldLogSupervisorActionsCard
             busy={busy}

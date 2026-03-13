@@ -43,15 +43,11 @@ function useOutsideClose(
       if (!target) return;
 
       const clickedInside = refs.some((ref) => ref.current?.contains(target));
-      if (!clickedInside) {
-        onClose();
-      }
+      if (!clickedInside) onClose();
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
+      if (event.key === "Escape") onClose();
     }
 
     document.addEventListener("mousedown", onPointerDown);
@@ -102,7 +98,11 @@ function RulePopover(props: RulePopoverProps) {
       {open ? (
         <div
           ref={popoverRef}
-          className="absolute left-full top-1/2 z-20 ml-2 w-[280px] -translate-y-1/2 rounded-2xl border bg-card p-4 shadow-xl"
+          className="
+            absolute z-20 rounded-2xl border bg-card p-4 shadow-xl
+            top-full left-0 mt-2 w-[min(320px,calc(100vw-2rem))]
+            sm:top-0 sm:left-full sm:mt-0 sm:ml-2 sm:w-[280px]
+          "
         >
           <div className="text-sm font-semibold">Rule Details</div>
 
@@ -212,10 +212,10 @@ export function FieldLogDetailHeaderCard(props: {
   } = props;
 
   return (
-    <section className="rounded-2xl border bg-card p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+    <section className="rounded-2xl border bg-card p-5 overflow-visible">
+      <div className="flex items-start justify-between gap-3 overflow-visible">
+        <div className="min-w-0 overflow-visible">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground overflow-visible">
             <span>Field Log</span>
             <RulePopover
               categoryLabel={categoryLabel}

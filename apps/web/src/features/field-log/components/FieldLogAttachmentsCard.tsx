@@ -91,11 +91,13 @@ export function FieldLogAttachmentsCard(props: {
 
   const overlayPhotos = useMemo(
     () =>
-      resolved.filter((item) => isImage(item.mime_type) && !!item.signedUrl).map((item) => ({
-        attachment_id: item.attachment_id,
-        file_name: item.file_name,
-        signedUrl: item.signedUrl,
-      })),
+      resolved
+        .filter((item) => isImage(item.mime_type) && !!item.signedUrl)
+        .map((item) => ({
+          attachment_id: item.attachment_id,
+          file_name: item.file_name,
+          signedUrl: item.signedUrl,
+        })),
     [resolved],
   );
 
@@ -135,7 +137,6 @@ export function FieldLogAttachmentsCard(props: {
         {resolved.length ? (
           <div className="mt-3 space-y-3">
             {resolved.map((item) => {
-              const canOpen = !!item.signedUrl;
               const image = isImage(item.mime_type);
 
               return (
@@ -156,7 +157,11 @@ export function FieldLogAttachmentsCard(props: {
                         />
                       </div>
                     </button>
-                  ) : null}
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      Attachment preview unavailable.
+                    </div>
+                  )}
 
                   <div className="font-medium">{item.file_name ?? item.file_path}</div>
 
@@ -166,23 +171,6 @@ export function FieldLogAttachmentsCard(props: {
 
                   <div className="mt-1 text-muted-foreground">
                     Uploaded: {fmtDate(item.uploaded_at)}
-                  </div>
-
-                  <div className="mt-3">
-                    {canOpen ? (
-                      <a
-                        href={item.signedUrl!}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
-                      >
-                        Open attachment
-                      </a>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">
-                        Attachment preview unavailable.
-                      </div>
-                    )}
                   </div>
                 </div>
               );

@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 type TimelineEvent = {
   event_id: string;
   event_at: string;
@@ -118,90 +120,93 @@ function milestoneTitle(event: TimelineEvent) {
   return event.event_type.replaceAll("_", " ");
 }
 
-function compactDetail(props: { label: string; value: string; sub?: string | null }) {
-  const { label, value, sub } = props;
-  return (
-    <div className="rounded-xl border p-3">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
-    </div>
-  );
-}
-
 export function FieldLogTimelineCard(props: {
   timeline: TimelineEvent[];
   loading: boolean;
   error: string | null;
 }) {
   const { timeline, loading, error } = props;
+  const [open, setOpen] = useState(false);
 
-  const ordered = sortTimeline(timeline);
+  const model = useMemo(() => {
+    const ordered = sortTimeline(timeline);
 
-  const handoffEvent =
-    firstMatch(ordered, (e) => e.to_status === "pending_review") ??
-    firstMatch(ordered, (e) => e.event_type === "submit") ??
-    null;
+    const handoffEvent =
+      firstMatch(ordered, (e) => e.to_status === "pending_review") ??
+      firstMatch(ordered, (e) => e.event_type === "submit") ??
+      null;
 
-  const handoffAt = handoffEvent?.event_at ?? null;
-  const handoffActorUserId = handoffEvent?.actor_user_id ?? null;
+    const handoffAt = handoffEvent?.event_at ?? null;
+    const handoffActorUserId = handoffEvent?.actor_user_id ?? null;
 
-  const eventsAfterHandoff = handoffAt
-    ? ordered.filter((e) => new Date(e.event_at).getTime() >= new Date(handoffAt).getTime())
-    : [];
+    const eventsAfterHandoff = handoffAt
+      ? ordered.filter((e) => new Date(e.event_at).getTime() >= new Date(handoffAt).getTime())
+      : [];
 
-  const firstReviewerTouch =
-    firstMatch(eventsAfterHandoff, (e) => isReviewerEvent(e, handoffActorUserId)) ?? null;
+    const firstReviewerTouch =
+      firstMatch(eventsAfterHandoff, (e) => isReviewerEvent(e, handoffActorUserId)) ?? null;
 
-  const resolvedEvent =
-    lastMatch(
-      eventsAfterHandoff,
-      (e) =>
-        e.event_type === "approved" ||
-        e.to_status === "approved" ||
-        e.event_type === "followup_requested",
-    ) ?? null;
+    const resolvedEvent =
+      lastMatch(
+        eventsAfterHandoff,
+        (e) =>
+          e.event_type === "approved" ||
+          e.to_status === "approved" ||
+          e.event_type === "followup_requested",
+      ) ?? null;
 
-  const firstTouchMinutes = minutesBetween(handoffAt, firstReviewerTouch?.event_at ?? null);
-  const afterTouchMinutes = minutesBetween(
-    firstReviewerTouch?.event_at ?? null,
-    resolvedEvent?.event_at ?? null,
-  );
-  const totalReviewCycleMinutes = minutesBetween(handoffAt, resolvedEvent?.event_at ?? null);
+    const firstTouchMinutes = minutesBetween(handoffAt, firstReviewerTouch?.event_at ?? null);
+    const afterTouchMinutes = minutesBetween(
+      firstReviewerTouch?.event_at ?? null,
+      resolvedEvent?.event_at ?? null,
+    );
+    const totalReviewCycleMinutes = minutesBetween(handoffAt, resolvedEvent?.event_at ?? null);
 
-  const milestoneRows = [
-    handoffEvent
-      ? {
-          title: "Queued for Review",
-          at: handoffEvent.event_at,
-          by: handoffEvent.actor_full_name ?? null,
-          delta: null as number | null,
-        }
-      : null,
-    firstReviewerTouch
-      ? {
-          title: "First Reviewer Touch",
-          at: firstReviewerTouch.event_at,
-          by: firstReviewerTouch.actor_full_name ?? null,
-          delta: firstTouchMinutes,
-        }
-      : null,
-    resolvedEvent
-      ? {
-          title: milestoneTitle(resolvedEvent),
-          at: resolvedEvent.event_at,
-          by: resolvedEvent.actor_full_name ?? null,
-          delta: totalReviewCycleMinutes,
-        }
-      : null,
-  ].filter(Boolean) as Array<{
-    title: string;
-    at: string;
-    by: string | null;
-    delta: number | null;
-  }>;
+    const milestoneRows = [
+      handoffEvent
+        ? {
+            title: "Queued for Review",
+            at: handoffEvent.event_at,
+            by: handoffEvent.actor_full_name ?? null,
+            delta: null as number | null,
+          }
+        : null,
+      firstReviewerTouch
+        ? {
+            title: "First Reviewer Touch",
+            at: firstReviewerTouch.event_at,
+            by: firstReviewerTouch.actor_full_name ?? null,
+            delta: firstTouchMinutes,
+          }
+        : null,
+      resolvedEvent
+        ? {
+            title: milestoneTitle(resolvedEvent),
+            at: resolvedEvent.event_at,
+            by: resolvedEvent.actor_full_name ?? null,
+            delta: totalReviewCycleMinutes,
+          }
+        : null,
+    ].filter(Boolean) as Array<{
+      title: string;
+      at: string;
+      by: string | null;
+      delta: number | null;
+    }>;
+
+    return {
+      handoffAt,
+      firstTouchAt: firstReviewerTouch?.event_at ?? null,
+      resolvedAt: resolvedEvent?.event_at ?? null,
+      firstTouchMinutes,
+      afterTouchMinutes,
+      totalReviewCycleMinutes,
+      firstTouchHealth: firstTouchHealthLabel(firstTouchMinutes),
+      afterTouchHealth: afterTouchLabel(afterTouchMinutes),
+      lifecycleHealth: lifecycleHealthLabel(firstTouchMinutes),
+      milestoneRows,
+    };
+  }, [timeline]);
 
   if (loading) {
     return (
@@ -234,75 +239,100 @@ export function FieldLogTimelineCard(props: {
 
   return (
     <section className="rounded-2xl border bg-card p-5">
-      <div className="text-base font-semibold">Timeline</div>
-
-      <div className="mt-3 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          {compactDetail({
-            label: "First Touch",
-            value: formatMinutes(firstTouchMinutes),
-            sub: firstTouchHealthLabel(firstTouchMinutes),
-          })}
-          {compactDetail({
-            label: "After Touch",
-            value: formatMinutes(afterTouchMinutes),
-            sub: afterTouchLabel(afterTouchMinutes),
-          })}
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div>
+          <div className="text-base font-semibold">Timeline</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            {model.lifecycleHealth} • First Touch {formatMinutes(model.firstTouchMinutes)}
+          </div>
         </div>
 
-        <div className="rounded-xl border p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+        <div className="text-sm font-medium text-muted-foreground">
+          {open ? "Hide" : "Show"}
+        </div>
+      </button>
+
+      {!open ? null : (
+        <div className="mt-3 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border p-3">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Review Lifecycle Health
+                First Touch
               </div>
               <div className="mt-1 text-lg font-semibold">
-                {lifecycleHealthLabel(firstTouchMinutes)}
+                {formatMinutes(model.firstTouchMinutes)}
               </div>
+              <div className="mt-1 text-xs text-muted-foreground">{model.firstTouchHealth}</div>
             </div>
-            <div className="text-right">
+
+            <div className="rounded-xl border p-3">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Total Cycle
+                After Touch
               </div>
-              <div className="mt-1 text-base font-semibold">
-                {formatMinutes(totalReviewCycleMinutes)}
+              <div className="mt-1 text-lg font-semibold">
+                {formatMinutes(model.afterTouchMinutes)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">{model.afterTouchHealth}</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Review Lifecycle Health
+                </div>
+                <div className="mt-1 text-lg font-semibold">{model.lifecycleHealth}</div>
+              </div>
+
+              <div className="text-right">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Total Cycle
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {formatMinutes(model.totalReviewCycleMinutes)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+              <div className="rounded-lg bg-muted/40 px-3 py-2">
+                <div className="text-xs text-muted-foreground">Handoff</div>
+                <div className="font-medium">{fmtShortTime(model.handoffAt)}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 px-3 py-2">
+                <div className="text-xs text-muted-foreground">First Touch</div>
+                <div className="font-medium">{fmtShortTime(model.firstTouchAt)}</div>
+              </div>
+              <div className="rounded-lg bg-muted/40 px-3 py-2">
+                <div className="text-xs text-muted-foreground">Resolved</div>
+                <div className="font-medium">{fmtShortTime(model.resolvedAt)}</div>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-            <div className="rounded-lg bg-muted/40 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Handoff</div>
-              <div className="font-medium">{fmtShortTime(handoffAt)}</div>
-            </div>
-            <div className="rounded-lg bg-muted/40 px-3 py-2">
-              <div className="text-xs text-muted-foreground">First Touch</div>
-              <div className="font-medium">{fmtShortTime(firstReviewerTouch?.event_at ?? null)}</div>
-            </div>
-            <div className="rounded-lg bg-muted/40 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Resolved</div>
-              <div className="font-medium">{fmtShortTime(resolvedEvent?.event_at ?? null)}</div>
-            </div>
+          <div className="space-y-2">
+            {model.milestoneRows.map((row, index) => (
+              <div key={`${row.title}-${index}`} className="rounded-xl border p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium">{row.title}</div>
+                  {row.delta != null ? (
+                    <div className="text-xs font-medium text-muted-foreground">
+                      +{formatMinutes(row.delta)}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-1 text-muted-foreground">{fmtDate(row.at)}</div>
+                {row.by ? <div className="mt-1 text-muted-foreground">By {row.by}</div> : null}
+              </div>
+            ))}
           </div>
         </div>
-
-        <div className="space-y-2">
-          {milestoneRows.map((row, index) => (
-            <div key={`${row.title}-${index}`} className="rounded-xl border p-3 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="font-medium">{row.title}</div>
-                {row.delta != null ? (
-                  <div className="text-xs font-medium text-muted-foreground">
-                    +{formatMinutes(row.delta)}
-                  </div>
-                ) : null}
-              </div>
-              <div className="mt-1 text-muted-foreground">{fmtDate(row.at)}</div>
-              {row.by ? <div className="mt-1 text-muted-foreground">By {row.by}</div> : null}
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
     </section>
   );
 }
