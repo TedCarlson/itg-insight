@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/state/session";
@@ -278,17 +277,6 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
   return (
     <div className="space-y-4">
-      {fromReview ? (
-        <div>
-          <Link
-            href="/field-log/review"
-            className="inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
-          >
-            ← Back to Review Queue
-          </Link>
-        </div>
-      ) : null}
-
       <FieldLogDetailHeaderCard
         jobNumber={data.job_number}
         categoryLabel={data.category_label}

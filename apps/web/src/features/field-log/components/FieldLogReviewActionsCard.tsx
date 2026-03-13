@@ -4,6 +4,8 @@ type ReviewAction = {
   review_action_id: string;
   action_at: string;
   action_by_user_id: string | null;
+  action_by_person_id?: string | null;
+  actor_full_name?: string | null;
   action_type: string;
   note: string | null;
 };
@@ -15,8 +17,8 @@ function fmtDate(value: string | null | undefined) {
   return d.toLocaleString();
 }
 
-function niceStatus(status: string) {
-  return status.replaceAll("_", " ");
+function niceAction(actionType: string) {
+  return actionType.replaceAll("_", " ");
 }
 
 export function FieldLogReviewActionsCard(props: {
@@ -32,11 +34,14 @@ export function FieldLogReviewActionsCard(props: {
         <div className="mt-3 space-y-3">
           {actions.map((action) => (
             <div key={action.review_action_id} className="rounded-xl border p-3 text-sm">
-              <div className="font-medium">{niceStatus(action.action_type)}</div>
+              <div className="font-medium">{niceAction(action.action_type)}</div>
+              <div className="mt-1 text-muted-foreground">{fmtDate(action.action_at)}</div>
 
-              <div className="mt-1 text-muted-foreground">
-                {fmtDate(action.action_at)}
-              </div>
+              {action.actor_full_name ? (
+                <div className="mt-2 text-muted-foreground">
+                  By {action.actor_full_name}
+                </div>
+              ) : null}
 
               {action.note ? (
                 <div className="mt-2 text-muted-foreground">{action.note}</div>
@@ -46,7 +51,7 @@ export function FieldLogReviewActionsCard(props: {
         </div>
       ) : (
         <div className="mt-3 text-sm text-muted-foreground">
-          No actions recorded.
+          No review actions recorded.
         </div>
       )}
     </section>

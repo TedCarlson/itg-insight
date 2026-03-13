@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/shared/data/supabase/client";
+import { useOrg } from "@/state/org";
 import { useFieldLogRuntime } from "../hooks/useFieldLogRuntime";
 import type { FieldLogRule } from "../lib/fieldLog.types";
 
@@ -35,6 +36,14 @@ type LocationState = {
   gpsAccuracyM: number | null;
   capturedAt: number | null;
   error: string | null;
+};
+
+type SelfTechResponse = {
+  ok: boolean;
+  isTechUploader?: boolean;
+  personId?: string | null;
+  techId?: string | null;
+  error?: string;
 };
 
 function makeStoragePath(reportId: string, fileName: string) {
@@ -71,6 +80,7 @@ function formatCapturedAt(value: number | null) {
 
 export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const { reportId, categoryKey, subcategoryKey, initialJobNumber, initialJobType } = props;
+  const { selectedOrgId } = useOrg();
   const { getRuleForSelection } = useFieldLogRuntime();
   const supabase = useMemo(() => createClient(), []);
 
@@ -88,6 +98,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [capturingLocation, setCapturingLocation] = useState(false);
+  const [isTechUploader, setIsTechUploader] = useState(true);
   const [location, setLocation] = useState<LocationState>({
     gpsLat: null,
     gpsLng: null,
@@ -108,6 +119,46 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const locationStatusText = useMemo(() => {
     return formatLocationStatus(location, capturingLocation);
   }, [location, capturingLocation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSelfTechState() {
+      if (!selectedOrgId) {
+        setIsTechUploader(true);
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/field-log/self-tech?pc_org_id=${encodeURIComponent(selectedOrgId)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+
+        const json = (await res.json()) as SelfTechResponse;
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Failed to resolve uploader mode.");
+        }
+
+        if (!cancelled) {
+          setIsTechUploader(!!json.isTechUploader);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsTechUploader(true);
+        }
+      }
+    }
+
+    void loadSelfTechState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrgId]);
 
   async function saveBaseFields(locationOverride?: Partial<LocationState>) {
     const gpsLat = locationOverride?.gpsLat ?? location.gpsLat;
@@ -474,7 +525,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
                   <input
                     type="file"
                     accept="image/*"
-                    capture="environment"
+                    {...(isTechUploader ? { capture: "environment" as const } : {})}
                     multiple
                     className="mt-3 block w-full text-sm"
                     onChange={(e) => void onPickFiles(e, item.photo_label_key)}
@@ -487,7 +538,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
+                  {...(isTechUploader ? { capture: "environment" as const } : {})}
                   multiple
                   className="mt-3 block w-full text-sm"
                   onChange={(e) => void onPickFiles(e, null)}
