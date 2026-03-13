@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/state/session";
 import { useOrg } from "@/state/org";
+import { createClient } from "@/shared/data/supabase/client";
 import { FieldLogTimelineCard } from "../components/FieldLogTimelineCard";
 import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { getStatusChip, niceStatus } from "../lib/statusStyles";
@@ -24,8 +25,13 @@ import type {
   FieldLogTimelineEvent,
 } from "../lib/fieldLogDetail.types";
 
-function makeProxyPath(reportId: string, fileName: string) {
-  return `field-log/${reportId}/${Date.now()}-${fileName}`;
+function makeStoragePath(reportId: string, fileName: string) {
+  const safeName = fileName.replace(/\s+/g, "-");
+  return `${reportId}/${Date.now()}-${safeName}`;
+}
+
+function makeDbFilePath(objectPath: string) {
+  return `field-log/${objectPath}`;
 }
 
 export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload }) {
@@ -35,6 +41,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
   const { userId } = useSession();
   const { selectedOrgId } = useOrg();
+  const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<FieldLogDetailPayload>(initialData);
   const [busy, setBusy] = useState(false);
@@ -244,13 +251,27 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     setProxyUploading(true);
     try {
       for (const file of files) {
+        const objectPath = makeStoragePath(data.report_id, file.name);
+
+        const { error: uploadError } = await supabase.storage
+          .from("field-log")
+          .upload(objectPath, file, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: file.type || "application/octet-stream",
+          });
+
+        if (uploadError) {
+          throw new Error(uploadError.message || "Failed to upload file.");
+        }
+
         const res = await fetch("/api/field-log/attachment", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             reportId: data.report_id,
             photoLabelKey: null,
-            filePath: makeProxyPath(data.report_id, file.name),
+            filePath: makeDbFilePath(objectPath),
             fileName: file.name,
             mimeType: file.type || "application/octet-stream",
             fileSizeBytes: file.size,
@@ -301,6 +322,10 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             xmLinkValid={data.xm_link_valid}
             xmLink={data.xm_link}
             pcOrgId={data.pc_org_id}
+            gpsLat={data.gps_lat}
+            gpsLng={data.gps_lng}
+            gpsAccuracyM={data.gps_accuracy_m}
+            locationCapturedAt={data.location_captured_at}
           />
 
           <FieldLogCommentCard
