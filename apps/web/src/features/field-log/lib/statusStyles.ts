@@ -2,9 +2,21 @@ export function niceStatus(status: string) {
   return status.replaceAll("_", " ");
 }
 
-export function getStatusChip(status: string) {
+function isResubmittedForReview(lastActionType?: string | null) {
+  if (!lastActionType) return false;
+  const normalized = lastActionType.toLowerCase();
+  return normalized.includes("resubmit");
+}
+
+export function getStatusChip(status: string, lastActionType?: string | null) {
   switch (status) {
     case "pending_review":
+      if (isResubmittedForReview(lastActionType)) {
+        return {
+          label: "RT",
+          className: "border-blue-300 bg-blue-50 text-blue-700",
+        };
+      }
       return {
         label: "P",
         className: "border-blue-300 bg-blue-50 text-blue-700",
@@ -42,7 +54,7 @@ export function getStatusChip(status: string) {
   }
 }
 
-export function getStatusBorder(status: string) {
+export function getStatusBorder(status: string, lastActionType?: string | null) {
   switch (status) {
     case "pending_review":
       return "border-l-4 border-l-blue-500";

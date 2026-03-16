@@ -30,6 +30,16 @@ export default async function FieldLogDraftPage(props: {
           subcategoryKey={data.subcategory_key ?? null}
           initialJobNumber={data.job_number ?? ""}
           initialJobType={data.job_type ?? null}
+          initialStatus={data.status ?? "draft"}
+          initialEditUnlocked={!!data.edit_unlocked}
+          initialComment={data.comment ?? ""}
+          initialEvidenceDeclared={data.evidence_declared ?? "none"}
+          initialXmDeclared={!!data.xm_declared}
+          initialPhotoCount={Number(data.photo_count ?? 0)}
+          initialGpsLat={data.gps_lat ?? null}
+          initialGpsLng={data.gps_lng ?? null}
+          initialGpsAccuracyM={data.gps_accuracy_m ?? null}
+          initialLocationCapturedAt={data.location_captured_at ?? null}
         />
       </FieldLogRuntimeGate>
     </FieldLogRuntimeProvider>

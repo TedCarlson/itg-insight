@@ -12,6 +12,16 @@ type FieldLogDraftClientProps = {
   subcategoryKey: string | null;
   initialJobNumber: string;
   initialJobType: string | null;
+  initialStatus: string;
+  initialEditUnlocked: boolean;
+  initialComment: string;
+  initialEvidenceDeclared: "field_upload" | "xm_platform" | "none" | string | null;
+  initialXmDeclared: boolean;
+  initialPhotoCount: number;
+  initialGpsLat: number | null;
+  initialGpsLng: number | null;
+  initialGpsAccuracyM: number | null;
+  initialLocationCapturedAt: string | null;
 };
 
 type ApiResponse<T = unknown> = {
@@ -78,13 +88,38 @@ function formatCapturedAt(value: number | null) {
   return d.toLocaleTimeString();
 }
 
+function toCapturedAtMs(value: string | null) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
-  const { reportId, categoryKey, subcategoryKey, initialJobNumber, initialJobType } = props;
+  const {
+    reportId,
+    categoryKey,
+    subcategoryKey,
+    initialJobNumber,
+    initialJobType,
+    initialStatus,
+    initialEditUnlocked,
+    initialComment,
+    initialEvidenceDeclared,
+    initialXmDeclared,
+    initialPhotoCount,
+    initialGpsLat,
+    initialGpsLng,
+    initialGpsAccuracyM,
+    initialLocationCapturedAt,
+  } = props;
+
   const { selectedOrgId } = useOrg();
   const { getRuleForSelection } = useFieldLogRuntime();
   const supabase = useMemo(() => createClient(), []);
 
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
+  const isFollowupMode =
+    initialStatus === "tech_followup_required" && initialEditUnlocked === true;
 
   const [jobNumber, setJobNumber] = useState(initialJobNumber);
   const [jobType, setJobType] = useState<JobType>(
@@ -92,18 +127,21 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       ? initialJobType
       : "",
   );
-  const [comment, setComment] = useState("");
-  const [useXm, setUseXm] = useState(false);
+  const [comment, setComment] = useState(initialComment ?? "");
+  const [useXm, setUseXm] = useState(
+    initialXmDeclared || initialEvidenceDeclared === "xm_platform",
+  );
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
+  const [existingPhotoCount] = useState(Math.max(0, initialPhotoCount ?? 0));
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [capturingLocation, setCapturingLocation] = useState(false);
   const [isTechUploader, setIsTechUploader] = useState(true);
   const [location, setLocation] = useState<LocationState>({
-    gpsLat: null,
-    gpsLng: null,
-    gpsAccuracyM: null,
-    capturedAt: null,
+    gpsLat: initialGpsLat ?? null,
+    gpsLng: initialGpsLng ?? null,
+    gpsAccuracyM: initialGpsAccuracyM ?? null,
+    capturedAt: toCapturedAtMs(initialLocationCapturedAt),
     error: null,
   });
 
@@ -111,10 +149,11 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const canUseXm = rule?.xm_allowed ?? false;
   const photoRequirements = rule?.photo_requirements ?? [];
   const locationRequired = !!rule?.location_required;
+  const totalPhotoCount = existingPhotoCount + photos.length;
 
   const photoCountText = useMemo(() => {
-    return `${photos.length}/${requiredPhotoCount}`;
-  }, [photos.length, requiredPhotoCount]);
+    return `${totalPhotoCount}/${requiredPhotoCount}`;
+  }, [totalPhotoCount, requiredPhotoCount]);
 
   const locationStatusText = useMemo(() => {
     return formatLocationStatus(location, capturingLocation);
@@ -173,7 +212,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         jobNumber: jobNumber.trim(),
         jobType: jobType || null,
         comment: comment.trim() || null,
-        evidenceDeclared: useXm ? "xm_platform" : photos.length > 0 ? "field_upload" : "none",
+        evidenceDeclared: useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
         xmDeclared: useXm,
         gpsLat,
         gpsLng,
@@ -183,7 +222,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
 
     const json = (await res.json()) as ApiResponse;
     if (!res.ok || !json.ok) {
-      throw new Error(json.error || "Failed to save draft.");
+      throw new Error(json.error || "Failed to save record.");
     }
   }
 
@@ -338,7 +377,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
 
   async function onSubmit() {
     if (!rule) {
-      alert("No active rule found for this draft.");
+      alert("No active rule found for this record.");
       return;
     }
 
@@ -357,7 +396,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       return;
     }
 
-    if (!useXm && photos.length < requiredPhotoCount) {
+    if (!useXm && totalPhotoCount < requiredPhotoCount) {
       alert(`At least ${requiredPhotoCount} photo(s) required.`);
       return;
     }
@@ -376,37 +415,60 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         throw new Error("Location capture is required before submit.");
       }
 
-      const res = await fetch("/api/field-log/submit", {
+      const endpoint = isFollowupMode ? "/api/field-log/resubmit" : "/api/field-log/submit";
+
+      const body = isFollowupMode
+        ? {
+            reportId,
+            comment: comment.trim() || null,
+            gpsLat: activeLocation.gpsLat,
+            gpsLng: activeLocation.gpsLng,
+            gpsAccuracyM: activeLocation.gpsAccuracyM,
+          }
+        : {
+            reportId,
+            comment: comment.trim() || null,
+            evidenceDeclared: useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
+            xmDeclared: useXm,
+            gpsLat: activeLocation.gpsLat,
+            gpsLng: activeLocation.gpsLng,
+            gpsAccuracyM: activeLocation.gpsAccuracyM,
+          };
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          reportId,
-          comment: comment.trim() || null,
-          evidenceDeclared: useXm ? "xm_platform" : photos.length > 0 ? "field_upload" : "none",
-          xmDeclared: useXm,
-          gpsLat: activeLocation.gpsLat,
-          gpsLng: activeLocation.gpsLng,
-          gpsAccuracyM: activeLocation.gpsAccuracyM,
-        }),
+        body: JSON.stringify(body),
       });
 
       const json = (await res.json()) as ApiResponse;
       if (!res.ok || !json.ok) {
         const extra =
           json.errors && json.errors.length > 0 ? `\n\n${json.errors.join("\n")}` : "";
-        throw new Error((json.error || "Failed to submit Field Log report.") + extra);
+        throw new Error(
+          (json.error ||
+            (isFollowupMode
+              ? "Failed to resubmit follow-up."
+              : "Failed to submit Field Log report.")) + extra,
+        );
       }
 
       window.location.href = "/field-log";
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to submit.");
+      alert(
+        err instanceof Error
+          ? err.message
+          : isFollowupMode
+            ? "Failed to resubmit."
+            : "Failed to submit.",
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   useEffect(() => {
-    if (!locationRequired) return;
+    if (!locationRequired || hasCapturedLocation(location)) return;
     void captureLocation({ persist: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId, locationRequired]);
@@ -414,16 +476,13 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border bg-card p-4">
-        <div className="text-sm text-muted-foreground">Field Log Draft</div>
+        <div className="text-sm text-muted-foreground">
+          {isFollowupMode ? "Field Log Follow-Up" : "Field Log Draft"}
+        </div>
         <div className="mt-1 text-lg font-semibold">
           {rule?.category_label ?? categoryKey}
           {rule?.subcategory_label ? ` • ${rule.subcategory_label}` : ""}
         </div>
-        {rule?.active_text_instruction ? (
-          <div className="mt-2 text-sm text-muted-foreground">
-            {rule.active_text_instruction}
-          </div>
-        ) : null}
       </section>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4">
@@ -478,9 +537,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               Captured at {formatCapturedAt(location.capturedAt)}
             </div>
           ) : null}
-          {location.error ? (
-            <div className="mt-1 text-red-600">{location.error}</div>
-          ) : null}
+          {location.error ? <div className="mt-1 text-red-600">{location.error}</div> : null}
         </div>
       </section>
 
@@ -489,11 +546,18 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           <div>
             <div className="text-base font-semibold">Evidence</div>
             <div className="text-sm text-muted-foreground">
-              Photos required: <span className="font-medium text-foreground">{requiredPhotoCount}</span>
+              Photos required:{" "}
+              <span className="font-medium text-foreground">{requiredPhotoCount}</span>
             </div>
           </div>
           <div className="text-sm font-medium">{photoCountText}</div>
         </div>
+
+        {existingPhotoCount > 0 ? (
+          <div className="rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">
+            Existing Photos: {existingPhotoCount}
+          </div>
+        ) : null}
 
         {canUseXm ? (
           <button
@@ -580,7 +644,15 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         onClick={() => void onSubmit()}
         className="w-full rounded-2xl bg-blue-600 px-4 py-4 font-semibold text-white disabled:opacity-60"
       >
-        {submitting ? "Submitting…" : saving ? "Saving…" : "Submit Field Log"}
+        {submitting
+          ? isFollowupMode
+            ? "Resubmitting…"
+            : "Submitting…"
+          : saving
+            ? "Saving…"
+            : isFollowupMode
+              ? "Resubmit Follow-Up"
+              : "Submit Field Log"}
       </button>
     </div>
   );

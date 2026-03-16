@@ -25,6 +25,7 @@ type QueueRow = {
   tech_full_name?: string | null;
   tech_id?: string | null;
   approved_by_full_name?: string | null;
+  last_action_type?: string | null;
 };
 
 type QueueResponse = {
@@ -46,6 +47,10 @@ function getSectionTextClass(status: string) {
     default:
       return "text-muted-foreground";
   }
+}
+
+function isReturnedForReview(lastActionType?: string | null) {
+  return !!lastActionType && lastActionType.toLowerCase().includes("resubmit");
 }
 
 export function FieldLogReviewClient() {
@@ -169,9 +174,11 @@ export function FieldLogReviewClient() {
         <div className={`text-sm font-semibold ${getSectionTextClass(status)}`}>{title}</div>
 
         {rows.map((row) => {
-          const chip = getStatusChip(row.status);
-          const borderClass = getStatusBorder(row.status);
+          const chip = getStatusChip(row.status, row.last_action_type);
+          const borderClass = getStatusBorder(row.status, row.last_action_type);
           const showApprovedBy = row.status === "approved" && !!row.approved_by_full_name;
+          const showReturnedTag =
+            row.status === "pending_review" && isReturnedForReview(row.last_action_type);
 
           return (
             <Link
@@ -208,6 +215,12 @@ export function FieldLogReviewClient() {
                 {row.job_type ? `Job Type: ${row.job_type.toUpperCase()} • ` : ""}
                 {row.evidence_badge}
               </div>
+
+              {showReturnedTag ? (
+                <div className="mt-2 text-sm font-medium text-blue-700">
+                  Returned from tech follow-up for review
+                </div>
+              ) : null}
 
               {showApprovedBy ? (
                 <div className="mt-2 text-sm text-muted-foreground">
