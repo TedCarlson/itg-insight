@@ -32,6 +32,38 @@ function pickPrimaryEmail(raw: unknown): string | null {
   return firstValid ?? null;
 }
 
+function getSiteUrl(req: NextRequest): string {
+  const envUrl = asText(process.env.NEXT_PUBLIC_SITE_URL);
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  const origin = req.headers.get("origin");
+  if (origin) return origin.replace(/\/+$/, "");
+
+  const host = req.headers.get("host");
+  if (host) {
+    const proto =
+      req.headers.get("x-forwarded-proto") ||
+      (host.includes("localhost") ? "http" : "https");
+    return `${proto}://${host}`;
+  }
+
+  return "http://localhost:3000";
+}
+
+async function nextResendCount(
+  admin: any,
+  input: { pc_org_id: string; person_id: string; email: string }
+) {
+  const { count } = await admin
+    .from("roster_invite_log")
+    .select("invite_id", { count: "exact", head: true })
+    .eq("pc_org_id", input.pc_org_id)
+    .eq("person_id", input.person_id)
+    .eq("email", input.email);
+
+  return Number.isFinite(Number(count)) ? Number(count) : 0;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as InviteRequest;
@@ -120,11 +152,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-    if (!siteUrl) {
-      return bad("NEXT_PUBLIC_SITE_URL missing", 500);
-    }
-
+    const siteUrl = getSiteUrl(req);
     const resendKey = process.env.RESEND_API_KEY;
     if (!resendKey) {
       return bad("RESEND_API_KEY missing", 500);
@@ -163,27 +191,34 @@ export async function POST(req: NextRequest) {
     }
 
     if (invitedUserId) {
-      const { error: upsertErr } = await admin.from("user_profile").upsert(
-        {
-          auth_user_id: invitedUserId,
-          person_id: body.person_id,
-          selected_pc_org_id: pc_org_id,
-          status: "invited",
-        },
-        { onConflict: "auth_user_id" }
-      );
+      const patch: Record<string, any> = {
+        auth_user_id: invitedUserId,
+        person_id: body.person_id,
+        selected_pc_org_id: pc_org_id,
+      };
+
+      const { error: upsertErr } = await admin
+        .from("user_profile")
+        .upsert(patch, { onConflict: "auth_user_id" });
 
       if (upsertErr) {
         return bad(upsertErr.message, 500);
       }
     }
 
-    const { error: logErr } = await admin.from("roster_invite_log").insert({
+    const resendCount = await nextResendCount(admin, {
+      pc_org_id,
       person_id: body.person_id,
       email: personEmail,
+    });
+
+    const { error: logErr } = await admin.from("roster_invite_log").insert({
       pc_org_id,
-      invited_by: user.id,
-      status: "invited",
+      person_id: body.person_id,
+      email: personEmail,
+      invited_by_auth_user_id: user.id,
+      invited_at: new Date().toISOString(),
+      resend_count: resendCount,
     });
 
     if (logErr) {
