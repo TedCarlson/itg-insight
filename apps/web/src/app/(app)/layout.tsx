@@ -1,3 +1,4 @@
+// apps/web/src/app/(app)/layout.tsx
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -5,6 +6,7 @@ import { createServerClient } from "@supabase/ssr";
 
 import CoreNav from "@/components/CoreNav";
 import AppChrome from "@/components/AppChrome";
+import TechRouteGate from "@/components/TechRouteGate";
 import { OrgProvider } from "@/state/org";
 import { SessionProvider } from "@/state/session";
 import { AccessProvider } from "@/state/access";
@@ -53,10 +55,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <SessionProvider>
         <OrgProvider lob={lob}>
           <AccessProvider>
-            <div className="min-h-screen">
-              <CoreNav lob={lob} />
-              <AppChrome>{children}</AppChrome>
-            </div>
+            <TechRouteGate>
+              <div className="min-h-screen">
+                <CoreNav lob={lob} />
+                <AppChrome>{children}</AppChrome>
+              </div>
+            </TechRouteGate>
           </AccessProvider>
         </OrgProvider>
       </SessionProvider>

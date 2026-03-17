@@ -1,3 +1,4 @@
+// apps/web/src/state/access.tsx
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -5,6 +6,7 @@ import { useOrg } from "./org";
 
 type AccessPass = {
   auth_user_id: string;
+  person_id: string | null;
   pc_org_id: string;
   status: string;
   is_admin: boolean;

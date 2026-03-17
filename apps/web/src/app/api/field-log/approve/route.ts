@@ -38,6 +38,10 @@ export async function POST(req: NextRequest) {
 
   const supabase = await supabaseServer();
 
+  /**
+   * STEP 1 — Persist XM link (audit trail)
+   * This remains important for lifecycle + timeline
+   */
   if (xmLink) {
     const { error: xmError } = await supabase.rpc("field_log_append_xm_link", {
       p_report_id: reportId,
@@ -54,15 +58,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  /**
+   * STEP 2 — Approve WITH XM context
+   *
+   * 🔥 CRITICAL FIX:
+   * Pass xmLink into approval RPC so validation logic can treat it
+   * as an alternate evidence satisfier (instead of requiring photos)
+   */
   const { data, error } = await supabase.rpc("field_log_approve_report", {
     p_report_id: reportId,
     p_action_by_user_id: actionByUserId,
     p_note: note,
+    p_xm_link: xmLink, // <-- NEW: enables override logic in DB
   });
 
   if (error) {
     return NextResponse.json(
-      { ok: false, error: error.message || "Failed to approve Field Log report." },
+      {
+        ok: false,
+        error:
+          error.message ||
+          "Failed to approve Field Log report.",
+      },
       { status: 500 },
     );
   }

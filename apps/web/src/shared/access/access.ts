@@ -1,3 +1,4 @@
+// apps/web/src/shared/access/access.ts
 export type AccessPass = {
   auth_user_id: string;
   person_id: string | null;
@@ -7,6 +8,7 @@ export type AccessPass = {
 
   is_admin?: boolean;
   is_owner?: boolean;
+  is_app_owner?: boolean;
 
   permissions?: string[];
 
@@ -44,4 +46,26 @@ export function requireModule(pass: AccessPass, module: string) {
     err.status = 403;
     throw err;
   }
+}
+
+const CONSOLE_PERMISSIONS = [
+  "org_console_manage",
+  "admin_console_manage",
+  "roster_manage",
+  "route_lock_manage",
+  "dispatch_manage",
+  "metrics_manage",
+  "leadership_manage",
+  "permissions_manage",
+];
+
+export function isTechExperienceUser(pass: AccessPass | null | undefined) {
+  if (!pass) return false;
+  if (pass.is_owner) return false;
+  if (pass.is_admin) return false;
+  if (pass.is_app_owner) return false;
+  if (!pass.person_id) return false;
+
+  const perms = Array.isArray(pass.permissions) ? pass.permissions : [];
+  return !CONSOLE_PERMISSIONS.some((perm) => perms.includes(perm));
 }
