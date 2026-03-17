@@ -1,3 +1,6 @@
+// Replace the entire file:
+// apps/web/src/features/field-log/pages/FieldLogDraftClient.tsx
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +25,7 @@ type FieldLogDraftClientProps = {
   initialGpsLng: number | null;
   initialGpsAccuracyM: number | null;
   initialLocationCapturedAt: string | null;
+  completionHref?: string;
 };
 
 type ApiResponse<T = unknown> = {
@@ -111,6 +115,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     initialGpsLng,
     initialGpsAccuracyM,
     initialLocationCapturedAt,
+    completionHref = "/field-log",
   } = props;
 
   const { selectedOrgId } = useOrg();
@@ -453,7 +458,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         );
       }
 
-      window.location.href = "/field-log";
+      window.location.href = completionHref;
     } catch (err) {
       alert(
         err instanceof Error

@@ -36,7 +36,8 @@ export function FieldLogSupervisorActionsCard(
   if (!canApprove) return null;
 
   const xmApprovalRequired = xmAllowed && xmDeclared;
-  const approvalBlocked = xmApprovalRequired && !xmLinkValid;
+  const hasXmCandidate = xmLinkValid || xmLink.trim().length > 0;
+  const approvalBlocked = xmApprovalRequired && !hasXmCandidate;
 
   return (
     <section className="rounded-2xl border bg-card p-5">
@@ -51,15 +52,21 @@ export function FieldLogSupervisorActionsCard(
             className="w-full rounded-xl border px-3 py-3"
           />
 
-          {approvalBlocked ? (
-            <div className="text-sm font-medium text-red-600">
-              XM link required before approval. Append a valid XM link to continue.
-            </div>
-          ) : (
-            <div className="text-sm font-medium text-green-600">
-              XM link validated. Ready for approval.
-            </div>
-          )}
+          {xmApprovalRequired ? (
+            xmLinkValid ? (
+              <div className="text-sm font-medium text-green-600">
+                XM link validated. Ready for approval.
+              </div>
+            ) : xmLink.trim().length > 0 ? (
+              <div className="text-sm font-medium text-blue-600">
+                XM link entered. Approval will validate and append it.
+              </div>
+            ) : (
+              <div className="text-sm font-medium text-red-600">
+                XM link required before approval.
+              </div>
+            )
+          ) : null}
         </div>
       ) : null}
 
@@ -82,9 +89,8 @@ export function FieldLogSupervisorActionsCard(
           type="button"
           disabled={busy || approvalBlocked}
           onClick={() => void onApprove()}
-          className={`rounded-xl px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
-            approvalBlocked ? "bg-slate-400" : "bg-blue-600"
-          }`}
+          className={`rounded-xl px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${approvalBlocked ? "bg-slate-400" : "bg-blue-600"
+            }`}
         >
           {busy ? "Working…" : "Approve"}
         </button>
