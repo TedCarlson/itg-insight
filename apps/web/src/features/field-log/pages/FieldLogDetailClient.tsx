@@ -412,6 +412,8 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             xmLinkValid={!!data.xm_link_valid}
             xmLink={xmLink}
             followupNote={followupNote}
+            photoCount={Number(data.photo_count ?? 0)}
+            minPhotoCount={Number(data.rule?.min_photo_count ?? 0)}
             onXmLinkChange={setXmLink}
             onFollowupNoteChange={setFollowupNote}
             onApprove={approve}
