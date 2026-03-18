@@ -6,10 +6,32 @@ import { useSearchParams } from "next/navigation";
 
 import type { ScorecardTile } from "@/features/metrics/scorecard/lib/scorecard.types";
 import { mapTilesWithPreset } from "@/features/tech/metrics/lib/mapTilesWithPreset";
+import FtrSparkline from "./FtrSparkline";
 
 type RangeKey = "FM" | "3FM" | "12FM";
-
 type Tile = ScorecardTile;
+
+type FtrDebug = {
+  requested_range: string;
+  distinct_fiscal_month_count: number;
+  distinct_fiscal_months_found: string[];
+  selected_month_count: number;
+  selected_final_rows: Array<{
+    fiscal_end_date: string;
+    metric_date: string;
+    batch_id: string;
+    rows_in_month: number;
+    total_ftr_contact_jobs: number | null;
+    ftr_fail_jobs: number | null;
+  }>;
+  trend?: Array<{
+    fiscal_end_date: string;
+    metric_date: string;
+    batch_id: string;
+    kpi_value: number | null;
+    is_month_final: boolean;
+  }>;
+} | null;
 
 function RankCell(props: { label: string; value: string }) {
   return (
@@ -17,9 +39,7 @@ function RankCell(props: { label: string; value: string }) {
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {props.label}
       </div>
-      <div className="mt-1 text-base font-semibold leading-none">
-        {props.value}
-      </div>
+      <div className="mt-1 text-base font-semibold leading-none">{props.value}</div>
     </div>
   );
 }
@@ -30,9 +50,7 @@ function MixStat(props: { label: string; value: string }) {
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
         {props.label}
       </div>
-      <div className="mt-1 text-base font-semibold leading-none">
-        {props.value}
-      </div>
+      <div className="mt-1 text-base font-semibold leading-none">{props.value}</div>
     </div>
   );
 }
@@ -49,11 +67,7 @@ function MixRow(props: { label: string; count: string; pct: string }) {
   );
 }
 
-function RangeChip(props: {
-  href: string;
-  label: string;
-  active: boolean;
-}) {
+function RangeChip(props: { href: string; label: string; active: boolean }) {
   return (
     <Link
       href={props.href}
@@ -69,11 +83,25 @@ function RangeChip(props: {
   );
 }
 
-function MetricCard(props: {
-  tile: Tile;
-  onOpen: () => void;
-}) {
+function formatSupportLine(tile: Tile): string | null {
+  if (tile.kpi_key !== "ftr_rate") return null;
+
+  const jobs = tile.context?.sample_short;
+  const fails = tile.context?.sample_long;
+
+  if ((jobs == null || !Number.isFinite(jobs)) && (fails == null || !Number.isFinite(fails))) {
+    return null;
+  }
+
+  const left = jobs != null && Number.isFinite(jobs) ? `${Math.round(jobs)} FTR jobs` : null;
+  const right = fails != null && Number.isFinite(fails) ? `${Math.round(fails)} fails` : null;
+
+  return [left, right].filter(Boolean).join(" • ");
+}
+
+function MetricCard(props: { tile: Tile; onOpen: () => void }) {
   const topColor = props.tile.band.paint?.border ?? "var(--to-border)";
+  const supportLine = formatSupportLine(props.tile);
 
   return (
     <button
@@ -84,15 +112,12 @@ function MetricCard(props: {
     >
       <div className="h-1.5 w-full" style={{ backgroundColor: topColor }} />
       <div className="p-4">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">
-          {props.tile.label}
-        </div>
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{props.tile.label}</div>
         <div className="mt-1 text-xl font-semibold leading-none text-foreground">
           {props.tile.value_display ?? "—"}
         </div>
-        <div className="mt-1 text-sm text-muted-foreground">
-          {props.tile.band.label}
-        </div>
+        <div className="mt-1 text-sm text-muted-foreground">{props.tile.band.label}</div>
+        {supportLine ? <div className="mt-1 text-xs text-muted-foreground">{supportLine}</div> : null}
       </div>
     </button>
   );
@@ -107,13 +132,49 @@ function DrawerRow(props: { label: string; value: string }) {
   );
 }
 
+function formatPct(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `${n.toFixed(1)}%`;
+}
+
+function computePct(jobs: number, fails: number): number | null {
+  if (jobs > 0) return 100 * (1 - fails / jobs);
+  if (fails > 0) return 0;
+  return null;
+}
+
 function MetricDrawer(props: {
   tile: Tile | null;
   onClose: () => void;
+  ftrDebug: FtrDebug;
 }) {
   if (!props.tile) return null;
 
   const topColor = props.tile.band.paint?.border ?? "var(--to-border)";
+  const isFtr = props.tile.kpi_key === "ftr_rate";
+  const selectedRows = props.ftrDebug?.selected_final_rows ?? [];
+
+  const totalJobs = selectedRows.reduce(
+    (sum, row) => sum + (row.total_ftr_contact_jobs ?? 0),
+    0
+  );
+  const totalFails = selectedRows.reduce(
+    (sum, row) => sum + (row.ftr_fail_jobs ?? 0),
+    0
+  );
+  const totalFtr = formatPct(computePct(totalJobs, totalFails));
+
+  const currentRow = selectedRows[0] ?? null;
+  const currentFtr = currentRow
+    ? formatPct(
+        computePct(
+          currentRow.total_ftr_contact_jobs ?? 0,
+          currentRow.ftr_fail_jobs ?? 0
+        )
+      )
+    : "—";
+
+  const rolling12Ftr = totalFtr;
 
   return (
     <>
@@ -123,56 +184,106 @@ function MetricDrawer(props: {
         onClick={props.onClose}
         className="fixed inset-0 z-40 bg-black/35"
       />
-      <div className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border bg-card shadow-2xl">
-        <div className="h-1.5 w-full rounded-t-3xl" style={{ backgroundColor: topColor }} />
-        <div className="p-4">
-          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted-foreground/30" />
 
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                {props.tile.label}
+      <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-3xl border bg-card shadow-2xl">
+          <div
+            className="sticky top-0 z-10 border-b bg-card p-4"
+            style={{ borderTop: `4px solid ${topColor}` }}
+          >
+            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted-foreground/30" />
+
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {props.tile.label}
+                </div>
+                <div className="mt-1 text-2xl font-semibold leading-none text-foreground">
+                  {props.tile.value_display ?? "—"}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {props.tile.band.label}
+                </div>
               </div>
-              <div className="mt-1 text-2xl font-semibold leading-none text-foreground">
-                {props.tile.value_display ?? "—"}
-              </div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                {props.tile.band.label}
-              </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={props.onClose}
-              className="rounded-xl border px-3 py-2 text-xs font-medium"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <DrawerRow label="Current FM" value="—" />
-            <DrawerRow label="Last 3 FM" value="—" />
-            <DrawerRow label="Last 12 FM" value="—" />
-          </div>
-
-          <div className="mt-4 rounded-2xl border bg-muted/10 p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">
-              Supporting Stats
-            </div>
-            <div className="mt-3 space-y-2">
-              <DrawerRow label="KPI Key" value={props.tile.kpi_key} />
-              <DrawerRow label="Band" value={props.tile.band.label} />
+              <button
+                type="button"
+                onClick={props.onClose}
+                className="rounded-xl border px-3 py-2 text-xs font-medium"
+              >
+                Close
+              </button>
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border bg-muted/10 p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">
-              Chart
+          <div className="flex-1 space-y-4 overflow-y-auto p-4">
+            <div className="space-y-2">
+              <DrawerRow label="Current FM" value={currentFtr} />
+              <DrawerRow label="Last 3 FM" value={totalFtr} />
+              <DrawerRow label="Last 12 FM" value={rolling12Ftr} />
             </div>
-            <div className="mt-3 flex h-28 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-              Trend chart placeholder
+
+            <div className="rounded-2xl border bg-muted/10 p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Chart</div>
+              {isFtr ? (
+                <FtrSparkline
+                  values={(props.ftrDebug?.trend ?? []).map((t) => ({
+                    kpi_value: t.kpi_value,
+                    is_month_final: t.is_month_final,
+                    band_color:
+                      t.kpi_value != null && t.kpi_value >= 95
+                        ? "#22c55e"
+                        : t.kpi_value != null && t.kpi_value >= 90
+                          ? "#eab308"
+                          : "#ef4444",
+                  }))}
+                />
+              ) : (
+                <div className="mt-3 flex h-28 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+                  Trend chart placeholder
+                </div>
+              )}
             </div>
+
+            {isFtr ? (
+              <div className="rounded-2xl border bg-muted/10 p-4">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Period Detail
+                </div>
+
+                <div className="mt-4 overflow-hidden rounded-xl border">
+                  <div className="grid grid-cols-[1fr_1fr_90px_90px] border-b bg-muted/20 text-xs font-medium text-muted-foreground">
+                    <div className="px-3 py-2">Fiscal End</div>
+                    <div className="px-3 py-2">Metric Date</div>
+                    <div className="px-3 py-2 text-right">Jobs</div>
+                    <div className="px-3 py-2 text-right">Fails</div>
+                  </div>
+
+                  {selectedRows.map((row) => (
+                    <div
+                      key={`${row.fiscal_end_date}-${row.metric_date}-${row.batch_id}`}
+                      className="grid grid-cols-[1fr_1fr_90px_90px] border-b text-xs"
+                    >
+                      <div className="px-3 py-2">{row.fiscal_end_date}</div>
+                      <div className="px-3 py-2">{row.metric_date}</div>
+                      <div className="px-3 py-2 text-right">
+                        {row.total_ftr_contact_jobs ?? "—"}
+                      </div>
+                      <div className="px-3 py-2 text-right">
+                        {row.ftr_fail_jobs ?? "—"}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="grid grid-cols-[1fr_1fr_90px_90px] bg-muted/10 text-xs font-semibold">
+                    <div className="px-3 py-2">TOTAL</div>
+                    <div className="px-3 py-2">{totalFtr}</div>
+                    <div className="px-3 py-2 text-right">{totalJobs || "—"}</div>
+                    <div className="px-3 py-2 text-right">{totalFails || "—"}</div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -184,6 +295,7 @@ export default function TechMetricsClient(props: {
   initialRange: RangeKey;
   tiles: Tile[];
   activePresetKey: string | null;
+  ftrDebug: FtrDebug;
 }) {
   const searchParams = useSearchParams();
   const urlRangeRaw = String(
@@ -255,6 +367,7 @@ export default function TechMetricsClient(props: {
       <MetricDrawer
         tile={openTile}
         onClose={() => setOpenMetricKey(null)}
+        ftrDebug={props.ftrDebug}
       />
     </>
   );
