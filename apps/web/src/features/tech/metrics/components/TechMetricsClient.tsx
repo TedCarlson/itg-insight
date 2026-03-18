@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import type { ScorecardTile } from "@/features/metrics/scorecard/lib/scorecard.types";
 import { mapTilesWithPreset } from "@/features/tech/metrics/lib/mapTilesWithPreset";
@@ -67,19 +66,34 @@ function MixRow(props: { label: string; count: string; pct: string }) {
   );
 }
 
-function RangeChip(props: { href: string; label: string; active: boolean }) {
+function InlineSpinner() {
   return (
-    <Link
-      href={props.href}
+    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+  );
+}
+
+function RangeChip(props: {
+  label: string;
+  active: boolean;
+  pending: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.pending}
       className={[
-        "rounded-xl border px-3 py-2 text-center text-xs font-medium transition active:scale-[0.98]",
+        "flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-center text-xs font-medium transition active:scale-[0.98] disabled:cursor-default",
         props.active
           ? "border-[var(--to-accent)] bg-[color-mix(in_oklab,var(--to-accent)_10%,white)] text-foreground"
           : "bg-muted/20 text-muted-foreground hover:bg-muted/30",
+        props.pending ? "opacity-90" : "",
       ].join(" ")}
     >
-      {props.label}
-    </Link>
+      {props.pending ? <InlineSpinner /> : null}
+      <span>{props.label}</span>
+    </button>
   );
 }
 
@@ -252,32 +266,38 @@ function MetricDrawer(props: {
                 </div>
 
                 <div className="mt-4 overflow-hidden rounded-xl border">
-                  <div className="grid grid-cols-[1fr_1fr_90px_90px] border-b bg-muted/20 text-xs font-medium text-muted-foreground">
-                    <div className="px-3 py-2">Fiscal End</div>
+                  <div className="grid grid-cols-[1fr_90px_90px_90px] border-b bg-muted/20 text-xs font-medium text-muted-foreground">
                     <div className="px-3 py-2">Metric Date</div>
+                    <div className="px-3 py-2 text-right">FTR %</div>
                     <div className="px-3 py-2 text-right">Jobs</div>
                     <div className="px-3 py-2 text-right">Fails</div>
                   </div>
 
-                  {selectedRows.map((row) => (
-                    <div
-                      key={`${row.fiscal_end_date}-${row.metric_date}-${row.batch_id}`}
-                      className="grid grid-cols-[1fr_1fr_90px_90px] border-b text-xs"
-                    >
-                      <div className="px-3 py-2">{row.fiscal_end_date}</div>
-                      <div className="px-3 py-2">{row.metric_date}</div>
-                      <div className="px-3 py-2 text-right">
-                        {row.total_ftr_contact_jobs ?? "—"}
-                      </div>
-                      <div className="px-3 py-2 text-right">
-                        {row.ftr_fail_jobs ?? "—"}
-                      </div>
-                    </div>
-                  ))}
+                  {selectedRows.map((row) => {
+                    const rowPct = formatPct(
+                      computePct(row.total_ftr_contact_jobs ?? 0, row.ftr_fail_jobs ?? 0)
+                    );
 
-                  <div className="grid grid-cols-[1fr_1fr_90px_90px] bg-muted/10 text-xs font-semibold">
+                    return (
+                      <div
+                        key={`${row.fiscal_end_date}-${row.metric_date}-${row.batch_id}`}
+                        className="grid grid-cols-[1fr_90px_90px_90px] border-b text-xs"
+                      >
+                        <div className="px-3 py-2">{row.metric_date}</div>
+                        <div className="px-3 py-2 text-right">{rowPct}</div>
+                        <div className="px-3 py-2 text-right">
+                          {row.total_ftr_contact_jobs ?? "—"}
+                        </div>
+                        <div className="px-3 py-2 text-right">
+                          {row.ftr_fail_jobs ?? "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div className="grid grid-cols-[1fr_90px_90px_90px] bg-muted/10 text-xs font-semibold">
                     <div className="px-3 py-2">TOTAL</div>
-                    <div className="px-3 py-2">{totalFtr}</div>
+                    <div className="px-3 py-2 text-right">{totalFtr}</div>
                     <div className="px-3 py-2 text-right">{totalJobs || "—"}</div>
                     <div className="px-3 py-2 text-right">{totalFails || "—"}</div>
                   </div>
@@ -297,13 +317,30 @@ export default function TechMetricsClient(props: {
   activePresetKey: string | null;
   ftrDebug: FtrDebug;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const [pendingRange, setPendingRange] = useState<RangeKey | null>(null);
+
   const urlRangeRaw = String(
     searchParams.get("range") ?? props.initialRange ?? "FM"
   ).toUpperCase();
 
-  const activeRange: RangeKey =
+  const activeRangeFromUrl: RangeKey =
     urlRangeRaw === "3FM" ? "3FM" : urlRangeRaw === "12FM" ? "12FM" : "FM";
+
+  const optimisticRange: RangeKey =
+    isPending && pendingRange ? pendingRange : activeRangeFromUrl;
+
+  function onSelectRange(next: RangeKey) {
+    if (next === activeRangeFromUrl) return;
+
+    setPendingRange(next);
+
+    startTransition(() => {
+      router.push(`/tech/metrics?range=${next}`);
+    });
+  }
 
   const tiles = useMemo(
     () => mapTilesWithPreset(props.tiles, props.activePresetKey),
@@ -321,9 +358,24 @@ export default function TechMetricsClient(props: {
     <>
       <section className="rounded-2xl border bg-card p-3">
         <div className="grid grid-cols-3 gap-2">
-          <RangeChip href="/tech/metrics?range=FM" label="Current FM" active={activeRange === "FM"} />
-          <RangeChip href="/tech/metrics?range=3FM" label="Last 3 FM" active={activeRange === "3FM"} />
-          <RangeChip href="/tech/metrics?range=12FM" label="Last 12 FM" active={activeRange === "12FM"} />
+          <RangeChip
+            label="Current FM"
+            active={optimisticRange === "FM"}
+            pending={isPending && pendingRange === "FM"}
+            onClick={() => onSelectRange("FM")}
+          />
+          <RangeChip
+            label="Last 3 FM"
+            active={optimisticRange === "3FM"}
+            pending={isPending && pendingRange === "3FM"}
+            onClick={() => onSelectRange("3FM")}
+          />
+          <RangeChip
+            label="Last 12 FM"
+            active={optimisticRange === "12FM"}
+            pending={isPending && pendingRange === "12FM"}
+            onClick={() => onSelectRange("12FM")}
+          />
         </div>
       </section>
 
@@ -354,7 +406,7 @@ export default function TechMetricsClient(props: {
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className={`space-y-3 transition-opacity ${isPending ? "opacity-85" : "opacity-100"}`}>
         {tiles.map((tile) => (
           <MetricCard
             key={tile.kpi_key}
