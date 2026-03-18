@@ -161,19 +161,26 @@ function MixCard(props: {
     },
   } as const;
 
-  const tone = props.tone ? toneMap[props.tone] : null;
+  const numericValue =
+    typeof props.value === "number"
+      ? props.value
+      : Number(props.value);
+
+  const isZero = !numericValue;
+
+  const effectiveTone = !isZero && props.tone ? toneMap[props.tone] : null;
 
   return (
     <div
       className="rounded-xl border px-2 py-2.5"
       style={{
-        borderColor: tone?.border ?? "var(--to-border)",
-        background: tone?.bg ?? "rgb(var(--muted) / 0.06)",
+        borderColor: effectiveTone?.border ?? "var(--to-border)",
+        background: effectiveTone?.bg ?? "rgb(var(--muted) / 0.06)",
       }}
     >
       <div className="flex flex-col items-center justify-center gap-1">
         <div className="flex items-center justify-center gap-1.5">
-          {props.tone ? <FaceIcon tone={props.tone} /> : null}
+          {effectiveTone ? <FaceIcon tone={props.tone!} /> : null}
           <div className="truncate text-[10px] font-medium tracking-wide text-muted-foreground">
             {props.label}
           </div>
