@@ -90,9 +90,9 @@ function formatTnpsSupportLine(tile: Tile): string | null {
   const passive = Math.max(0, surveys - promoters - detractors);
   const parts: string[] = [];
 
-  if (promoters > 0) parts.push(`${promoters} Pro`);
-  if (passive > 0) parts.push(`${passive} Pass`);
-  if (detractors > 0) parts.push(`${detractors} Det`);
+  if (promoters > 0) parts.push(`${promoters} Promotors`);
+  if (passive > 0) parts.push(`${passive} Passives`);
+  if (detractors > 0) parts.push(`${detractors} Detractors`);
 
   return parts.length ? parts.join(" • ") : null;
 }
