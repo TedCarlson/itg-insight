@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import type { ScorecardTile } from "@/features/metrics/scorecard/lib/scorecard.types";
 import { mapTilesWithPreset } from "@/features/tech/metrics/lib/mapTilesWithPreset";
-import FtrSparkline from "./FtrSparkline";
+import MetricInspectorDrawer from "./MetricInspectorDrawer";
+import TnpsInspectorDrawer from "./TnpsInspectorDrawer";
+import { buildFtrDrawerModel, type FtrDebug } from "@/features/tech/metrics/lib/buildFtrDrawerModel";
 
 type RangeKey = "FM" | "3FM" | "12FM";
 type Tile = ScorecardTile;
 
-type FtrDebug = {
+type TnpsDebug = {
   requested_range: string;
   distinct_fiscal_month_count: number;
   distinct_fiscal_months_found: string[];
@@ -20,13 +22,17 @@ type FtrDebug = {
     metric_date: string;
     batch_id: string;
     rows_in_month: number;
-    total_ftr_contact_jobs: number | null;
-    ftr_fail_jobs: number | null;
+    tnps_surveys: number | null;
+    tnps_promoters: number | null;
+    tnps_detractors: number | null;
   }>;
   trend?: Array<{
     fiscal_end_date: string;
     metric_date: string;
     batch_id: string;
+    tnps_surveys: number | null;
+    tnps_promoters: number | null;
+    tnps_detractors: number | null;
     kpi_value: number | null;
     is_month_final: boolean;
   }>;
@@ -137,190 +143,9 @@ function MetricCard(props: { tile: Tile; onOpen: () => void }) {
   );
 }
 
-function DrawerRow(props: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border bg-muted/10 px-3 py-2">
-      <div className="text-sm text-muted-foreground">{props.label}</div>
-      <div className="text-sm font-semibold">{props.value}</div>
-    </div>
-  );
-}
-
-function formatPct(n: number | null): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  return `${n.toFixed(1)}%`;
-}
-
-function computePct(jobs: number, fails: number): number | null {
-  if (jobs > 0) return 100 * (1 - fails / jobs);
-  if (fails > 0) return 0;
-  return null;
-}
-
-function computeRangeValue(
-  rows: Array<{
-    total_ftr_contact_jobs: number | null;
-    ftr_fail_jobs: number | null;
-  }>
-): string {
-  const jobs = rows.reduce((sum, row) => sum + (row.total_ftr_contact_jobs ?? 0), 0);
-  const fails = rows.reduce((sum, row) => sum + (row.ftr_fail_jobs ?? 0), 0);
-  return formatPct(computePct(jobs, fails));
-}
-
-function MetricDrawer(props: {
-  tile: Tile | null;
-  onClose: () => void;
-  ftrDebug: FtrDebug;
-  activeRange: RangeKey;
-}) {
-  if (!props.tile) return null;
-
-  const topColor = props.tile.band.paint?.border ?? "var(--to-border)";
-  const isFtr = props.tile.kpi_key === "ftr_rate";
-  const selectedRows = props.ftrDebug?.selected_final_rows ?? [];
-
-  const currentRows = selectedRows.slice(0, 1);
-  const last3Rows = selectedRows.slice(0, 3);
-  const last12Rows = selectedRows;
-
-  const currentFtr = computeRangeValue(currentRows);
-  const last3Ftr = computeRangeValue(last3Rows);
-  const last12Ftr = computeRangeValue(last12Rows);
-
-  const totalJobs = selectedRows.reduce(
-    (sum, row) => sum + (row.total_ftr_contact_jobs ?? 0),
-    0
-  );
-  const totalFails = selectedRows.reduce(
-    (sum, row) => sum + (row.ftr_fail_jobs ?? 0),
-    0
-  );
-  const totalFtr = computeRangeValue(selectedRows);
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Close drawer"
-        onClick={props.onClose}
-        className="fixed inset-0 z-40 bg-black/35"
-      />
-
-      <div className="fixed inset-0 z-50 flex items-end justify-center">
-        <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-3xl border bg-card shadow-2xl">
-          <div
-            className="sticky top-0 z-10 border-b bg-card p-4"
-            style={{ borderTop: `4px solid ${topColor}` }}
-          >
-            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted-foreground/30" />
-
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {props.tile.label}
-                </div>
-                <div className="mt-1 text-2xl font-semibold leading-none text-foreground">
-                  {props.tile.value_display ?? "—"}
-                </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  {props.tile.band.label}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={props.onClose}
-                className="rounded-xl border px-3 py-2 text-xs font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 space-y-4 overflow-y-auto p-4">
-            <div className="space-y-2">
-              <DrawerRow label="Current FM" value={currentFtr} />
-              {props.activeRange !== "FM" ? (
-                <DrawerRow label="Last 3 FM" value={last3Ftr} />
-              ) : null}
-              {props.activeRange === "12FM" ? (
-                <DrawerRow label="Last 12 FM" value={last12Ftr} />
-              ) : null}
-            </div>
-
-            <div className="rounded-2xl border bg-muted/10 p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">Chart</div>
-              {isFtr ? (
-                <FtrSparkline
-                  values={(props.ftrDebug?.trend ?? []).map((t) => ({
-                    kpi_value: t.kpi_value,
-                    is_month_final: t.is_month_final,
-                    band_color:
-                      t.kpi_value != null && t.kpi_value >= 95
-                        ? "#22c55e"
-                        : t.kpi_value != null && t.kpi_value >= 90
-                          ? "#eab308"
-                          : "#ef4444",
-                  }))}
-                />
-              ) : (
-                <div className="mt-3 flex h-28 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-                  Trend chart placeholder
-                </div>
-              )}
-            </div>
-
-            {isFtr ? (
-              <div className="rounded-2xl border bg-muted/10 p-4">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Period Detail
-                </div>
-
-                <div className="mt-4 overflow-hidden rounded-xl border">
-                  <div className="grid grid-cols-[1fr_90px_90px_90px] border-b bg-muted/20 text-xs font-medium text-muted-foreground">
-                    <div className="px-3 py-2">Metric Date</div>
-                    <div className="px-3 py-2 text-right">FTR %</div>
-                    <div className="px-3 py-2 text-right">Jobs</div>
-                    <div className="px-3 py-2 text-right">Fails</div>
-                  </div>
-
-                  {selectedRows.map((row) => {
-                    const rowPct = formatPct(
-                      computePct(row.total_ftr_contact_jobs ?? 0, row.ftr_fail_jobs ?? 0)
-                    );
-
-                    return (
-                      <div
-                        key={`${row.fiscal_end_date}-${row.metric_date}-${row.batch_id}`}
-                        className="grid grid-cols-[1fr_90px_90px_90px] border-b text-xs"
-                      >
-                        <div className="px-3 py-2">{row.metric_date}</div>
-                        <div className="px-3 py-2 text-right">{rowPct}</div>
-                        <div className="px-3 py-2 text-right">
-                          {row.total_ftr_contact_jobs ?? "—"}
-                        </div>
-                        <div className="px-3 py-2 text-right">
-                          {row.ftr_fail_jobs ?? "—"}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  <div className="grid grid-cols-[1fr_90px_90px_90px] bg-muted/10 text-xs font-semibold">
-                    <div className="px-3 py-2">TOTAL</div>
-                    <div className="px-3 py-2 text-right">{totalFtr}</div>
-                    <div className="px-3 py-2 text-right">{totalJobs || "—"}</div>
-                    <div className="px-3 py-2 text-right">{totalFails || "—"}</div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </>
-  );
+function isTnpsKey(kpiKey: string) {
+  const k = kpiKey.toLowerCase();
+  return k.includes("tnps");
 }
 
 export default function TechMetricsClient(props: {
@@ -328,6 +153,7 @@ export default function TechMetricsClient(props: {
   tiles: Tile[];
   activePresetKey: string | null;
   ftrDebug: FtrDebug;
+  tnpsDebug?: TnpsDebug;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -365,6 +191,20 @@ export default function TechMetricsClient(props: {
     () => tiles.find((t) => t.kpi_key === openMetricKey) ?? null,
     [openMetricKey, tiles]
   );
+
+  const ftrDrawerModel = useMemo(() => {
+    if (!openTile) return null;
+    if (openTile.kpi_key !== "ftr_rate") return null;
+
+    return buildFtrDrawerModel({
+      tile: openTile,
+      ftrDebug: props.ftrDebug,
+      activeRange: activeRangeFromUrl,
+    });
+  }, [openTile, props.ftrDebug, activeRangeFromUrl]);
+
+  const isFtrOpen = openTile?.kpi_key === "ftr_rate";
+  const isTnpsOpen = !!openTile && isTnpsKey(openTile.kpi_key);
 
   return (
     <>
@@ -428,11 +268,30 @@ export default function TechMetricsClient(props: {
         ))}
       </section>
 
-      <MetricDrawer
+      <MetricInspectorDrawer
+        open={!!openTile && isFtrOpen}
+        title={openTile?.label ?? "Metric"}
+        valueDisplay={openTile?.value_display ?? null}
+        bandLabel={openTile?.band.label ?? "—"}
+        accentColor={openTile?.band.paint?.border}
+        onClose={() => setOpenMetricKey(null)}
+        summaryRows={ftrDrawerModel?.summaryRows ?? []}
+        chart={
+          ftrDrawerModel?.chart ?? (
+            <div className="mt-3 flex h-28 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+              Trend chart placeholder
+            </div>
+          )
+        }
+        periodDetail={ftrDrawerModel?.periodDetail ?? null}
+      />
+
+      <TnpsInspectorDrawer
+        open={!!openTile && isTnpsOpen}
         tile={openTile}
         onClose={() => setOpenMetricKey(null)}
-        ftrDebug={props.ftrDebug}
         activeRange={activeRangeFromUrl}
+        tnpsDebug={props.tnpsDebug}
       />
     </>
   );

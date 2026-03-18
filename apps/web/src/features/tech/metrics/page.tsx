@@ -9,6 +9,7 @@ import {
   type MetricsRangeKey,
 } from "@/features/tech/metrics/lib/getTechMetricsRangePayload.server";
 import { getMetricFtrPayload } from "@/features/tech/metrics/lib/getMetricFtrPayload.server";
+import { getMetricTnpsPayload } from "@/features/tech/metrics/lib/getMetricTnpsPayload.server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,9 +34,18 @@ async function getActivePresetKey(): Promise<string | null> {
   }
 }
 
-function formatPct(value: number | null): string | null {
+function formatPct1(value: number | null): string | null {
   if (value == null || !Number.isFinite(value)) return null;
   return `${value.toFixed(1)}%`;
+}
+
+function formatTnps2(value: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return value.toFixed(2);
+}
+
+function isTnpsKey(kpiKey: string): boolean {
+  return kpiKey.toLowerCase().includes("tnps");
 }
 
 export default async function TechMetricsFeaturePage(props: {
@@ -51,7 +61,7 @@ export default async function TechMetricsFeaturePage(props: {
   const range: MetricsRangeKey =
     rawRange === "3FM" ? "3FM" : rawRange === "12FM" ? "12FM" : "FM";
 
-  const [payload, activePresetKey, ftrPayload] =
+  const [payload, activePresetKey, ftrPayload, tnpsPayload] =
     shell.ok && shell.person_id && who.tech_id
       ? await Promise.all([
           getTechMetricsRangePayload({
@@ -64,27 +74,51 @@ export default async function TechMetricsFeaturePage(props: {
             tech_id: who.tech_id,
             range,
           }),
+          getMetricTnpsPayload({
+            person_id: shell.person_id,
+            tech_id: who.tech_id,
+            range,
+          }),
         ])
-      : [null, null, null];
+      : [null, null, null, null];
 
   const tiles =
     payload?.tiles?.map((tile) => {
-      if (tile.kpi_key !== "ftr_rate") return tile;
+      if (tile.kpi_key === "ftr_rate") {
+        const ftrValue = ftrPayload?.summary?.ftr_rate ?? null;
+        const ftrJobs = ftrPayload?.summary?.total_contact_jobs ?? null;
+        const failJobs = ftrPayload?.summary?.total_fail_jobs ?? null;
 
-      const ftrValue = ftrPayload?.summary?.ftr_rate ?? null;
-      const ftrJobs = ftrPayload?.summary?.total_contact_jobs ?? null;
-      const failJobs = ftrPayload?.summary?.total_fail_jobs ?? null;
+        return {
+          ...tile,
+          value: ftrValue,
+          value_display: formatPct1(ftrValue),
+          context: {
+            sample_short: ftrJobs,
+            sample_long: failJobs,
+            meets_min_volume: null,
+          },
+        };
+      }
 
-      return {
-        ...tile,
-        value: ftrValue,
-        value_display: formatPct(ftrValue),
-        context: {
-          sample_short: ftrJobs,
-          sample_long: failJobs,
-          meets_min_volume: null,
-        },
-      };
+      if (isTnpsKey(tile.kpi_key)) {
+        const tnpsValue = tnpsPayload?.summary?.tnps_score ?? null;
+        const surveys = tnpsPayload?.summary?.tnps_surveys ?? null;
+        const detractors = tnpsPayload?.summary?.tnps_detractors ?? null;
+
+        return {
+          ...tile,
+          value: tnpsValue,
+          value_display: formatTnps2(tnpsValue),
+          context: {
+            sample_short: surveys,
+            sample_long: detractors,
+            meets_min_volume: null,
+          },
+        };
+      }
+
+      return tile;
     }) ?? [];
 
   return (
@@ -103,6 +137,7 @@ export default async function TechMetricsFeaturePage(props: {
         tiles={tiles}
         activePresetKey={activePresetKey}
         ftrDebug={ftrPayload?.debug ?? null}
+        tnpsDebug={tnpsPayload?.debug ?? null}
       />
     </div>
   );
