@@ -157,16 +157,36 @@ function computePct(jobs: number, fails: number): number | null {
   return null;
 }
 
+function computeRangeValue(
+  rows: Array<{
+    total_ftr_contact_jobs: number | null;
+    ftr_fail_jobs: number | null;
+  }>
+): string {
+  const jobs = rows.reduce((sum, row) => sum + (row.total_ftr_contact_jobs ?? 0), 0);
+  const fails = rows.reduce((sum, row) => sum + (row.ftr_fail_jobs ?? 0), 0);
+  return formatPct(computePct(jobs, fails));
+}
+
 function MetricDrawer(props: {
   tile: Tile | null;
   onClose: () => void;
   ftrDebug: FtrDebug;
+  activeRange: RangeKey;
 }) {
   if (!props.tile) return null;
 
   const topColor = props.tile.band.paint?.border ?? "var(--to-border)";
   const isFtr = props.tile.kpi_key === "ftr_rate";
   const selectedRows = props.ftrDebug?.selected_final_rows ?? [];
+
+  const currentRows = selectedRows.slice(0, 1);
+  const last3Rows = selectedRows.slice(0, 3);
+  const last12Rows = selectedRows;
+
+  const currentFtr = computeRangeValue(currentRows);
+  const last3Ftr = computeRangeValue(last3Rows);
+  const last12Ftr = computeRangeValue(last12Rows);
 
   const totalJobs = selectedRows.reduce(
     (sum, row) => sum + (row.total_ftr_contact_jobs ?? 0),
@@ -176,19 +196,7 @@ function MetricDrawer(props: {
     (sum, row) => sum + (row.ftr_fail_jobs ?? 0),
     0
   );
-  const totalFtr = formatPct(computePct(totalJobs, totalFails));
-
-  const currentRow = selectedRows[0] ?? null;
-  const currentFtr = currentRow
-    ? formatPct(
-        computePct(
-          currentRow.total_ftr_contact_jobs ?? 0,
-          currentRow.ftr_fail_jobs ?? 0
-        )
-      )
-    : "—";
-
-  const rolling12Ftr = totalFtr;
+  const totalFtr = computeRangeValue(selectedRows);
 
   return (
     <>
@@ -233,8 +241,12 @@ function MetricDrawer(props: {
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
             <div className="space-y-2">
               <DrawerRow label="Current FM" value={currentFtr} />
-              <DrawerRow label="Last 3 FM" value={totalFtr} />
-              <DrawerRow label="Last 12 FM" value={rolling12Ftr} />
+              {props.activeRange !== "FM" ? (
+                <DrawerRow label="Last 3 FM" value={last3Ftr} />
+              ) : null}
+              {props.activeRange === "12FM" ? (
+                <DrawerRow label="Last 12 FM" value={last12Ftr} />
+              ) : null}
             </div>
 
             <div className="rounded-2xl border bg-muted/10 p-4">
@@ -420,6 +432,7 @@ export default function TechMetricsClient(props: {
         tile={openTile}
         onClose={() => setOpenMetricKey(null)}
         ftrDebug={props.ftrDebug}
+        activeRange={activeRangeFromUrl}
       />
     </>
   );
