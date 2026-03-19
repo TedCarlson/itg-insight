@@ -1,5 +1,17 @@
-import TechHomePage from "@/features/tech/home/page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
+import TechHomePage from "@/features/tech/home/page";
+import { getHomePayload } from "@/features/home/lib/getHomePayload.server";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default async function Page() {
+  const home = await getHomePayload();
+
+  if (home.role !== "TECH") {
+    redirect("/home");
+  }
+
   return <TechHomePage />;
 }

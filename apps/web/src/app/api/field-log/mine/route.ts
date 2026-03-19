@@ -3,21 +3,24 @@ import { supabaseServer } from "@/shared/data/supabase/server";
 
 export const runtime = "nodejs";
 
-function badRequest(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 400 });
+function forbidden(message: string) {
+  return NextResponse.json({ ok: false, error: message }, { status: 403 });
 }
 
-export async function GET(req: NextRequest) {
-  const createdByUserId = req.nextUrl.searchParams.get("createdByUserId")?.trim();
-
-  if (!createdByUserId) {
-    return badRequest("createdByUserId is required.");
-  }
-
+export async function GET(_req: NextRequest) {
   const supabase = await supabaseServer();
 
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+
+  if (userErr || !user) {
+    return forbidden("Unauthorized.");
+  }
+
   const { data, error } = await supabase.rpc("field_log_get_my_submissions", {
-    p_created_by_user_id: createdByUserId,
+    p_created_by_user_id: String(user.id),
   });
 
   if (error) {
@@ -26,7 +29,7 @@ export async function GET(req: NextRequest) {
         ok: false,
         error: error.message || "Failed to load my Field Log submissions.",
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 

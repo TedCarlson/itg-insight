@@ -1,19 +1,36 @@
-// apps/web/src/app/(app)/tech/field-log/follow-up/[reportId]/page.tsx
-
 import { notFound, redirect } from "next/navigation";
+
 import { FieldLogRuntimeProvider } from "@/features/field-log/context/FieldLogRuntimeProvider";
 import { FieldLogRuntimeGate } from "@/features/field-log/components/FieldLogRuntimeGate";
 import FieldLogDraftClient from "@/features/field-log/pages/FieldLogDraftClient";
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { getHomePayload } from "@/features/home/lib/getHomePayload.server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function TechFieldLogFollowupPage(props: {
   params: Promise<{ reportId: string }>;
 }) {
+  const home = await getHomePayload();
+
+  if (home.role !== "TECH") {
+    redirect("/home");
+  }
+
   const { reportId } = await props.params;
 
   const supabase = await supabaseServer();
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+
+  if (userErr || !user) {
+    redirect("/home");
+  }
 
   const { data, error } = await supabase.rpc("field_log_get_report_detail", {
     p_report_id: reportId,
@@ -21,6 +38,10 @@ export default async function TechFieldLogFollowupPage(props: {
 
   if (error || !data) {
     notFound();
+  }
+
+  if (String(data.created_by_user_id ?? "") !== String(user.id)) {
+    redirect("/tech/field-log");
   }
 
   const editable =
