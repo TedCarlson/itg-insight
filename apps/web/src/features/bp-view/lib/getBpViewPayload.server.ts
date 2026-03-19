@@ -37,13 +37,77 @@ type FactRow = {
   [key: string]: unknown;
 };
 
-async function loadP4pConfig(admin: ReturnType<typeof supabaseAdmin>): Promise<KpiCfg[]> {
+/**
+ * 🔥 KPI RESOLVER (PHASE 1 — FTR ONLY)
+ * This mirrors Tech View math pattern (not snapshot-based)
+ */
+async function resolveFtrByTech(params: {
+  techIds: string[];
+  pcOrgIds: string[];
+  range: RangeKey;
+}) {
+  const admin = supabaseAdmin();
+
+  const { data } = await admin
+    .from("metrics_raw_row")
+    .select("tech_id,fiscal_end_date,metric_date,batch_id,raw")
+    .in("tech_id", params.techIds)
+    .in("pc_org_id", params.pcOrgIds)
+    .order("fiscal_end_date", { ascending: false })
+    .order("metric_date", { ascending: false });
+
+  const map = new Map<string, number | null>();
+
+  for (const row of data ?? []) {
+    const techId = String(row.tech_id ?? "");
+    if (!techId) continue;
+
+    let raw: any = row.raw;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        raw = {};
+      }
+    }
+
+    const contact =
+      Number(
+        raw?.["Total FTR/Contact Jobs"] ??
+          raw?.["total_ftr_contact_jobs"] ??
+          raw?.["ftr_contact_jobs"]
+      ) || 0;
+
+    const fails =
+      Number(
+        raw?.["FTRFailJobs"] ??
+          raw?.["ftr_fail_jobs"] ??
+          raw?.["FTR Fail Jobs"]
+      ) || 0;
+
+    if (contact > 0) {
+      map.set(techId, 100 * (1 - fails / contact));
+    } else {
+      map.set(techId, null);
+    }
+  }
+
+  return map;
+}
+
+async function loadP4pConfig(
+  admin: ReturnType<typeof supabaseAdmin>
+): Promise<KpiCfg[]> {
   const [{ data: classRows }, { data: defRows }] = await Promise.all([
     admin.from("metrics_class_kpi_config").select("*").eq("class_type", "P4P"),
     admin.from("metrics_kpi_def").select("kpi_key,customer_label,label"),
   ]);
 
-  const defByKey = new Map<string, { customer_label?: string | null; label?: string | null }>();
+  const defByKey = new Map<
+    string,
+    { customer_label?: string | null; label?: string | null }
+  >();
+
   for (const row of (defRows ?? []) as any[]) {
     const k = String(row?.kpi_key ?? "").trim();
     if (k) defByKey.set(k, row);
@@ -55,18 +119,21 @@ async function loadP4pConfig(admin: ReturnType<typeof supabaseAdmin>): Promise<K
     const kpi_key = String(row?.kpi_key ?? "").trim();
     if (!kpi_key) continue;
 
-    const enabled = row.is_enabled ?? row.enabled ?? row.is_active ?? row.active ?? true;
+    const enabled =
+      row.is_enabled ?? row.enabled ?? row.is_active ?? row.active ?? true;
     const show = row.show_in_report ?? row.show ?? true;
     if (!enabled || !show) continue;
 
     const def = defByKey.get(kpi_key);
+
     const label =
       (row?.label && String(row.label).trim()) ||
       (def?.customer_label && String(def.customer_label).trim()) ||
       (def?.label && String(def.label).trim()) ||
       kpi_key;
 
-    const sort = row.sort_order ?? row.display_order ?? row.report_order ?? 999;
+    const sort =
+      row.sort_order ?? row.display_order ?? row.report_order ?? 999;
 
     out.push({
       kpi_key,
@@ -107,7 +174,9 @@ async function loadRubrics(
   return out;
 }
 
-export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
+export async function getBpViewPayload(
+  args: Args
+): Promise<BpViewPayload> {
   const admin = supabaseAdmin();
 
   const [scope, p4pConfig] = await Promise.all([
@@ -121,20 +190,43 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
   );
 
   const techIds = Array.from(
-    new Set(scope.scoped_assignments.map((r) => String(r.tech_id ?? "")).filter(Boolean))
+    new Set(
+      scope.scoped_assignments
+        .map((r) => String(r.tech_id ?? ""))
+        .filter(Boolean)
+    )
   );
+
+  const pcOrgIds = Array.from(
+    new Set(
+      scope.scoped_assignments
+        .map((r) => String(r.pc_org_id ?? ""))
+        .filter(Boolean)
+    )
+  );
+
+  /**
+   * 🔥 REAL KPI INJECTION (FTR)
+   */
+  const ftrByTech = await resolveFtrByTech({
+    techIds,
+    pcOrgIds,
+    range: args.range,
+  });
 
   const factRes = techIds.length
     ? await admin
         .from("metrics_tech_fact_day")
         .select("*")
-        .in("pc_org_id", Array.from(new Set(scope.scoped_assignments.map((r) => String(r.pc_org_id ?? "")).filter(Boolean))))
+        .in("pc_org_id", pcOrgIds)
         .gte("fiscal_end_date", monthWindowStart(args.range))
         .in("tech_id", techIds)
         .order("metric_date", { ascending: false })
     : { data: [] as FactRow[] };
 
-  const factByTech = latestFactByTech((factRes.data ?? []) as FactRow[]);
+  const factByTech = latestFactByTech(
+    (factRes.data ?? []) as FactRow[]
+  );
 
   const roster_rows = buildBpRosterRows({
     scopedAssignments: scope.scoped_assignments,
@@ -143,6 +235,13 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
     kpis: p4pConfig,
     rubricByKpi,
     orgLabelsById: scope.org_labels_by_id,
+
+    /**
+     * 🔥 KPI OVERRIDES (ENGINE FOUNDATION)
+     */
+    kpiOverrides: {
+      ftr_rate: ftrByTech,
+    },
   });
 
   const kpi_strip = buildBpKpiStrip({
@@ -157,23 +256,33 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
   });
 
   const orgCount = new Set(
-    scope.scoped_assignments.map((r) => String(r.pc_org_id ?? "")).filter(Boolean)
+    scope.scoped_assignments
+      .map((r) => String(r.pc_org_id ?? ""))
+      .filter(Boolean)
   ).size;
 
   const scope_label =
     scope.role_label === "BP Supervisor"
       ? scope.company_label
-        ? `${scope.org_labels_by_id.get(scope.selected_pc_org_id) ?? scope.selected_pc_org_id} • ${scope.company_label}`
-        : scope.org_labels_by_id.get(scope.selected_pc_org_id) ?? scope.selected_pc_org_id
+        ? `${
+            scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
+            scope.selected_pc_org_id
+          } • ${scope.company_label}`
+        : scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
+          scope.selected_pc_org_id
       : scope.company_label
-      ? `${scope.company_label} • ${orgCount} org${orgCount === 1 ? "" : "s"}`
+      ? `${scope.company_label} • ${orgCount} org${
+          orgCount === 1 ? "" : "s"
+        }`
       : `${orgCount} org${orgCount === 1 ? "" : "s"}`;
 
   return {
     header: {
       role_label: scope.role_label,
       scope_label,
-      org_label: scope.org_labels_by_id.get(scope.selected_pc_org_id) ?? scope.selected_pc_org_id,
+      org_label:
+        scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
+        scope.selected_pc_org_id,
       org_count: orgCount,
       range_label: args.range,
       as_of_date: isoToday(),

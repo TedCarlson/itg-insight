@@ -1,18 +1,12 @@
-import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
 import type {
-  BpViewRosterMetricCell,
   BpViewRosterRow,
+  BpViewRosterMetricCell,
 } from "./bpView.types";
-import { formatValueDisplay, numOrNull, pickBand } from "./bpViewMetricHelpers";
-import type {
-  BpScopeAssignmentRow,
-  BpScopePersonRow,
-} from "./resolveBpScope.server";
+import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
 
 type KpiCfg = {
   kpi_key: string;
   label: string;
-  sort: number;
 };
 
 type RubricRow = {
@@ -23,65 +17,124 @@ type RubricRow = {
 };
 
 type FactRow = {
-  tech_id: string | null;
-  metric_date: string | null;
-  fiscal_end_date: string | null;
   [key: string]: unknown;
 };
 
-function buildRosterMetricCells(args: {
-  fact: FactRow | null;
-  kpis: KpiCfg[];
-  rubricByKpi: Map<string, RubricRow[]>;
-}): BpViewRosterMetricCell[] {
-  return args.kpis.map((kpi) => {
-    const value = args.fact ? numOrNull(args.fact[kpi.kpi_key]) : null;
-    const band_key = pickBand(value, args.rubricByKpi.get(kpi.kpi_key));
-
-    return {
-      kpi_key: kpi.kpi_key,
-      label: kpi.label,
-      value,
-      value_display: formatValueDisplay(kpi.kpi_key, value),
-      band_key,
-    };
-  });
-}
-
-export function buildBpRosterRows(args: {
-  scopedAssignments: BpScopeAssignmentRow[];
-  peopleById: Map<string, BpScopePersonRow>;
+type Params = {
+  scopedAssignments: any[];
+  peopleById: Map<string, any>;
   factByTech: Map<string, FactRow>;
   kpis: KpiCfg[];
   rubricByKpi: Map<string, RubricRow[]>;
   orgLabelsById: Map<string, string>;
-}): BpViewRosterRow[] {
-  return args.scopedAssignments
-    .map((assignment) => {
-      const person_id = String(assignment.person_id ?? "");
-      const tech_id = String(assignment.tech_id ?? "");
-      const person = args.peopleById.get(person_id);
-      const fact = args.factByTech.get(tech_id) ?? null;
-      const orgLabel = args.orgLabelsById.get(String(assignment.pc_org_id ?? "")) ?? String(assignment.pc_org_id ?? "—");
 
-      const metrics = buildRosterMetricCells({
-        fact,
-        kpis: args.kpis,
-        rubricByKpi: args.rubricByKpi,
+  /**
+   * 🔥 NEW: KPI override layer (tech-view style injection)
+   */
+  kpiOverrides?: Record<string, Map<string, number | null>>;
+};
+
+function formatValue(value: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+
+  if (value >= 10) return value.toFixed(1);
+  return value.toFixed(2);
+}
+
+function resolveBand(
+  value: number | null,
+  rubric?: RubricRow[]
+): BandKey {
+  if (value == null || !rubric?.length) return "NO_DATA" as BandKey;
+
+  for (const r of rubric) {
+    const minOk = r.min_value == null || value >= r.min_value;
+    const maxOk = r.max_value == null || value <= r.max_value;
+
+    if (minOk && maxOk) {
+      return r.band_key;
+    }
+  }
+
+  return "NO_DATA" as BandKey;
+}
+
+function extractFromFact(fact: FactRow, kpiKey: string): number | null {
+  const raw = fact?.[kpiKey];
+  if (raw == null) return null;
+
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
+  const {
+    scopedAssignments,
+    peopleById,
+    factByTech,
+    kpis,
+    rubricByKpi,
+    orgLabelsById,
+    kpiOverrides,
+  } = params;
+
+  const rows: BpViewRosterRow[] = [];
+
+  for (const assignment of scopedAssignments) {
+    const techId = String(assignment.tech_id ?? "");
+    if (!techId) continue;
+
+    const person = peopleById.get(String(assignment.person_id ?? ""));
+    const fact = factByTech.get(techId);
+
+    const metrics: BpViewRosterMetricCell[] = [];
+    let belowTargetCount = 0;
+
+    for (const kpi of kpis) {
+      let value: number | null = null;
+
+      /**
+       * 🔥 PRIORITY 1 — KPI OVERRIDE (REAL ENGINE)
+       */
+      const overrideMap = kpiOverrides?.[kpi.kpi_key];
+
+      if (overrideMap) {
+        value = overrideMap.get(techId) ?? null;
+      } else if (fact) {
+        /**
+         * fallback to snapshot (temporary until all KPIs migrated)
+         */
+        value = extractFromFact(fact, kpi.kpi_key);
+      }
+
+      const band = resolveBand(value, rubricByKpi.get(kpi.kpi_key));
+
+      if (band === "MISSES" || band === "NEEDS_IMPROVEMENT") {
+        belowTargetCount++;
+      }
+
+      metrics.push({
+        kpi_key: kpi.kpi_key,
+        label: kpi.label,
+        value,
+        value_display: formatValue(value),
+        band_key: band,
       });
+    }
 
-      const below_target_count = metrics.filter(
-        (m) => m.band_key === "NEEDS_IMPROVEMENT" || m.band_key === "MISSES"
-      ).length;
+    const orgLabel =
+      orgLabelsById.get(String(assignment.pc_org_id ?? "")) ??
+      assignment.pc_org_id;
 
-      return {
-        person_id,
-        tech_id,
-        full_name: person?.full_name ? String(person.full_name) : `Tech ${tech_id}`,
-        context: `Tech ID ${tech_id} • ${orgLabel}`,
-        metrics,
-        below_target_count,
-      };
-    })
-    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    rows.push({
+      person_id: String(assignment.person_id ?? ""),
+      tech_id: techId,
+      full_name: person?.full_name ?? "Unknown",
+      context: orgLabel ?? "",
+      metrics,
+      below_target_count: belowTargetCount,
+    });
+  }
+
+  return rows;
 }
