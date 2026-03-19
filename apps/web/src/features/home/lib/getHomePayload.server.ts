@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/shared/data/supabase/admin";
 export type HomeRole =
   | "TECH"
   | "BP_SUPERVISOR"
+  | "BP_LEAD"
   | "BP_OWNER"
   | "UNKNOWN";
 
@@ -28,7 +29,9 @@ function resolveRole(assignments: any[]): HomeRole {
       .filter(Boolean)
   );
 
+  // Order matters (top-down)
   if (titles.has("BP Owner")) return "BP_OWNER";
+  if (titles.has("BP Lead")) return "BP_LEAD";
   if (titles.has("BP Supervisor")) return "BP_SUPERVISOR";
   if (titles.has("Technician")) return "TECH";
 
@@ -48,12 +51,26 @@ async function loadOrgLabel(pc_org_id: string): Promise<string | null> {
 }
 
 function buildDestinations(role: HomeRole): HomeDestination[] {
-  if (role === "BP_OWNER" || role === "BP_SUPERVISOR") {
+  if (
+    role === "BP_OWNER" ||
+    role === "BP_LEAD" ||
+    role === "BP_SUPERVISOR"
+  ) {
     return [
       {
         label: "BP View",
         href: "/bp/view",
         description: "Team performance, KPI strip, and risk surface",
+      },
+      {
+        label: "Dispatch Console",
+        href: "/dispatch-console",
+        description: "Live job routing, assignments, and activity log",
+      },
+      {
+        label: "Field Log",
+        href: "/field-log",
+        description: "Submit, review, and track field activity",
       },
     ];
   }
@@ -64,6 +81,21 @@ function buildDestinations(role: HomeRole): HomeDestination[] {
         label: "Tech Metrics",
         href: "/tech/metrics",
         description: "Your KPI tiles, bands, and metric drill-ins",
+      },
+      {
+        label: "Schedule",
+        href: "/schedule",
+        description: "View assigned routes and planned workload",
+      },
+      {
+        label: "Dispatch Console",
+        href: "/dispatch-console",
+        description: "View job flow and updates",
+      },
+      {
+        label: "Field Log",
+        href: "/field-log",
+        description: "Submit and track your field logs",
       },
     ];
   }

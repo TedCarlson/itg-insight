@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
       return jsonError(400, { ok: false, error: "invalid_shift_date" });
     }
 
-    const pass = await requireAccessPass(req);
+    const pass = await requireAccessPass(req, pc_org_id);
     requireModule(pass, "dispatch_console");
 
     const admin = supabaseAdmin();

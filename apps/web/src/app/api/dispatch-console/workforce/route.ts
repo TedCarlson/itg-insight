@@ -36,12 +36,11 @@ export async function GET(req: NextRequest) {
       return jsonError(400, { ok: false, error: "invalid_shift_date" });
     }
 
-    const pass = await requireAccessPass(req);
+    const pass = await requireAccessPass(req, pc_org_id);
     requireModule(pass, "dispatch_console");
 
     const admin = supabaseAdmin();
 
-    // Seed today's dispatch snapshot (idempotent)
     const seed = await admin.rpc("dispatch_day_seed_from_schedule", {
       p_pc_org_id: pc_org_id,
       p_shift_date: shift_date,
@@ -51,7 +50,6 @@ export async function GET(req: NextRequest) {
       return jsonError(400, { ok: false, error: "seed_failed", details: seed.error });
     }
 
-    // Workforce rows
     const rowsRes = await admin
       .from("dispatch_day_tech")
       .select(
@@ -65,7 +63,6 @@ export async function GET(req: NextRequest) {
       return jsonError(400, { ok: false, error: "workforce_fetch_failed", details: rowsRes.error });
     }
 
-    // Day summary
     const sumRes = await admin
       .from("dispatch_day_summary_v")
       .select("*")

@@ -42,7 +42,7 @@ export default function BpViewKpiStrip(props: {
         Executive KPI Strip
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {props.items.map((item) => (
           <KpiCard key={item.kpi_key} item={item} />
         ))}

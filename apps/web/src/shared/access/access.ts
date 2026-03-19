@@ -17,6 +17,17 @@ export type AccessPass = {
   };
 };
 
+const CONSOLE_PERMISSIONS = [
+  "org_console_manage",
+  "admin_console_manage",
+  "roster_manage",
+  "route_lock_manage",
+  "dispatch_manage",
+  "metrics_manage",
+  "leadership_manage",
+  "permissions_manage",
+];
+
 export function hasCapability(pass: AccessPass, cap: string) {
   if (pass?.is_owner) return true;
   if (pass?.is_admin) return true;
@@ -33,9 +44,33 @@ export function requireCapability(pass: AccessPass, cap: string) {
   }
 }
 
+function hasAnyConsolePermission(pass: AccessPass | null | undefined) {
+  if (!pass) return false;
+  const perms = Array.isArray(pass.permissions) ? pass.permissions : [];
+  return CONSOLE_PERMISSIONS.some((perm) => perms.includes(perm));
+}
+
+export function isTechExperienceUser(pass: AccessPass | null | undefined) {
+  if (!pass) return false;
+  if (pass.is_owner) return false;
+  if (pass.is_admin) return false;
+  if (pass.is_app_owner) return false;
+  if (!pass.person_id) return false;
+
+  return !hasAnyConsolePermission(pass);
+}
+
 export function hasModule(pass: AccessPass, module: string) {
   if (pass?.is_owner) return true;
   if (pass?.is_admin) return true;
+  if (pass?.is_app_owner) return true;
+
+  // Dispatch Console should be available to anyone above technician.
+  // In current architecture, "above technician" is represented by having
+  // at least one console/leadership/admin-style permission.
+  if (module === "dispatch_console") {
+    if (hasAnyConsolePermission(pass)) return true;
+  }
 
   return pass?.ui?.allowed_modules?.includes(module) ?? false;
 }
@@ -46,26 +81,4 @@ export function requireModule(pass: AccessPass, module: string) {
     err.status = 403;
     throw err;
   }
-}
-
-const CONSOLE_PERMISSIONS = [
-  "org_console_manage",
-  "admin_console_manage",
-  "roster_manage",
-  "route_lock_manage",
-  "dispatch_manage",
-  "metrics_manage",
-  "leadership_manage",
-  "permissions_manage",
-];
-
-export function isTechExperienceUser(pass: AccessPass | null | undefined) {
-  if (!pass) return false;
-  if (pass.is_owner) return false;
-  if (pass.is_admin) return false;
-  if (pass.is_app_owner) return false;
-  if (!pass.person_id) return false;
-
-  const perms = Array.isArray(pass.permissions) ? pass.permissions : [];
-  return !CONSOLE_PERMISSIONS.some((perm) => perms.includes(perm));
 }

@@ -1,4 +1,3 @@
-// apps/web/src/components/CoreNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -25,6 +24,8 @@ import { OrgSelector } from "@/components/OrgSelector";
 import { useSession } from "@/state/session";
 import { useOrg } from "@/state/org";
 import { useOrgConsoleAccess } from "@/hooks/useOrgConsoleAccess";
+import { buildRoleNav, type AppRole } from "@/lib/nav/buildRoleNav";
+import { resolveCoreNavContext } from "@/lib/nav/resolveCoreNavContext";
 
 type CoreNavProps = {
   lob: "FULFILLMENT" | "LOCATE";
@@ -84,6 +85,94 @@ function getTechTitle(pathname: string) {
   if (pathname.startsWith("/tech/metrics")) return "Metrics";
   if (pathname.startsWith("/tech/field-log")) return "Field Log";
   return "Insight";
+}
+
+function iconForNavKey(
+  key: string
+): React.ComponentType<{ className?: string }> {
+  switch (key) {
+    case "home":
+      return Home;
+    case "metrics":
+      return BarChart3;
+    case "schedule":
+      return CalendarDays;
+    case "dispatch":
+      return ClipboardCheck;
+    case "fieldlog":
+      return ClipboardList;
+    case "bpview":
+      return BarChart3;
+    case "roster":
+      return Users;
+    case "routelock":
+      return CalendarDays;
+    case "dailylog":
+      return ClipboardCheck;
+    default:
+      return Home;
+  }
+}
+
+function readShellRoleHint(): AppRole | null {
+  if (typeof document === "undefined") return null;
+  const el = document.getElementById("shell-role-hint");
+  const role = el?.getAttribute("data-shell-role");
+
+  if (
+    role === "TECH" ||
+    role === "BP_SUPERVISOR" ||
+    role === "BP_LEAD" ||
+    role === "BP_OWNER" ||
+    role === "UNKNOWN"
+  ) {
+    return role;
+  }
+
+  return null;
+}
+
+function mapRoleNavToItems(
+  role: AppRole,
+  useScopedRail: boolean,
+  lob: "FULFILLMENT" | "LOCATE"
+): NavItem[] {
+  if (lob === "LOCATE") {
+    return [
+      { key: "home", label: "Home", href: "/locate", icon: Home },
+      { key: "dailylog", label: "Daily Log", href: "/locate/daily-log", icon: ClipboardCheck },
+      { key: "roster", label: "Roster", href: "/roster", icon: Users },
+    ];
+  }
+
+  if (useScopedRail && role === "TECH") {
+    return [
+      { key: "home", label: "Home", href: "/home", icon: Home },
+      { key: "schedule", label: "Schedule", href: "/tech/schedule", icon: CalendarDays },
+      { key: "metrics", label: "Tech Metrics", href: "/tech/metrics", icon: BarChart3 },
+      { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console", icon: ClipboardCheck },
+      { key: "fieldlog", label: "Field Log", href: "/tech/field-log", icon: ClipboardList },
+    ];
+  }
+
+  if (
+    useScopedRail &&
+    (role === "BP_SUPERVISOR" || role === "BP_LEAD" || role === "BP_OWNER")
+  ) {
+    return buildRoleNav(role).map((item) => ({
+      ...item,
+      icon: iconForNavKey(item.key),
+    }));
+  }
+
+  return [
+    { key: "home", label: "Home", href: "/home", icon: Home },
+    { key: "roster", label: "Roster", href: "/roster", icon: Users },
+    { key: "routelock", label: "Route Lock", href: "/route-lock", icon: CalendarDays },
+    { key: "metrics", label: "Metrics", href: "/metrics", icon: BarChart3 },
+    { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console", icon: ClipboardCheck },
+    { key: "fieldlog", label: "Field Log", href: "/field-log", icon: ClipboardList },
+  ];
 }
 
 function TechMobileNav(props: {
@@ -206,6 +295,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
 
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [hintRole, setHintRole] = useState<AppRole | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -230,26 +320,39 @@ export default function CoreNav({ lob }: CoreNavProps) {
     };
   }, [open]);
 
-  const homeHref = lob === "LOCATE" ? "/locate" : "/fulfillment";
+  useEffect(() => {
+    setHintRole(readShellRoleHint());
+  }, [pathname]);
 
-  const navItems = useMemo<NavItem[]>(() => {
-    if (lob === "LOCATE") {
-      return [
-        { key: "home", label: "Home", href: "/locate", icon: Home },
-        { key: "dailylog", label: "Daily Log", href: "/locate/daily-log", icon: ClipboardCheck },
-        { key: "roster", label: "Roster", href: "/roster", icon: Users },
-      ];
+  const navContext = useMemo(() => {
+    const base = resolveCoreNavContext({ pathname, lob });
+
+    if (pathname === "/home" && hintRole) {
+      return {
+        role: hintRole,
+        surfaceFamily:
+          hintRole === "TECH"
+            ? "TECH"
+            : hintRole === "BP_SUPERVISOR" ||
+              hintRole === "BP_LEAD" ||
+              hintRole === "BP_OWNER"
+            ? "BP"
+            : base.surfaceFamily,
+        useScopedRail: hintRole !== "UNKNOWN",
+      };
     }
 
-    return [
-      { key: "home", label: "Home", href: "/fulfillment", icon: Home },
-      { key: "roster", label: "Roster", href: "/roster", icon: Users },
-      { key: "routelock", label: "Route Lock", href: "/route-lock", icon: CalendarDays },
-      { key: "metrics", label: "Metrics", href: "/metrics", icon: BarChart3 },
-      { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console", icon: ClipboardCheck },
-      { key: "fieldlog", label: "Field Log", href: "/field-log", icon: ClipboardList },
-    ];
+    return base;
+  }, [pathname, lob, hintRole]);
+
+  const homeHref = useMemo(() => {
+    if (lob === "LOCATE") return "/locate";
+    return "/home";
   }, [lob]);
+
+  const navItems = useMemo<NavItem[]>(() => {
+    return mapRoleNavToItems(navContext.role, navContext.useScopedRail, lob);
+  }, [navContext.role, navContext.useScopedRail, lob]);
 
   const canSeeAdmin = isOwner || canManageConsole;
 
@@ -262,7 +365,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
       if (!isOwner) return;
       if (switching) return;
 
-      const nextHref = next === "LOCATE" ? "/locate" : "/fulfillment";
+      const nextHref = next === "LOCATE" ? "/locate" : "/home";
       if (pathname === nextHref || pathname.startsWith(nextHref + "/")) return;
 
       setSwitching(true);

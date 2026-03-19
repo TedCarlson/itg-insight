@@ -7,6 +7,12 @@ export default async function HomePageShell() {
 
   return (
     <div className="space-y-4">
+      <div
+        id="shell-role-hint"
+        data-shell-role={payload.role}
+        className="hidden"
+        aria-hidden="true"
+      />
       <HomeHeader payload={payload} />
       <HomeDestinations payload={payload} />
     </div>
