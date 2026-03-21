@@ -29,7 +29,7 @@ export type FieldLogPhotoRequirement = {
 export type FieldLogRule = {
   rule_id: string;
   category_key: string;
-  category_label: string;
+  category_label: string | null;
   subcategory_key: string | null;
   subcategory_label: string | null;
   show_subcategory: boolean;
@@ -60,8 +60,9 @@ export type FieldLogRuntimeConfig = {
 };
 
 export type FieldLogRuntimeBootstrap = {
-  config: FieldLogRuntimeConfig;
+  config: FieldLogRuntimeConfig | null;
   categories: FieldLogCategory[];
   subcategories: FieldLogSubcategory[];
   rules: FieldLogRule[];
+  ucodes: FieldLogUcode[];
 };
