@@ -10,7 +10,6 @@ type UpsertKpiDef = {
   raw_label_identifier?: string | null;
   direction?: "HIGHER_BETTER" | "LOWER_BETTER" | string | null;
 
-  // optional fields that may exist in your table
   label?: string | null;
   unit?: string | null;
 };
@@ -34,15 +33,9 @@ type UpsertClassCfg = {
 
   is_tiebreaker?: boolean | null;
 
-  // NOTE: label must NOT be class-scoped; we will strip any label-ish keys.
   [key: string]: any;
 };
 
-/**
- * KPI-driven rubric (GLOBAL by KPI)
- * No class_type here.
- * DB is enforced global-only (pc_org_id is always NULL) and PK is (kpi_key, band_key).
- */
 type UpsertRubricRow = {
   kpi_key: string;
   band_key: string;
@@ -63,6 +56,24 @@ function asNum(v: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+function classCfgWeight(c: UpsertClassCfg): number {
+  const directWeight = asNum(c.weight);
+  if (directWeight !== null) return directWeight;
+
+  const aliases = [
+    asNum((c as any).weight_value),
+    asNum((c as any).weight_points),
+    asNum((c as any).weight_pct),
+    asNum((c as any).weight_percent),
+  ];
+
+  for (const v of aliases) {
+    if (v !== null) return v;
+  }
+
+  return 0;
 }
 
 async function isOwner(sb: any) {
@@ -112,7 +123,6 @@ async function elevatedGate() {
 }
 
 function stripClassScopedLabelFields(row: Record<string, any>) {
-  // Hard rule: label is GLOBAL only (metrics_kpi_def)
   const badKeys = [
     "label",
     "kpi_label",
@@ -128,7 +138,6 @@ function stripClassScopedLabelFields(row: Record<string, any>) {
 }
 
 function rubricActiveOrNullQuery(q: any) {
-  // Treat NULL as active (common for legacy rows / missing defaults)
   return q.or("is_active.is.null,is_active.eq.true");
 }
 
@@ -171,9 +180,6 @@ export async function POST(req: Request) {
   const classConfig = Array.isArray(body.classConfig) ? body.classConfig : [];
   const rubricRows = Array.isArray(body.rubricRows) ? body.rubricRows : [];
 
-  // ---------------------------
-  // KPI defs (GLOBAL label lives here)
-  // ---------------------------
   if (kpiDefs.length > 0) {
     const upserts = kpiDefs
       .filter((d) => typeof d.kpi_key === "string" && d.kpi_key.trim())
@@ -190,9 +196,6 @@ export async function POST(req: Request) {
     if (error) return NextResponse.json({ error }, { status: 400 });
   }
 
-  // ---------------------------
-  // Class config (NO class-scoped labels)
-  // ---------------------------
   if (classConfig.length > 0) {
     const cleaned = classConfig
       .filter(
@@ -203,18 +206,21 @@ export async function POST(req: Request) {
           c.kpi_key.trim()
       )
       .map((c) => {
-        // start with a shallow copy, but then strip forbidden keys
         const row: Record<string, any> = { ...c };
 
         row.class_type = c.class_type.trim();
         row.kpi_key = c.kpi_key.trim();
 
-        // hard defaults (avoid NOT NULL fails)
         row.enabled = c.enabled ?? false;
 
-        // allow either weight or weight_percent depending on schema; we normalize both if present
-        if ("weight" in row) row.weight = asNum(c.weight) ?? 0;
-        if ("weight_percent" in row) row.weight_percent = asNum(c.weight_percent) ?? (asNum((c as any).weight) ?? 0);
+        const canonicalWeight = classCfgWeight(c);
+
+        row.weight = canonicalWeight;
+
+        if ("weight_percent" in row) row.weight_percent = asNum(c.weight_percent) ?? canonicalWeight;
+        if ("weight_pct" in row) row.weight_pct = asNum((c as any).weight_pct) ?? canonicalWeight;
+        if ("weight_value" in row) row.weight_value = asNum((c as any).weight_value) ?? canonicalWeight;
+        if ("weight_points" in row) row.weight_points = asNum((c as any).weight_points) ?? canonicalWeight;
 
         row.grade_value = asNum(c.grade_value) ?? 0;
 
@@ -228,7 +234,6 @@ export async function POST(req: Request) {
 
         row.is_tiebreaker = !!c.is_tiebreaker;
 
-        // enforce: label is GLOBAL only
         stripClassScopedLabelFields(row);
 
         return row;
@@ -240,9 +245,6 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ error }, { status: 400 });
 
-    // ------------------------------------------------------------
-    // SINGLE TIE BREAKER ENFORCEMENT (server-side, per class_type)
-    // ------------------------------------------------------------
     const classesTouched = Array.from(new Set(cleaned.map((r) => String(r.class_type).toUpperCase())));
 
     for (const ct of classesTouched) {
@@ -274,9 +276,6 @@ export async function POST(req: Request) {
     }
   }
 
-  // ---------------------------
-  // Rubric rows (GLOBAL by KPI)
-  // ---------------------------
   if (rubricRows.length > 0) {
     const upserts = rubricRows
       .filter(
@@ -304,7 +303,6 @@ export async function POST(req: Request) {
     if (error) return NextResponse.json({ error }, { status: 400 });
   }
 
-  // Return fresh snapshot
   const rubQ = rubricActiveOrNullQuery(
     admin.from("metrics_kpi_rubric").select("*").order("kpi_key").order("band_key")
   );
