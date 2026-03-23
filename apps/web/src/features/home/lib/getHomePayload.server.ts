@@ -3,10 +3,13 @@ import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.serv
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 export type HomeRole =
+  | "APP_OWNER"
+  | "ADMIN"
   | "TECH"
   | "BP_SUPERVISOR"
   | "BP_LEAD"
   | "BP_OWNER"
+  | "UNSCOPED"
   | "UNKNOWN";
 
 export type HomeDestination = {
@@ -20,22 +23,39 @@ export type HomePayload = {
   role: HomeRole;
   org_label: string | null;
   destinations: HomeDestination[];
+  has_linked_person: boolean;
+  has_selected_org: boolean;
 };
 
-function resolveRole(assignments: any[]): HomeRole {
+type BootShape = {
+  ok?: boolean;
+  person_id?: string | null;
+  full_name?: string | null;
+  is_owner?: boolean;
+  is_admin?: boolean;
+  is_app_owner?: boolean;
+};
+
+function resolveRole(assignments: Array<{ position_title?: string | null }>): HomeRole {
   const titles = new Set(
     assignments
       .map((a) => (a.position_title ? String(a.position_title).trim() : null))
       .filter(Boolean)
   );
 
-  // Order matters (top-down)
   if (titles.has("BP Owner")) return "BP_OWNER";
   if (titles.has("BP Lead")) return "BP_LEAD";
   if (titles.has("BP Supervisor")) return "BP_SUPERVISOR";
   if (titles.has("Technician")) return "TECH";
 
   return "UNKNOWN";
+}
+
+function resolvePrivilegedRole(boot: BootShape): HomeRole | null {
+  if (boot?.is_app_owner) return "APP_OWNER";
+  if (boot?.is_owner) return "APP_OWNER";
+  if (boot?.is_admin) return "ADMIN";
+  return null;
 }
 
 async function loadOrgLabel(pc_org_id: string): Promise<string | null> {
@@ -50,12 +70,58 @@ async function loadOrgLabel(pc_org_id: string): Promise<string | null> {
   return data?.pc_org_name ?? null;
 }
 
-function buildDestinations(role: HomeRole): HomeDestination[] {
-  if (
-    role === "BP_OWNER" ||
-    role === "BP_LEAD" ||
-    role === "BP_SUPERVISOR"
-  ) {
+function buildPrivilegedDestinations(hasSelectedOrg: boolean): HomeDestination[] {
+  const items: HomeDestination[] = [
+    {
+      label: "Home",
+      href: "/home",
+      description: "Workspace landing and access-aware navigation",
+    },
+    {
+      label: "Admin",
+      href: "/admin",
+      description: "Administration and system-level controls",
+    },
+    {
+      label: "Roster",
+      href: "/roster",
+      description: "Org roster, assignments, and reporting structure",
+    },
+    {
+      label: "Metrics",
+      href: "/metrics",
+      description: "Metrics reporting, uploads, and configuration",
+    },
+    {
+      label: "Field Log",
+      href: "/field-log",
+      description: "Submit, review, and track field activity",
+    },
+  ];
+
+  if (hasSelectedOrg) {
+    items.splice(3, 0, {
+      label: "BP View",
+      href: "/bp/view",
+      description: "Team performance, KPI strip, and risk surface",
+    });
+
+    items.splice(4, 0, {
+      label: "Dispatch Console",
+      href: "/dispatch-console",
+      description: "Live job routing, assignments, and activity log",
+    });
+  }
+
+  return items;
+}
+
+function buildDestinations(role: HomeRole, hasSelectedOrg: boolean): HomeDestination[] {
+  if (role === "APP_OWNER" || role === "ADMIN") {
+    return buildPrivilegedDestinations(hasSelectedOrg);
+  }
+
+  if (role === "BP_OWNER" || role === "BP_LEAD" || role === "BP_SUPERVISOR") {
     return [
       {
         label: "BP View",
@@ -100,55 +166,107 @@ function buildDestinations(role: HomeRole): HomeDestination[] {
     ];
   }
 
+  if (!hasSelectedOrg) {
+    return [
+      {
+        label: "Access",
+        href: "/access",
+        description: "Select an org or complete access setup",
+      },
+      {
+        label: "Home",
+        href: "/home",
+        description: "Workspace landing and access-aware navigation",
+      },
+    ];
+  }
+
   return [
     {
       label: "Workspace",
       href: "/home",
       description: "Role and access could not be resolved yet",
     },
+    {
+      label: "Dispatch Console",
+      href: "/dispatch-console",
+      description: "Open an available org-scoped workspace",
+    },
+    {
+      label: "Field Log",
+      href: "/field-log",
+      description: "Open an available org-scoped workspace",
+    },
   ];
 }
 
 export async function getHomePayload(): Promise<HomePayload> {
-  const [boot, scope] = await Promise.all([
+  const [bootRaw, scope] = await Promise.all([
     bootstrapProfileServer(),
     requireSelectedPcOrgServer(),
   ]);
 
-  if (!boot.ok || !boot.person_id) {
-    throw new Error("No linked person");
-  }
+  const boot = (bootRaw ?? {}) as BootShape;
+  const hasLinkedPerson = Boolean(boot.ok && boot.person_id);
 
-  if (!scope.ok) {
-    throw new Error("No org selected");
+  const selectedPcOrgId = scope.ok ? scope.selected_pc_org_id : null;
+  const hasSelectedOrg = Boolean(selectedPcOrgId);
+
+  const privilegedRole = resolvePrivilegedRole(boot);
+
+  if (!hasLinkedPerson) {
+    const role = privilegedRole ?? (hasSelectedOrg ? "UNKNOWN" : "UNSCOPED");
+
+    const orgLabel = selectedPcOrgId
+      ? await loadOrgLabel(selectedPcOrgId)
+      : null;
+
+    return {
+      full_name: boot.full_name ?? null,
+      role,
+      org_label: orgLabel,
+      destinations: buildDestinations(role, hasSelectedOrg),
+      has_linked_person: false,
+      has_selected_org: hasSelectedOrg,
+    };
   }
 
   const admin = supabaseAdmin();
 
+  const personPromise = admin
+    .from("person")
+    .select("full_name")
+    .eq("person_id", boot.person_id as string)
+    .maybeSingle();
+
+  const assignmentsPromise = selectedPcOrgId
+    ? admin
+        .from("assignment_admin_v")
+        .select("position_title,active")
+        .eq("person_id", boot.person_id as string)
+        .eq("pc_org_id", selectedPcOrgId)
+        .eq("active", true)
+    : Promise.resolve({ data: [] as Array<{ position_title?: string | null }> });
+
+  const orgLabelPromise = selectedPcOrgId
+    ? loadOrgLabel(selectedPcOrgId)
+    : Promise.resolve(null);
+
   const [personRes, assignmentRes, orgLabel] = await Promise.all([
-    admin
-      .from("person")
-      .select("full_name")
-      .eq("person_id", boot.person_id)
-      .maybeSingle(),
-
-    admin
-      .from("assignment_admin_v")
-      .select("position_title,active")
-      .eq("person_id", boot.person_id)
-      .eq("pc_org_id", scope.selected_pc_org_id)
-      .eq("active", true),
-
-    loadOrgLabel(scope.selected_pc_org_id),
+    personPromise,
+    assignmentsPromise,
+    orgLabelPromise,
   ]);
 
-  const role = resolveRole(assignmentRes.data ?? []);
-  const destinations = buildDestinations(role);
+  const resolvedRole = privilegedRole ?? resolveRole(assignmentRes.data ?? []);
+  const role = resolvedRole === "UNKNOWN" && !hasSelectedOrg ? "UNSCOPED" : resolvedRole;
 
   return {
-    full_name: personRes.data?.full_name ?? null,
+    full_name: personRes.data?.full_name ?? boot.full_name ?? null,
     role,
     org_label: orgLabel,
-    destinations,
+    destinations: buildDestinations(role, hasSelectedOrg),
+    has_linked_person: true,
+    has_selected_org: hasSelectedOrg,
   };
 }
