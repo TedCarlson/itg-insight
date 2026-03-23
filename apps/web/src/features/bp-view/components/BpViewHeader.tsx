@@ -109,6 +109,8 @@ export default function BpViewHeader(props: {
     });
   }
 
+  const subtitleParts = [header.role_label, header.rep_full_name].filter(Boolean);
+
   return (
     <section
       className={[
@@ -120,13 +122,13 @@ export default function BpViewHeader(props: {
         <div className="space-y-1">
           <div className="text-xl font-semibold">BP View</div>
           <div className="text-sm text-muted-foreground">
-            {header.role_label} • {header.scope_label}
+            {subtitleParts.join(" • ")}
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <InfoPill label="Resolved Scope" value={header.org_label} />
-          <InfoPill label="Role" value={header.role_label} />
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-3">
+          <InfoPill label="Contractor" value={header.contractor_name ?? "—"} />
+          <InfoPill label="Headcount" value={String(header.headcount)} />
           <InfoPill label="As Of" value={header.as_of_date} />
         </div>
       </div>

@@ -27,6 +27,7 @@ export type BpScopeResult = {
   role_label: BpScopeRole;
   company_label: string | null;
   company_id: string | null;
+  rep_full_name: string | null;
   org_labels_by_id: Map<string, string>;
   scoped_assignments: BpScopeAssignmentRow[];
   people_by_id: Map<string, BpScopePersonRow>;
@@ -36,11 +37,14 @@ function isoToday() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function isActiveWindow(row: {
-  active?: boolean | null;
-  start_date?: string | null;
-  end_date?: string | null;
-}, today: string) {
+function isActiveWindow(
+  row: {
+    active?: boolean | null;
+    start_date?: string | null;
+    end_date?: string | null;
+  },
+  today: string
+) {
   const activeOk = row.active === true || row.active == null;
   const startOk = !row.start_date || String(row.start_date) <= today;
   const endOk = !row.end_date || String(row.end_date) >= today;
@@ -60,20 +64,32 @@ function resolveRoleLabel(assignments: BpScopeAssignmentRow[]): BpScopeRole | nu
   return null;
 }
 
-async function loadCompanyLabel(company_id: string | null): Promise<string | null> {
-  if (!company_id) return null;
+async function loadContractorLabel(contractor_id: string | null): Promise<string | null> {
+  if (!contractor_id) return null;
 
   const admin = supabaseAdmin();
-  const { data } = await admin
-    .from("company_admin_v")
-    .select("company_name")
-    .eq("company_id", company_id)
+
+  const { data: contractorRow } = await admin
+    .from("contractor_admin_v")
+    .select("contractor_name,contractor_code")
+    .eq("contractor_id", contractor_id)
     .maybeSingle();
 
-  return data?.company_name ? String(data.company_name) : null;
+  if (contractorRow?.contractor_name) {
+    return String(contractorRow.contractor_name);
+  }
+
+  if (contractorRow?.contractor_code) {
+    return String(contractorRow.contractor_code);
+  }
+
+  return null;
 }
 
-async function loadOrgLabels(admin: ReturnType<typeof supabaseAdmin>, pcOrgIds: string[]) {
+async function loadOrgLabels(
+  admin: ReturnType<typeof supabaseAdmin>,
+  pcOrgIds: string[]
+) {
   const out = new Map<string, string>();
   if (!pcOrgIds.length) return out;
 
@@ -134,14 +150,16 @@ export async function resolveBpScope(): Promise<BpScopeResult> {
       .maybeSingle(),
     admin
       .from("assignment_admin_v")
-      .select("assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active")
+      .select(
+        "assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active"
+      )
       .eq("person_id", boot.person_id)
       .eq("active", true),
   ]);
 
   const me = (personRes.data ?? null) as BpScopePersonRow | null;
-  const myAssignments = ((myAssignmentsRes.data ?? []) as BpScopeAssignmentRow[]).filter((a) =>
-    isActiveWindow(a, today)
+  const myAssignments = ((myAssignmentsRes.data ?? []) as BpScopeAssignmentRow[]).filter(
+    (a) => isActiveWindow(a, today)
   );
 
   if (!me) {
@@ -154,14 +172,16 @@ export async function resolveBpScope(): Promise<BpScopeResult> {
   }
 
   const company_id = me.co_ref_id ? String(me.co_ref_id) : null;
-  const company_label = await loadCompanyLabel(company_id);
+  const company_label = await loadContractorLabel(company_id);
+  const rep_full_name = me.full_name ? String(me.full_name) : null;
 
   if (!company_id) {
     return {
       selected_pc_org_id,
       role_label,
-      company_label,
+      company_label: null,
       company_id: null,
+      rep_full_name,
       org_labels_by_id: new Map([[selected_pc_org_id, selected_pc_org_id]]),
       scoped_assignments: [],
       people_by_id: new Map<string, BpScopePersonRow>(),
@@ -170,7 +190,9 @@ export async function resolveBpScope(): Promise<BpScopeResult> {
 
   const baseAssignmentsQuery = admin
     .from("assignment_admin_v")
-    .select("assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active")
+    .select(
+      "assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active"
+    )
     .eq("active", true)
     .not("tech_id", "is", null);
 
@@ -179,8 +201,8 @@ export async function resolveBpScope(): Promise<BpScopeResult> {
       ? await baseAssignmentsQuery.eq("pc_org_id", selected_pc_org_id)
       : await baseAssignmentsQuery;
 
-  const allCandidateAssignments = ((assignmentsRes.data ?? []) as BpScopeAssignmentRow[]).filter((a) =>
-    isActiveWindow(a, today)
+  const allCandidateAssignments = ((assignmentsRes.data ?? []) as BpScopeAssignmentRow[]).filter(
+    (a) => isActiveWindow(a, today)
   );
 
   const candidateAssignments = uniqueByTech(allCandidateAssignments);
@@ -258,13 +280,17 @@ export async function resolveBpScope(): Promise<BpScopeResult> {
     new Set(scoped_assignments.map((r) => String(r.pc_org_id ?? "")).filter(Boolean))
   );
 
-  const org_labels_by_id = await loadOrgLabels(admin, orgIds.length ? orgIds : [selected_pc_org_id]);
+  const org_labels_by_id = await loadOrgLabels(
+    admin,
+    orgIds.length ? orgIds : [selected_pc_org_id]
+  );
 
   return {
     selected_pc_org_id,
     role_label,
     company_label,
     company_id,
+    rep_full_name,
     org_labels_by_id,
     scoped_assignments,
     people_by_id,

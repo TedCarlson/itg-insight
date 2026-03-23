@@ -7,6 +7,9 @@ export type BpViewHeaderData = {
   scope_label: string;
   org_label: string;
   org_count: number;
+  contractor_name: string | null;
+  rep_full_name: string | null;
+  headcount: number;
   range_label: BpRangeKey;
   as_of_date: string;
 };
@@ -29,7 +32,6 @@ export type BpViewRosterMetricCell = {
   value_display: string | null;
   band_key: BandKey;
 
-  // future-facing executive cell contract
   delta_value: number | null;
   delta_display: string | null;
 
@@ -44,17 +46,22 @@ export type BpViewRosterMetricCell = {
   score_contribution: number | null;
 };
 
+export type BpViewRosterWorkMix = {
+  installs: number;
+  tcs: number;
+  sros: number;
+  total: number;
+};
+
 export type BpViewRosterRow = {
   person_id: string;
   tech_id: string;
   full_name: string;
   context: string;
-
-  // range/view-facing rank (official or derived later)
   rank: number | null;
-
   metrics: BpViewRosterMetricCell[];
   below_target_count: number;
+  work_mix: BpViewRosterWorkMix;
 };
 
 export type BpViewRiskItem = {
@@ -63,10 +70,21 @@ export type BpViewRiskItem = {
   note: string;
 };
 
+export type BpWorkMix = {
+  total: number;
+  installs: number;
+  tcs: number;
+  sros: number;
+  install_pct: number | null;
+  tc_pct: number | null;
+  sro_pct: number | null;
+};
+
 export type BpViewPayload = {
   header: BpViewHeaderData;
   kpi_strip: BpViewKpiItem[];
   risk_strip: BpViewRiskItem[];
+  work_mix: BpWorkMix;
   roster_columns: Array<{ kpi_key: string; label: string }>;
   roster_rows: BpViewRosterRow[];
 };

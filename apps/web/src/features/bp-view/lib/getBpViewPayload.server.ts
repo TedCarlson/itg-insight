@@ -1,11 +1,12 @@
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
-import type { BpViewPayload } from "./bpView.types";
+import type { BpViewPayload, BpViewRosterRow } from "./bpView.types";
 import { isoToday } from "./bpViewMetricHelpers";
 import { resolveBpScope } from "./resolveBpScope.server";
 import { buildBpRosterRows } from "./buildBpRosterRows";
 import { buildBpKpiStrip } from "./buildBpKpiStrip";
 import { buildBpRiskStrip } from "./buildBpRiskStrip";
+import { resolveBpWorkMixByTech } from "./kpiResolvers/workMixResolver";
 
 export type RangeKey = "FM" | "3FM" | "12FM";
 
@@ -30,6 +31,7 @@ type FactRow = {
   tech_id: string | null;
   metric_date: string | null;
   fiscal_end_date: string | null;
+  raw?: unknown;
   [key: string]: unknown;
 };
 
@@ -45,7 +47,16 @@ function dedupeLatestRowPerFiscalMonth(rows: FactRow[]): FactRow[] {
     const fiscal = String(row?.fiscal_end_date ?? "").slice(0, 10);
     if (!fiscal) continue;
 
-    if (!byFiscal.has(fiscal)) {
+    const existing = byFiscal.get(fiscal);
+    if (!existing) {
+      byFiscal.set(fiscal, row);
+      continue;
+    }
+
+    const existingTs = new Date(String(existing.metric_date ?? "")).getTime();
+    const currentTs = new Date(String(row.metric_date ?? "")).getTime();
+
+    if (Number.isFinite(currentTs) && (!Number.isFinite(existingTs) || currentTs > existingTs)) {
       byFiscal.set(fiscal, row);
     }
   }
@@ -206,6 +217,35 @@ function buildRangedFactByTech(args: {
   return factByTech;
 }
 
+function pct(part: number, total: number): number | null {
+  if (total <= 0) return null;
+  return (100 * part) / total;
+}
+
+function buildWorkMixFromRosterRows(rows: BpViewRosterRow[]) {
+  let installs = 0;
+  let tcs = 0;
+  let sros = 0;
+
+  for (const row of rows) {
+    installs += row.work_mix.installs;
+    tcs += row.work_mix.tcs;
+    sros += row.work_mix.sros;
+  }
+
+  const total = installs + tcs + sros;
+
+  return {
+    total,
+    installs,
+    tcs,
+    sros,
+    install_pct: pct(installs, total),
+    tc_pct: pct(tcs, total),
+    sro_pct: pct(sros, total),
+  };
+}
+
 export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
   const admin = supabaseAdmin();
 
@@ -246,10 +286,20 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
         .limit(10000)
     : { data: [] as FactRow[] };
 
+  const factRows = (factRes.data ?? []) as FactRow[];
+
   const factByTech = buildRangedFactByTech({
-    factRows: (factRes.data ?? []) as FactRow[],
+    factRows,
     techIds,
     kpis: p4pConfig,
+    range: args.range,
+  });
+
+  // ✅ CRITICAL FIX (THIS WAS MISSING)
+  const workMixByTech = await resolveBpWorkMixByTech({
+    admin,
+    techIds,
+    pcOrgIds,
     range: args.range,
   });
 
@@ -260,6 +310,7 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
     kpis: p4pConfig,
     rubricByKpi,
     orgLabelsById: scope.org_labels_by_id,
+    workMixByTech, // ✅ THIS IS WHY IT WAS ZERO
   });
 
   const kpi_strip = buildBpKpiStrip({
@@ -273,19 +324,22 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
     kpis: p4pConfig,
   });
 
+  const work_mix = buildWorkMixFromRosterRows(roster_rows);
+
   const orgCount = new Set(
     scope.scoped_assignments
       .map((r) => String(r.pc_org_id ?? ""))
       .filter(Boolean)
   ).size;
 
+  const headcount = techIds.length;
+  const contractor_name = scope.company_label ?? null;
+
   const scope_label =
     scope.role_label === "BP Supervisor"
       ? scope.company_label
-        ? `${
-            scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
-            scope.selected_pc_org_id
-          } • ${scope.company_label}`
+        ? `${scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
+            scope.selected_pc_org_id} • ${scope.company_label}`
         : scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
           scope.selected_pc_org_id
       : scope.company_label
@@ -300,11 +354,15 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
         scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
         scope.selected_pc_org_id,
       org_count: orgCount,
+      contractor_name,
+      rep_full_name: scope.rep_full_name ?? null,
+      headcount,
       range_label: args.range,
       as_of_date: isoToday(),
     },
     kpi_strip,
     risk_strip,
+    work_mix,
     roster_columns: p4pConfig.map((k) => ({
       kpi_key: k.kpi_key,
       label: k.label,

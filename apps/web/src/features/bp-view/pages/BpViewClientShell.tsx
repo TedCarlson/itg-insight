@@ -11,6 +11,7 @@ import type {
 import BpViewHeader from "../components/BpViewHeader";
 import BpViewKpiStrip from "../components/BpViewKpiStrip";
 import BpViewRiskStrip from "../components/BpViewRiskStrip";
+import BpWorkMixCard from "../components/BpWorkMixCard";
 import BpViewRosterSurface from "../components/BpViewRosterSurface";
 import BpTechDrillDrawer from "../components/BpTechDrillDrawer";
 
@@ -27,6 +28,7 @@ export default function BpViewClientShell(props: {
 
       <div className="space-y-6">
         <BpViewKpiStrip items={payload.kpi_strip} />
+        <BpWorkMixCard workMix={payload.work_mix} />
         <BpViewRiskStrip items={payload.risk_strip} />
         <BpViewRosterSurface
           columns={payload.roster_columns}

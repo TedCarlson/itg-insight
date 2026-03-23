@@ -20,6 +20,13 @@ type FactRow = {
   [key: string]: unknown;
 };
 
+type WorkMixRow = {
+  installs: number;
+  tcs: number;
+  sros: number;
+  total: number;
+};
+
 type Params = {
   scopedAssignments: any[];
   peopleById: Map<string, any>;
@@ -27,6 +34,7 @@ type Params = {
   kpis: KpiCfg[];
   rubricByKpi: Map<string, RubricRow[]>;
   orgLabelsById: Map<string, string>;
+  workMixByTech: Map<string, WorkMixRow>;
   kpiOverrides?: Record<string, Map<string, number | null>>;
 };
 
@@ -143,6 +151,14 @@ function extractFromFact(fact: FactRow, kpiKey: string): number | null {
   return null;
 }
 
+function firstNameOnly(fullName: string): string {
+  const trimmed = fullName.trim();
+  if (!trimmed) return "Unknown";
+
+  const first = trimmed.split(/\s+/)[0]?.trim();
+  return first || "Unknown";
+}
+
 export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
   const {
     scopedAssignments,
@@ -151,6 +167,7 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
     kpis,
     rubricByKpi,
     orgLabelsById,
+    workMixByTech,
     kpiOverrides,
   } = params;
 
@@ -211,7 +228,15 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
       String(assignment.pc_org_id ?? "");
 
     const resolvedFullName = String(person?.full_name ?? "Unknown");
-    const fullNameWithTechId = `${resolvedFullName} • ${techId}`;
+    const shortName = firstNameOnly(resolvedFullName);
+    const fullNameWithTechId = `${shortName} • ${techId}`;
+
+    const work_mix = workMixByTech.get(techId) ?? {
+      installs: 0,
+      tcs: 0,
+      sros: 0,
+      total: 0,
+    };
 
     rows.push({
       person_id: String(assignment.person_id ?? ""),
@@ -221,6 +246,7 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
       rank: null,
       metrics,
       below_target_count: belowTargetCount,
+      work_mix,
     });
   }
 
