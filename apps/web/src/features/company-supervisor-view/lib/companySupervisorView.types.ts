@@ -37,17 +37,14 @@ export type CompanySupervisorRosterRow = {
   tech_id: string;
   full_name: string;
   context: string;
+
   team_class: TeamClass;
+
+  // 🔥 NEW
+  contractor_name: string | null;
 
   rank: number | null;
   metrics: CompanySupervisorRosterMetricCell[];
-  below_target_count: number;
-  work_mix: CompanySupervisorRosterWorkMix;
-};
-
-export type CompanySupervisorParityRow = {
-  team_class: TeamClass;
-  headcount: number;
   below_target_count: number;
   work_mix: CompanySupervisorRosterWorkMix;
 };
@@ -81,7 +78,6 @@ export type CompanySupervisorPayload = {
   risk_strip: any[];
 
   work_mix: CompanySupervisorWorkMix;
-  parity: CompanySupervisorParityRow[];
 
   roster_columns: Array<{
     kpi_key: string;

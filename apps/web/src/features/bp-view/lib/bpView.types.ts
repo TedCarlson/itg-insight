@@ -58,6 +58,7 @@ export type BpViewRosterRow = {
   tech_id: string;
   full_name: string;
   context: string;
+  contractor_name?: string | null;
   rank: number | null;
   metrics: BpViewRosterMetricCell[];
   below_target_count: number;

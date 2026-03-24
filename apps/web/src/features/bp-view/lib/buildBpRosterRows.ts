@@ -243,6 +243,10 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
       tech_id: techId,
       full_name: fullNameWithTechId,
       context: orgLabel,
+      contractor_name:
+        "contractor_name" in assignment
+          ? (assignment.contractor_name ?? null)
+          : null,
       rank: null,
       metrics,
       below_target_count: belowTargetCount,

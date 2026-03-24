@@ -188,9 +188,7 @@ export async function getCompanySupervisorViewPayload(
     orgLabelsById: scope.org_labels_by_id,
     workMixByTech,
     kpiOverrides,
-  }) as CompanySupervisorRosterRow[];
-
-  const enrichedRows = roster_rows.map((row) => {
+  }).map((row) => {
     const assignment = scope.scoped_assignments.find(
       (a) => String(a.tech_id ?? "") === row.tech_id
     );
@@ -198,53 +196,26 @@ export async function getCompanySupervisorViewPayload(
     return {
       ...row,
       team_class: assignment?.team_class ?? "BP",
+      contractor_name: assignment?.contractor_name ?? null,
     };
-  });
+  }) as CompanySupervisorRosterRow[];
 
   const kpi_strip = buildBpKpiStrip({
-    rosterRows: enrichedRows as any,
+    rosterRows: roster_rows as any,
     kpis: p4pConfig,
     rubricByKpi,
   });
 
   const risk_strip = buildBpRiskStrip({
-    rosterRows: enrichedRows as any,
+    rosterRows: roster_rows as any,
     kpis: p4pConfig,
-  });
-
-  const parity = (["ITG", "BP"] as const).map((team_class) => {
-    const rows = enrichedRows.filter((r) => r.team_class === team_class);
-
-    let installs = 0;
-    let tcs = 0;
-    let sros = 0;
-    let below = 0;
-
-    for (const r of rows) {
-      installs += r.work_mix.installs;
-      tcs += r.work_mix.tcs;
-      sros += r.work_mix.sros;
-      below += r.below_target_count;
-    }
-
-    return {
-      team_class,
-      headcount: rows.length,
-      below_target_count: below,
-      work_mix: {
-        installs,
-        tcs,
-        sros,
-        total: installs + tcs + sros,
-      },
-    };
   });
 
   let installs = 0;
   let tcs = 0;
   let sros = 0;
 
-  for (const row of enrichedRows) {
+  for (const row of roster_rows) {
     installs += row.work_mix.installs;
     tcs += row.work_mix.tcs;
     sros += row.work_mix.sros;
@@ -288,13 +259,11 @@ export async function getCompanySupervisorViewPayload(
       sro_pct: pct(sros, total),
     },
 
-    parity,
-
     roster_columns: p4pConfig.map((k) => ({
       kpi_key: k.kpi_key,
       label: k.label,
     })),
 
-    roster_rows: enrichedRows,
+    roster_rows,
   };
 }

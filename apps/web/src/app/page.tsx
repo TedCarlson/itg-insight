@@ -42,7 +42,7 @@ export default async function Page() {
 
     if (isOwner) redirect("/home");
     if (isBp) redirect("/bp/view");
-    if (isItg) redirect("/home");
+    if (isItg) redirect("/company-supervisor");
     redirect("/tech");
   }
 
