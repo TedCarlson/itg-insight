@@ -24,6 +24,7 @@ export type HomePayload = {
   full_name: string | null;
   role: HomeRole;
   org_label: string | null;
+  selected_pc_org_id: string | null;
   destinations: HomeDestination[];
   has_linked_person: boolean;
   has_selected_org: boolean;
@@ -314,6 +315,7 @@ export async function getHomePayload(): Promise<HomePayload> {
       full_name: boot.full_name ?? null,
       role,
       org_label: orgLabel,
+      selected_pc_org_id: selectedPcOrgId,
       destinations: buildDestinations(role, hasSelectedOrg),
       has_linked_person: false,
       has_selected_org: hasSelectedOrg,
@@ -357,6 +359,7 @@ export async function getHomePayload(): Promise<HomePayload> {
     full_name: personRes.data?.full_name ?? boot.full_name ?? null,
     role,
     org_label: orgLabel,
+    selected_pc_org_id: selectedPcOrgId,
     destinations: buildDestinations(role, hasSelectedOrg),
     has_linked_person: true,
     has_selected_org: hasSelectedOrg,
