@@ -8,6 +8,14 @@ import { buildBpKpiStrip } from "./buildBpKpiStrip";
 import { buildBpRiskStrip } from "./buildBpRiskStrip";
 import { resolveBpWorkMixByTech } from "./kpiResolvers/workMixResolver";
 import {
+  fetchMetricRawRows,
+  getFinalRowsPerMonth,
+  groupRowsByTech,
+  pickNum,
+  resolveFiscalEndDatesForRange,
+  type RawMetricRow,
+} from "./kpiResolvers/shared";
+import {
   resolveAllBpKpis,
   type RangeKey,
 } from "./bpViewResolverRegistry";
@@ -29,6 +37,214 @@ type RubricRow = {
   min_value: number | null;
   max_value: number | null;
 };
+
+type TnpsFacts = {
+  surveys: number;
+  promoters: number;
+  passives: number;
+  detractors: number;
+  tnps_value: number | null;
+  tnps_display: string | null;
+};
+
+type TnpsContributorRow = {
+  tech_id: string;
+  full_name: string;
+  contractor_name: string | null;
+  surveys: number;
+  promoters: number;
+  passives: number;
+  detractors: number;
+  tnps_value: number | null;
+  tnps_display: string | null;
+};
+
+type TnpsPeriodRow = {
+  metric_date: string;
+  surveys: number;
+  promoters: number;
+  passives: number;
+  detractors: number;
+  tnps_value: number | null;
+  tnps_display: string | null;
+};
+
+function fmtNum(value: number | null | undefined, decimals = 1) {
+  if (value == null || !Number.isFinite(value)) return null;
+  return value.toFixed(decimals);
+}
+
+function computeTnpsScore(
+  surveys: number,
+  promoters: number,
+  detractors: number
+): number | null {
+  if (surveys <= 0) return null;
+  return (100 * (promoters - detractors)) / surveys;
+}
+
+function extractTnpsFacts(rows: RawMetricRow[]): TnpsFacts {
+  let surveys = 0;
+  let promoters = 0;
+  let detractors = 0;
+
+  for (const row of rows) {
+    surveys +=
+      pickNum(row.raw, [
+        "tNPS Surveys",
+        "tnps_surveys",
+        "tNPS_Surveys",
+        "Surveys",
+      ]) ?? 0;
+
+    promoters +=
+      pickNum(row.raw, [
+        "Promoters",
+        "tnps_promoters",
+      ]) ?? 0;
+
+    detractors +=
+      pickNum(row.raw, [
+        "Detractors",
+        "tnps_detractors",
+      ]) ?? 0;
+  }
+
+  const passives = Math.max(0, surveys - promoters - detractors);
+  const tnps_value = computeTnpsScore(surveys, promoters, detractors);
+
+  return {
+    surveys,
+    promoters,
+    passives,
+    detractors,
+    tnps_value,
+    tnps_display: fmtNum(tnps_value, 1),
+  };
+}
+
+function normalizeRowsForAggregate(rawRows: RawMetricRow[]) {
+  const rowsByTech = groupRowsByTech(rawRows);
+  const normalized: RawMetricRow[] = [];
+
+  for (const techRows of rowsByTech.values()) {
+    const finalRowsByMonth = getFinalRowsPerMonth(techRows);
+    for (const month of finalRowsByMonth) {
+      normalized.push(month.row);
+    }
+  }
+
+  return normalized;
+}
+
+function buildTnpsInspectionData(args: {
+  rawMetricRows: RawMetricRow[];
+  rosterRows: BpViewRosterRow[];
+}) {
+  // --- FULL CHECKPOINT DATA (NO NORMALIZATION)
+  const rawRowsByTech = groupRowsByTech(args.rawMetricRows);
+
+  // --- MONTHLY FINAL DATA (NORMALIZED)
+  const normalizedRows = normalizeRowsForAggregate(args.rawMetricRows);
+  const normalizedRowsByTech = groupRowsByTech(normalizedRows);
+
+  // --- SUMMARY (USES NORMALIZED = CORRECT KPI MATH)
+  const summary = extractTnpsFacts(normalizedRows);
+
+  // --- CONTRIBUTORS (ALSO NORMALIZED → stable KPI math)
+  const contributors: TnpsContributorRow[] = args.rosterRows
+    .map((row) => {
+      const techRows = normalizedRowsByTech.get(row.tech_id) ?? [];
+      const facts = extractTnpsFacts(techRows);
+
+      return {
+        tech_id: row.tech_id,
+        full_name: row.full_name,
+        contractor_name: row.contractor_name ?? null,
+        surveys: facts.surveys,
+        promoters: facts.promoters,
+        passives: facts.passives,
+        detractors: facts.detractors,
+        tnps_value: facts.tnps_value,
+        tnps_display: facts.tnps_display,
+      };
+    })
+    .filter(
+      (row) =>
+        row.surveys > 0 ||
+        row.promoters > 0 ||
+        row.passives > 0 ||
+        row.detractors > 0
+    )
+    .sort(
+      (a, b) =>
+        b.surveys - a.surveys ||
+        a.full_name.localeCompare(b.full_name)
+    );
+
+  // --- ALL CHECKPOINTS (RAW)
+  const rawByDate = new Map<string, RawMetricRow[]>();
+
+  for (const row of args.rawMetricRows) {
+    const metricDate = String(row.metric_date ?? "").trim();
+    if (!metricDate) continue;
+
+    const arr = rawByDate.get(metricDate) ?? [];
+    arr.push(row);
+    rawByDate.set(metricDate, arr);
+  }
+
+  const all_checkpoints: TnpsPeriodRow[] = Array.from(rawByDate.entries())
+    .map(([metric_date, rows]) => {
+      const facts = extractTnpsFacts(rows);
+
+      return {
+        metric_date,
+        surveys: facts.surveys,
+        promoters: facts.promoters,
+        passives: facts.passives,
+        detractors: facts.detractors,
+        tnps_value: facts.tnps_value,
+        tnps_display: facts.tnps_display,
+      };
+    })
+    .sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+
+  // --- MONTHLY FINALS (NORMALIZED)
+  const finalByDate = new Map<string, RawMetricRow[]>();
+
+  for (const row of normalizedRows) {
+    const metricDate = String(row.metric_date ?? "").trim();
+    if (!metricDate) continue;
+
+    const arr = finalByDate.get(metricDate) ?? [];
+    arr.push(row);
+    finalByDate.set(metricDate, arr);
+  }
+
+  const monthly_finals: TnpsPeriodRow[] = Array.from(finalByDate.entries())
+    .map(([metric_date, rows]) => {
+      const facts = extractTnpsFacts(rows);
+
+      return {
+        metric_date,
+        surveys: facts.surveys,
+        promoters: facts.promoters,
+        passives: facts.passives,
+        detractors: facts.detractors,
+        tnps_value: facts.tnps_value,
+        tnps_display: facts.tnps_display,
+      };
+    })
+    .sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+
+  return {
+    summary,
+    contributors,
+    all_checkpoints,
+    monthly_finals,
+  };
+}
 
 async function loadViewKpiConfig(
   admin: ReturnType<typeof supabaseAdmin>
@@ -182,7 +398,12 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
     )
   );
 
-  const [kpiOverrides, workMixByTech] = await Promise.all([
+  const fiscalEndDates = await resolveFiscalEndDatesForRange({
+    admin,
+    range: args.range,
+  });
+
+  const [kpiOverrides, workMixByTech, rawMetricRows] = await Promise.all([
     resolveAllBpKpis({
       admin,
       techIds,
@@ -194,6 +415,12 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
       techIds,
       pcOrgIds,
       range: args.range,
+    }),
+    fetchMetricRawRows({
+      admin,
+      techIds,
+      pcOrgIds,
+      fiscalEndDates,
     }),
   ]);
 
@@ -240,15 +467,19 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
   const scope_label =
     scope.role_label === "BP Supervisor"
       ? scope.company_label
-        ? `${
-            scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
-            scope.selected_pc_org_id
-          } • ${scope.company_label}`
+        ? `${scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
+        scope.selected_pc_org_id
+        } • ${scope.company_label}`
         : scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
-          scope.selected_pc_org_id
+        scope.selected_pc_org_id
       : scope.company_label
         ? `${scope.company_label} • ${orgCount} org${orgCount === 1 ? "" : "s"}`
         : `${orgCount} org${orgCount === 1 ? "" : "s"}`;
+
+  const rollup_tnps = buildTnpsInspectionData({
+    rawMetricRows,
+    rosterRows: roster_rows,
+  });
 
   return {
     header: {
@@ -269,5 +500,6 @@ export async function getBpViewPayload(args: Args): Promise<BpViewPayload> {
     work_mix,
     roster_columns: rosterColumns,
     roster_rows,
-  };
+    rollup_tnps,
+  } as BpViewPayload;
 }

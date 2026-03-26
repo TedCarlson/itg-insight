@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 
-import type { OfficeRollupRow } from "../lib/buildOfficeRollupRows";
+import type { CompanyManagerOfficeRollupRow } from "../lib/companyManagerView.types";
+
+type MetricColumn = {
+  kpi_key: string;
+  label: string;
+};
 
 function formatMetricValue(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -32,6 +37,14 @@ function isSecondaryMetric(index: number) {
 
 function sectionDividerClass(index: number) {
   return index === 3 ? "border-l border-[var(--to-border)] pl-4" : "";
+}
+
+function getMetricColumns(row: CompanyManagerOfficeRollupRow): MetricColumn[] {
+  return row.metric_order ?? [];
+}
+
+function getMetricSummary(row: CompanyManagerOfficeRollupRow, kpiKey: string) {
+  return row.metrics.get(kpiKey) ?? null;
 }
 
 function DesktopHeaderCell(props: {
@@ -97,9 +110,7 @@ function DesktopMetricBadge(props: {
   );
 }
 
-function DesktopWorkMixBadge(props: {
-  value: number;
-}) {
+function DesktopWorkMixBadge(props: { value: number }) {
   return (
     <div className="inline-flex min-w-[58px] items-center justify-center rounded-md border border-[var(--to-border)] bg-muted/10 px-2 py-1 text-sm font-medium">
       {props.value}
@@ -108,7 +119,7 @@ function DesktopWorkMixBadge(props: {
 }
 
 export default function CompanyManagerOfficeTable(props: {
-  rows: OfficeRollupRow[];
+  rows: CompanyManagerOfficeRollupRow[];
   activeOffice: string | null;
   onSelectOffice: (office: string | null) => void;
 }) {
@@ -123,7 +134,7 @@ export default function CompanyManagerOfficeTable(props: {
     );
   }
 
-  const metricColumns = rows[0]?.metric_order ?? [];
+  const metricColumns = getMetricColumns(rows[0]);
   const gridTemplate = `180px repeat(${metricColumns.length}, minmax(84px, 1fr)) ${
     showMix ? "repeat(4, minmax(84px, 1fr)) " : ""
   }72px`;
@@ -155,7 +166,7 @@ export default function CompanyManagerOfficeTable(props: {
         >
           <DesktopHeaderCell>Office</DesktopHeaderCell>
 
-          {metricColumns.map((col, index) => (
+          {metricColumns.map((col: MetricColumn, index: number) => (
             <DesktopHeaderCell
               key={col.kpi_key}
               align="center"
@@ -199,8 +210,8 @@ export default function CompanyManagerOfficeTable(props: {
             >
               <DesktopCell strong>{row.office}</DesktopCell>
 
-              {metricColumns.map((col, index) => {
-                const metric = row.metrics.get(col.kpi_key);
+              {metricColumns.map((col: MetricColumn, index: number) => {
+                const metric = getMetricSummary(row, col.kpi_key);
 
                 return (
                   <DesktopCell

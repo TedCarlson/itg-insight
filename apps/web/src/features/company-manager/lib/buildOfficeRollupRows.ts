@@ -1,95 +1,56 @@
-import type { CompanyManagerRosterRow } from "./companyManagerView.types";
+import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
+import type { BpViewRosterRow } from "@/features/bp-view/lib/bpView.types";
+import { bandLabel, formatValueDisplay, pickBand } from "@/features/bp-view/lib/bpViewMetricHelpers";
 
-type MetricSummary = {
-  value: number | null;
-  band: string | null;
-};
-
-type MetricOrderItem = {
+type KpiCfg = {
   kpi_key: string;
   label: string;
+  sort: number;
+};
+
+type RubricRow = {
+  kpi_key: string;
+  band_key: BandKey;
+  min_value: number | null;
+  max_value: number | null;
 };
 
 export type OfficeRollupRow = {
   office: string;
-
-  headcount: number;
-  jobs: number;
-  installs: number;
-  tcs: number;
-  sros: number;
-
-  below_target_count: number;
-
-  metrics: Map<string, MetricSummary>;
-  metric_order: MetricOrderItem[];
+  metrics: {
+    kpi_key: string;
+    label: string;
+    value: number | null;
+    value_display: string | null;
+    band_key: BandKey;
+    band_label: string;
+  }[];
+  hc: number;
 };
 
-function numOrNull(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+function getRowWeight(row: BpViewRosterRow): number {
+  const wm = row.work_mix;
+  if (!wm) return 0;
+
+  const total =
+    (wm.installs ?? 0) +
+    (wm.tcs ?? 0) +
+    (wm.sros ?? 0);
+
+  return total > 0 ? total : 0;
 }
 
-function avg(values: Array<number | null>): number | null {
-  const nums = values.filter((v): v is number => v != null && Number.isFinite(v));
-  if (!nums.length) return null;
-  return nums.reduce((sum, n) => sum + n, 0) / nums.length;
-}
+export function buildOfficeRollupRows(args: {
+  rosterRows: BpViewRosterRow[];
+  kpis: KpiCfg[];
+  rubricByKpi: Map<string, RubricRow[]>;
+  officeByTech: Map<string, string>;
+}): OfficeRollupRow[] {
+  const grouped = new Map<string, BpViewRosterRow[]>();
 
-function buildMetricOrder(rows: CompanyManagerRosterRow[]): MetricOrderItem[] {
-  const firstRow = rows[0];
-  if (!firstRow) return [];
-
-  return firstRow.metrics.map((metric) => ({
-    kpi_key: metric.kpi_key,
-    label: metric.label,
-  }));
-}
-
-function buildMetricMap(
-  rows: CompanyManagerRosterRow[],
-  metricOrder: MetricOrderItem[]
-) {
-  const out = new Map<string, MetricSummary>();
-
-  for (const col of metricOrder) {
-    const values = rows.map((row) => {
-      const metric = row.metrics.find((m) => m.kpi_key === col.kpi_key);
-      return numOrNull(metric?.value);
-    });
-
-    const value = avg(values);
-
-    const bandCounts: Record<string, number> = {};
-    for (const row of rows) {
-      const metric = row.metrics.find((m) => m.kpi_key === col.kpi_key);
-      const band = metric?.band_key ?? null;
-      if (!band) continue;
-      bandCounts[band] = (bandCounts[band] ?? 0) + 1;
-    }
-
-    const band =
-      Object.entries(bandCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-    out.set(col.kpi_key, { value, band });
-  }
-
-  return out;
-}
-
-export function buildOfficeRollupRows(
-  rows: CompanyManagerRosterRow[]
-): OfficeRollupRow[] {
-  const grouped = new Map<string, CompanyManagerRosterRow[]>();
-
-  for (const row of rows) {
+  for (const row of args.rosterRows) {
     const office =
-      String((row as any).office_name ?? "").trim() ||
-      String(row.context ?? "").trim() ||
+      args.officeByTech.get(row.tech_id) ??
       "Unknown";
 
     const arr = grouped.get(office) ?? [];
@@ -97,38 +58,49 @@ export function buildOfficeRollupRows(
     grouped.set(office, arr);
   }
 
-  const officeRows: OfficeRollupRow[] = [];
+  const out: OfficeRollupRow[] = [];
 
-  for (const [office, officeGroupRows] of grouped.entries()) {
-    let jobs = 0;
-    let installs = 0;
-    let tcs = 0;
-    let sros = 0;
-    let below_target_count = 0;
+  for (const [office, rows] of grouped.entries()) {
+    const metrics = args.kpis.map((kpi) => {
+      let weightedSum = 0;
+      let totalWeight = 0;
 
-    for (const row of officeGroupRows) {
-      jobs += row.work_mix.total;
-      installs += row.work_mix.installs;
-      tcs += row.work_mix.tcs;
-      sros += row.work_mix.sros;
-      below_target_count += row.below_target_count;
-    }
+      for (const row of rows) {
+        const metric = row.metrics.find(
+          (m) => m.kpi_key === kpi.kpi_key
+        );
 
-    const metric_order = buildMetricOrder(officeGroupRows);
-    const metrics = buildMetricMap(officeGroupRows, metric_order);
+        const value = metric?.value ?? null;
+        if (value == null || !Number.isFinite(value)) continue;
 
-    officeRows.push({
+        const weight = getRowWeight(row);
+        if (weight <= 0) continue;
+
+        weightedSum += value * weight;
+        totalWeight += weight;
+      }
+
+      const value =
+        totalWeight > 0 ? weightedSum / totalWeight : null;
+
+      const band_key = pickBand(value, args.rubricByKpi.get(kpi.kpi_key));
+
+      return {
+        kpi_key: kpi.kpi_key,
+        label: kpi.label,
+        value,
+        value_display: formatValueDisplay(kpi.kpi_key, value),
+        band_key,
+        band_label: bandLabel(band_key),
+      };
+    });
+
+    out.push({
       office,
-      headcount: officeGroupRows.length,
-      jobs,
-      installs,
-      tcs,
-      sros,
-      below_target_count,
       metrics,
-      metric_order,
+      hc: rows.length,
     });
   }
 
-  return officeRows.sort((a, b) => a.office.localeCompare(b.office));
+  return out.sort((a, b) => a.office.localeCompare(b.office));
 }

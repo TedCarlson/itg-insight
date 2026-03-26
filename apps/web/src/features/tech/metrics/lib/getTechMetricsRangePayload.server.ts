@@ -1,5 +1,3 @@
-//apps/web/src/features/tech/metrics/lib/getTechMetricsRangePayload.server.ts
-
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -151,12 +149,49 @@ function dedupeLatestRowPerFiscalMonth(rows: any[]): any[] {
     const fiscal = String(row?.fiscal_end_date ?? "").slice(0, 10);
     if (!fiscal) continue;
 
-    if (!byFiscal.has(fiscal)) {
+    const existing = byFiscal.get(fiscal);
+    if (!existing) {
+      byFiscal.set(fiscal, row);
+      continue;
+    }
+
+    const rowMetricDate = String(row?.metric_date ?? "").slice(0, 10);
+    const existingMetricDate = String(existing?.metric_date ?? "").slice(0, 10);
+
+    if (rowMetricDate > existingMetricDate) {
+      byFiscal.set(fiscal, row);
+      continue;
+    }
+
+    if (rowMetricDate < existingMetricDate) {
+      continue;
+    }
+
+    const rowInsertedAt = String(row?.inserted_at ?? "");
+    const existingInsertedAt = String(existing?.inserted_at ?? "");
+
+    if (rowInsertedAt > existingInsertedAt) {
+      byFiscal.set(fiscal, row);
+      continue;
+    }
+
+    if (rowInsertedAt < existingInsertedAt) {
+      continue;
+    }
+
+    const rowBatchId = String(row?.batch_id ?? "");
+    const existingBatchId = String(existing?.batch_id ?? "");
+
+    if (rowBatchId > existingBatchId) {
       byFiscal.set(fiscal, row);
     }
   }
 
-  return Array.from(byFiscal.values());
+  return Array.from(byFiscal.values()).sort((a, b) => {
+    const aFiscal = String(a?.fiscal_end_date ?? "").slice(0, 10);
+    const bFiscal = String(b?.fiscal_end_date ?? "").slice(0, 10);
+    return bFiscal.localeCompare(aFiscal);
+  });
 }
 
 function monthsToTake(range: MetricsRangeKey): number {
@@ -165,7 +200,44 @@ function monthsToTake(range: MetricsRangeKey): number {
   return 1;
 }
 
-function averageForKpi(rows: any[], kpiKey: string): number | null {
+function computeTnpsScore(
+  surveys: number,
+  promoters: number,
+  detractors: number
+): number | null {
+  if (surveys <= 0) return null;
+  return (100 * (promoters - detractors)) / surveys;
+}
+
+function aggregateForKpi(rows: any[], kpiKey: string): number | null {
+  const key = String(kpiKey).toLowerCase();
+
+  if (key === "tnps" || key === "tnps_score") {
+    let surveys = 0;
+    let promoters = 0;
+    let detractors = 0;
+
+    for (const row of rows) {
+      surveys +=
+        numOrNull(row?.tnps_surveys) ??
+        numOrNull(row?.["tNPS Surveys"]) ??
+        numOrNull(row?.surveys) ??
+        0;
+
+      promoters +=
+        numOrNull(row?.tnps_promoters) ??
+        numOrNull(row?.Promoters) ??
+        0;
+
+      detractors +=
+        numOrNull(row?.tnps_detractors) ??
+        numOrNull(row?.Detractors) ??
+        0;
+    }
+
+    return computeTnpsScore(surveys, promoters, detractors);
+  }
+
   const nums = rows
     .map((r) => numOrNull(r?.[kpiKey]))
     .filter((v): v is number => v !== null);
@@ -214,6 +286,8 @@ export async function getTechMetricsRangePayload(
     .eq("tech_id", tech_id)
     .order("fiscal_end_date", { ascending: false })
     .order("metric_date", { ascending: false })
+    .order("inserted_at", { ascending: false })
+    .order("batch_id", { ascending: false })
     .limit(1000);
 
   const latestRowsByMonth = dedupeLatestRowPerFiscalMonth((rawRows ?? []) as any[]);
@@ -230,7 +304,7 @@ export async function getTechMetricsRangePayload(
   }
 
   const tiles: ScorecardTile[] = base.tiles.map((tile) => {
-    const value = averageForKpi(selectedRows, tile.kpi_key);
+    const value = aggregateForKpi(selectedRows, tile.kpi_key);
     const band_key = pickBand(value, rubricByKpi.get(tile.kpi_key));
 
     return {

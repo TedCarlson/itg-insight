@@ -26,10 +26,10 @@ import { buildMetDrawerModel } from "@/features/tech/metrics/lib/buildMetDrawerM
 
 import BpMetricSparkline from "./BpMetricSparkline";
 import MetricPeriodDetailTable from "./MetricPeriodDetailTable";
-import { renderTnpsSentimentMix } from "../lib/renderTnpsSentimentMix";
+import BpTnpsSentimentMix from "./BpTnpsSentimentMix";
 
 function mapBpRangeToTechRange(range: "FM" | "PREVIOUS" | "3FM" | "12FM") {
-  if (range === "PREVIOUS") return "FM"; 
+  if (range === "PREVIOUS") return "FM";
   return range;
 }
 
@@ -248,11 +248,12 @@ function buildBpTnpsDrawerModel(args: {
   return {
     summaryRows,
     extraSections: [
-      renderTnpsSentimentMix({
-        totalSurveys,
-        totalPromoters,
-        totalDetractors,
-      }),
+      <BpTnpsSentimentMix
+        key="tnps-sentiment-mix"
+        totalSurveys={totalSurveys}
+        totalPromoters={totalPromoters}
+        totalDetractors={totalDetractors}
+      />,
     ],
     chart: (
       <BpMetricSparkline
@@ -371,9 +372,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
     id: "48hr",
     test: (metric) => {
       const k = metric.kpi_key.toLowerCase();
-      return (
-        k.includes("48hr") || k.includes("48_hr") || k.includes("callback")
-      );
+      return k.includes("48hr") || k.includes("48_hr") || k.includes("callback");
     },
     build: ({ tile, payload, range }) =>
       build48HrDrawerModel({
@@ -546,9 +545,7 @@ export default function BpTechDrillDrawer(props: {
   const nativeModel = useMemo(() => {
     if (!activeMetric || !activeTile || !activeEntry || !payload) return null;
 
-    const entry = activeEntry;
-
-    return entry.build({
+    return activeEntry.build({
       metric: activeMetric,
       tile: activeTile,
       payload,

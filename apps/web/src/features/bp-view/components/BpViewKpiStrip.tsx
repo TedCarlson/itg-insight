@@ -11,9 +11,33 @@ function topBarClass(bandKey: string) {
   return "bg-[var(--to-border)]";
 }
 
-function PrimaryKpiCard({ item }: { item: BpViewKpiItem }) {
+function clickableCardClass(clickable?: boolean, active?: boolean) {
+  if (!clickable) return "";
+  return [
+    "cursor-pointer transition",
+    "hover:shadow-sm hover:ring-1 hover:ring-[var(--to-accent)]",
+    active ? "ring-2 ring-[var(--to-accent)]" : "",
+  ].join(" ");
+}
+
+function PrimaryKpiCard(props: {
+  item: BpViewKpiItem;
+  clickable?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const { item, clickable, active, onClick } = props;
+
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!clickable}
+      className={[
+        "overflow-hidden rounded-xl border bg-card text-left",
+        clickableCardClass(clickable, active),
+      ].join(" ")}
+    >
       <div className={`h-1 w-full ${topBarClass(item.band_key)}`} />
       <div className="px-3 py-2.5">
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -25,7 +49,7 @@ function PrimaryKpiCard({ item }: { item: BpViewKpiItem }) {
             {item.value_display ?? "—"}
           </div>
 
-          <div className="text-[10px] text-muted-foreground whitespace-nowrap">
+          <div className="whitespace-nowrap text-[10px] text-muted-foreground">
             {item.band_label}
           </div>
         </div>
@@ -36,13 +60,28 @@ function PrimaryKpiCard({ item }: { item: BpViewKpiItem }) {
           </div>
         ) : null}
       </div>
-    </div>
+    </button>
   );
 }
 
-function SecondaryKpiCard({ item }: { item: BpViewKpiItem }) {
+function SecondaryKpiCard(props: {
+  item: BpViewKpiItem;
+  clickable?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const { item, clickable, active, onClick } = props;
+
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!clickable}
+      className={[
+        "overflow-hidden rounded-lg border bg-card text-left",
+        clickableCardClass(clickable, active),
+      ].join(" ")}
+    >
       <div className={`h-1 w-full ${topBarClass(item.band_key)}`} />
       <div className="px-2.5 py-2">
         <div className="truncate text-[9px] uppercase tracking-wide text-muted-foreground">
@@ -53,30 +92,39 @@ function SecondaryKpiCard({ item }: { item: BpViewKpiItem }) {
           <div className="text-sm font-semibold leading-none">
             {item.value_display ?? "—"}
           </div>
-          <div className="text-[9px] text-muted-foreground whitespace-nowrap">
+          <div className="whitespace-nowrap text-[9px] text-muted-foreground">
             {item.band_label}
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
-export default function BpViewKpiStrip({
-  items,
-}: {
+export default function BpViewKpiStrip(props: {
   items: BpViewKpiItem[];
+  selectedKpiKey?: string | null;
+  onSelectItem?: (item: BpViewKpiItem) => void;
 }) {
+  const { items, selectedKpiKey = null, onSelectItem } = props;
   const [expanded, setExpanded] = useState(false);
 
   const primary = items.slice(0, 3);
   const secondary = items.slice(3);
+  const clickable = typeof onSelectItem === "function";
 
   return (
     <section className="rounded-2xl border bg-card p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Executive KPI Strip
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Executive KPI Strip
+          </div>
+          {clickable ? (
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              Tap a KPI to inspect the roll-up
+            </div>
+          ) : null}
         </div>
 
         {secondary.length > 0 ? (
@@ -96,7 +144,13 @@ export default function BpViewKpiStrip({
 
       <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
         {primary.map((item) => (
-          <PrimaryKpiCard key={item.kpi_key} item={item} />
+          <PrimaryKpiCard
+            key={item.kpi_key}
+            item={item}
+            clickable={clickable}
+            active={selectedKpiKey === item.kpi_key}
+            onClick={() => onSelectItem?.(item)}
+          />
         ))}
       </div>
 
@@ -108,7 +162,13 @@ export default function BpViewKpiStrip({
 
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
             {secondary.map((item) => (
-              <SecondaryKpiCard key={item.kpi_key} item={item} />
+              <SecondaryKpiCard
+                key={item.kpi_key}
+                item={item}
+                clickable={clickable}
+                active={selectedKpiKey === item.kpi_key}
+                onClick={() => onSelectItem?.(item)}
+              />
             ))}
           </div>
         </div>

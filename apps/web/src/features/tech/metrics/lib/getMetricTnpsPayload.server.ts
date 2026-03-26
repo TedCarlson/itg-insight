@@ -13,6 +13,7 @@ type RawRow = {
   metric_date: string;
   fiscal_end_date: string;
   batch_id: string;
+  inserted_at: string;
   raw: Record<string, unknown>;
 };
 
@@ -26,7 +27,11 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
   return null;
 }
 
-function computeTnpsScore(surveys: number, promoters: number, detractors: number): number | null {
+function computeTnpsScore(
+  surveys: number,
+  promoters: number,
+  detractors: number
+): number | null {
   if (surveys > 0) return (100 * (promoters - detractors)) / surveys;
   return null;
 }
@@ -60,8 +65,15 @@ function getFinalRowPerMonth(rows: RawRow[]) {
 
   for (const [fiscal_end_date, arr] of grouped) {
     arr.sort((a, b) => {
+      // 1. latest metric date in the fiscal container wins
       const byMetricDate = b.metric_date.localeCompare(a.metric_date);
       if (byMetricDate !== 0) return byMetricDate;
+
+      // 2. inside that same metric date, latest delivered insert wins
+      const byInsertedAt = b.inserted_at.localeCompare(a.inserted_at);
+      if (byInsertedAt !== 0) return byInsertedAt;
+
+      // 3. final stable tie-break only
       return b.batch_id.localeCompare(a.batch_id);
     });
 
@@ -101,11 +113,13 @@ export async function getMetricTnpsPayload(args: Args) {
 
   const { data, error } = await admin
     .from("metrics_raw_row")
-    .select("metric_date,fiscal_end_date,batch_id,raw")
+    .select("metric_date,fiscal_end_date,batch_id,inserted_at,raw")
     .eq("pc_org_id", scope.selected_pc_org_id)
     .eq("tech_id", args.tech_id)
     .order("fiscal_end_date", { ascending: false })
     .order("metric_date", { ascending: false })
+    .order("inserted_at", { ascending: false })
+    .order("batch_id", { ascending: false })
     .limit(1000);
 
   if (error) {
@@ -116,6 +130,7 @@ export async function getMetricTnpsPayload(args: Args) {
     metric_date: String(r.metric_date ?? "").slice(0, 10),
     fiscal_end_date: String(r.fiscal_end_date ?? "").slice(0, 10),
     batch_id: String(r.batch_id ?? ""),
+    inserted_at: String(r.inserted_at ?? ""),
     raw: parseRaw(r.raw),
   }));
 
@@ -125,7 +140,9 @@ export async function getMetricTnpsPayload(args: Args) {
   const distinctFiscalMonthsFound = finalRowsByMonth.map((x) => x.fiscal_end_date);
   const selectedMonthCount = monthsToTake(args.range);
   const selectedFinalRows = finalRowsByMonth.slice(0, selectedMonthCount);
-  const selectedFiscalMonths = new Set(selectedFinalRows.map((x) => x.fiscal_end_date));
+  const selectedFiscalMonths = new Set(
+    selectedFinalRows.map((x) => x.fiscal_end_date)
+  );
 
   let totalSurveys = 0;
   let totalPromoters = 0;
@@ -158,11 +175,16 @@ export async function getMetricTnpsPayload(args: Args) {
     }
   }
 
-  const summaryTnps = computeTnpsScore(totalSurveys, totalPromoters, totalDetractors);
+  const summaryTnps = computeTnpsScore(
+    totalSurveys,
+    totalPromoters,
+    totalDetractors
+  );
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
-      (x) => `${x.row.fiscal_end_date}::${x.row.metric_date}::${x.row.batch_id}`
+      (x) =>
+        `${x.row.fiscal_end_date}::${x.row.metric_date}::${x.row.inserted_at}::${x.row.batch_id}`
     )
   );
 
@@ -195,20 +217,26 @@ export async function getMetricTnpsPayload(args: Args) {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
+        inserted_at: r.inserted_at,
         tnps_surveys: surveys,
         tnps_promoters: promoters,
         tnps_detractors: detractors,
         kpi_value: kpiValue,
         is_month_final: monthFinalMap.has(
-          `${r.fiscal_end_date}::${r.metric_date}::${r.batch_id}`
+          `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
       };
     })
     .sort((a, b) => {
       const byFiscal = a.fiscal_end_date.localeCompare(b.fiscal_end_date);
       if (byFiscal !== 0) return byFiscal;
+
       const byMetric = a.metric_date.localeCompare(b.metric_date);
       if (byMetric !== 0) return byMetric;
+
+      const byInsertedAt = a.inserted_at.localeCompare(b.inserted_at);
+      if (byInsertedAt !== 0) return byInsertedAt;
+
       return a.batch_id.localeCompare(b.batch_id);
     });
 
@@ -240,6 +268,7 @@ export async function getMetricTnpsPayload(args: Args) {
           fiscal_end_date: x.row.fiscal_end_date,
           metric_date: x.row.metric_date,
           batch_id: x.row.batch_id,
+          inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
           tnps_surveys: surveys,
           tnps_promoters: promoters,

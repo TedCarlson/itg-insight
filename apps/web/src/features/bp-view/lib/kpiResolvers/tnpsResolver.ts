@@ -3,6 +3,7 @@ import {
   avgOrNull,
   computeTnpsScore,
   fetchMetricRawRows,
+  getFinalRowsPerMonth,
   groupRowsByTech,
   pickNum,
   type RangeKey,
@@ -16,7 +17,7 @@ export async function resolveBpTnpsByTech(args: {
   fiscalEndDates?: string[];
 }): Promise<Map<string, number | null>> {
   const admin = args.admin ?? supabaseAdmin();
-  const { techIds, pcOrgIds, fiscalEndDates } = args;
+  const { techIds, pcOrgIds, fiscalEndDates, range } = args;
 
   const result = new Map<string, number | null>();
 
@@ -35,14 +36,31 @@ export async function resolveBpTnpsByTech(args: {
 
   for (const techId of techIds) {
     const techRows = rowsByTech.get(techId) ?? [];
+    const finalRowsByMonth = getFinalRowsPerMonth(techRows);
+
+    // FM + PREVIOUS should resolve from one authoritative fiscal-month row only.
+    // 3FM + 12FM aggregate one authoritative row per fiscal month.
+    const solvedRows =
+      range === "FM" || range === "PREVIOUS"
+        ? finalRowsByMonth.length
+          ? [finalRowsByMonth[0].row]
+          : []
+        : finalRowsByMonth.map((entry) => entry.row);
 
     let totalSurveys = 0;
     let totalPromoters = 0;
     let totalDetractors = 0;
     const fallbackRates: number[] = [];
 
-    for (const row of techRows) {
+    for (const row of solvedRows) {
       const raw = row.raw;
+
+      const providedRate = pickNum(raw, [
+        "tNPS Rate",
+        "tnps",
+        "tnps_score",
+        "tNPS",
+      ]);
 
       const surveys = pickNum(raw, [
         "tNPS Surveys",
@@ -68,14 +86,8 @@ export async function resolveBpTnpsByTech(args: {
         continue;
       }
 
-      const fallback = pickNum(raw, [
-        "tnps",
-        "tnps_score",
-        "tNPS",
-      ]);
-
-      if (fallback != null && Number.isFinite(fallback)) {
-        fallbackRates.push(fallback);
+      if (providedRate != null && Number.isFinite(providedRate)) {
+        fallbackRates.push(providedRate);
       }
     }
 

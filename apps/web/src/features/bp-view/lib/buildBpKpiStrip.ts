@@ -15,28 +15,54 @@ type RubricRow = {
   max_value: number | null;
 };
 
+/**
+ * Derive a weight for a tech row.
+ * Uses total jobs as proxy weight (installs + tcs + sros).
+ */
+function getRowWeight(row: BpViewRosterRow): number {
+  const wm = row.work_mix;
+  if (!wm) return 0;
+
+  const total =
+    (wm.installs ?? 0) +
+    (wm.tcs ?? 0) +
+    (wm.sros ?? 0);
+
+  return total > 0 ? total : 0;
+}
+
 export function buildBpKpiStrip(args: {
   rosterRows: BpViewRosterRow[];
   kpis: KpiCfg[];
   rubricByKpi: Map<string, RubricRow[]>;
 }): BpViewKpiItem[] {
   return args.kpis.map((kpi) => {
-    const values = args.rosterRows
-      .map((row) => row.metrics.find((m) => m.kpi_key === kpi.kpi_key)?.value ?? null)
-      .filter((v): v is number => v != null);
+    let weightedSum = 0;
+    let totalWeight = 0;
 
-    const avg =
-      values.length > 0
-        ? values.reduce((sum, v) => sum + v, 0) / values.length
-        : null;
+    for (const row of args.rosterRows) {
+      const metric = row.metrics.find((m) => m.kpi_key === kpi.kpi_key);
+      const value = metric?.value ?? null;
 
-    const band_key = pickBand(avg, args.rubricByKpi.get(kpi.kpi_key));
+      if (value == null || !Number.isFinite(value)) continue;
+
+      const weight = getRowWeight(row);
+      if (weight <= 0) continue;
+
+      weightedSum += value * weight;
+      totalWeight += weight;
+    }
+
+    const value =
+      totalWeight > 0 ? weightedSum / totalWeight : null;
+
+    const band_key = pickBand(value, args.rubricByKpi.get(kpi.kpi_key));
 
     return {
       kpi_key: kpi.kpi_key,
       label: kpi.label,
-      value: avg,
-      value_display: formatValueDisplay(kpi.kpi_key, avg),
+      value,
+      value_display: formatValueDisplay(kpi.kpi_key, value),
       band_key,
       band_label: bandLabel(band_key),
       support: `${args.rosterRows.length} techs in scope`,

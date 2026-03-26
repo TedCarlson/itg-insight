@@ -1,6 +1,11 @@
 "use client";
 
-import type { OfficeRollupRow } from "../lib/buildOfficeRollupRows";
+import type { CompanyManagerOfficeRollupRow } from "../lib/companyManagerView.types";
+
+type MetricOrderItem = {
+  kpi_key: string;
+  label: string;
+};
 
 function formatMetricValue(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -22,6 +27,18 @@ function bandPillClass(bandKey?: string | null) {
     return "border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_10%,white)]";
   }
   return "border-[var(--to-border)] bg-muted/10";
+}
+
+function getMetricOrder(row: CompanyManagerOfficeRollupRow): MetricOrderItem[] {
+  return row.metric_order ?? [];
+}
+
+function getMetricSummary(row: CompanyManagerOfficeRollupRow, kpiKey: string) {
+  return row.metrics.get(kpiKey) ?? null;
+}
+
+function getBelowTargetCount(row: CompanyManagerOfficeRollupRow) {
+  return row.below_target_count ?? 0;
 }
 
 function MetricPill(props: {
@@ -47,7 +64,7 @@ function MetricPill(props: {
 }
 
 export default function CompanyManagerOfficePulseCard(props: {
-  rows: OfficeRollupRow[];
+  rows: CompanyManagerOfficeRollupRow[];
 }) {
   const { rows } = props;
 
@@ -64,7 +81,7 @@ export default function CompanyManagerOfficePulseCard(props: {
     );
   }
 
-  const metricOrder = (rows[0]?.metric_order ?? []).slice(0, 3);
+  const metricOrder = getMetricOrder(rows[0]).slice(0, 3);
 
   return (
     <section className="rounded-2xl border bg-card p-4">
@@ -95,7 +112,7 @@ export default function CompanyManagerOfficePulseCard(props: {
             Office
           </div>
 
-          {metricOrder.map((metric) => (
+          {metricOrder.map((metric: MetricOrderItem) => (
             <div
               key={metric.kpi_key}
               className="px-3 py-2 text-center text-[11px] font-medium text-muted-foreground"
@@ -120,8 +137,8 @@ export default function CompanyManagerOfficePulseCard(props: {
           >
             <div className="px-3 py-3 text-sm font-semibold">{row.office}</div>
 
-            {metricOrder.map((metric) => {
-              const metricSummary = row.metrics.get(metric.kpi_key);
+            {metricOrder.map((metric: MetricOrderItem) => {
+              const metricSummary = getMetricSummary(row, metric.kpi_key);
 
               return (
                 <div
@@ -139,7 +156,7 @@ export default function CompanyManagerOfficePulseCard(props: {
 
             <div className="flex items-center justify-center px-3 py-3">
               <div className="inline-flex min-w-[44px] items-center justify-center rounded-md border border-[var(--to-border)] bg-muted/10 px-2 py-1 text-sm font-medium">
-                {row.below_target_count}
+                {getBelowTargetCount(row)}
               </div>
             </div>
           </div>

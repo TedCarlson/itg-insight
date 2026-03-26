@@ -7,6 +7,7 @@ export type RawMetricRow = {
   metric_date: string;
   fiscal_end_date: string;
   batch_id: string;
+  inserted_at: string;
   raw: Record<string, unknown>;
 };
 
@@ -174,7 +175,7 @@ export async function fetchMetricRawRows(args: {
 
   let query = admin
     .from("metrics_raw_row")
-    .select("tech_id,metric_date,fiscal_end_date,batch_id,raw")
+    .select("tech_id,metric_date,fiscal_end_date,batch_id,inserted_at,raw")
     .in("pc_org_id", args.pcOrgIds)
     .in("tech_id", args.techIds);
 
@@ -185,7 +186,7 @@ export async function fetchMetricRawRows(args: {
   const { data, error } = await query
     .order("fiscal_end_date", { ascending: false })
     .order("metric_date", { ascending: false })
-    .order("batch_id", { ascending: false })
+    .order("inserted_at", { ascending: false })
     .limit(10000);
 
   if (error) {
@@ -197,6 +198,7 @@ export async function fetchMetricRawRows(args: {
     metric_date: String(row.metric_date ?? "").slice(0, 10),
     fiscal_end_date: String(row.fiscal_end_date ?? "").slice(0, 10),
     batch_id: String(row.batch_id ?? ""),
+    inserted_at: String(row.inserted_at ?? ""),
     raw: parseRaw(row.raw),
   }));
 }
@@ -237,6 +239,10 @@ export function getFinalRowsPerMonth(rows: RawMetricRow[]) {
     arr.sort((a, b) => {
       const byMetricDate = b.metric_date.localeCompare(a.metric_date);
       if (byMetricDate !== 0) return byMetricDate;
+
+      const byInsertedAt = b.inserted_at.localeCompare(a.inserted_at);
+      if (byInsertedAt !== 0) return byInsertedAt;
+
       return b.batch_id.localeCompare(a.batch_id);
     });
 

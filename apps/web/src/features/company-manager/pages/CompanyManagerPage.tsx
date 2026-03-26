@@ -18,8 +18,6 @@ import CompanyManagerControlBar, {
 } from "../components/CompanyManagerControlBar";
 import CompanyManagerOfficeTable from "../components/CompanyManagerOfficeTable";
 import CompanyManagerLeadershipTable from "../components/CompanyManagerLeadershipTable";
-import { buildOfficeRollupRows } from "../lib/buildOfficeRollupRows";
-import { buildLeadershipRollupRows } from "../lib/buildLeadershipRollupRows";
 
 import type {
   CompanyManagerPayload,
@@ -222,27 +220,25 @@ export default function CompanyManagerPage(props: {
     [payload.roster_rows]
   );
 
-  const baseFilteredRows = useMemo(
-    () =>
-      filterRows({
-        rows: payload.roster_rows,
-        segment,
-        contractor,
-        office: null,
-        leader: null,
-      }),
-    [payload.roster_rows, segment, contractor]
-  );
+  const officeRows = useMemo(() => {
+    if (segment === "ITG") return payload.office_rollups.ITG;
+    if (segment === "BP") {
+      return contractor === "ALL"
+        ? payload.office_rollups.BP
+        : payload.office_rollups.BP_BY_CONTRACTOR[contractor] ?? [];
+    }
+    return payload.office_rollups.ALL;
+  }, [payload.office_rollups, segment, contractor]);
 
-  const officeRows = useMemo(
-    () => buildOfficeRollupRows(baseFilteredRows),
-    [baseFilteredRows]
-  );
-
-  const leadershipRows = useMemo(
-    () => buildLeadershipRollupRows(baseFilteredRows),
-    [baseFilteredRows]
-  );
+  const leadershipRows = useMemo(() => {
+    if (segment === "ITG") return payload.leadership_rollups.ITG;
+    if (segment === "BP") {
+      return contractor === "ALL"
+        ? payload.leadership_rollups.BP
+        : payload.leadership_rollups.BP_BY_CONTRACTOR[contractor] ?? [];
+    }
+    return payload.leadership_rollups.ALL;
+  }, [payload.leadership_rollups, segment, contractor]);
 
   const filteredRows = useMemo(
     () =>

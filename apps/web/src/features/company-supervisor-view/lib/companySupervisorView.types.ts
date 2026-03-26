@@ -39,8 +39,6 @@ export type CompanySupervisorRosterRow = {
   context: string;
 
   team_class: TeamClass;
-
-  // 🔥 NEW
   contractor_name: string | null;
 
   rank: number | null;
@@ -57,6 +55,12 @@ export type CompanySupervisorWorkMix = {
   install_pct: number | null;
   tc_pct: number | null;
   sro_pct: number | null;
+};
+
+export type CompanySupervisorParityRow = {
+  label: string;
+  metrics: CompanySupervisorRosterMetricCell[];
+  hc: number;
 };
 
 export type CompanySupervisorHeaderData = {
@@ -85,4 +89,5 @@ export type CompanySupervisorPayload = {
   }>;
 
   roster_rows: CompanySupervisorRosterRow[];
+  parityRows: CompanySupervisorParityRow[];
 };

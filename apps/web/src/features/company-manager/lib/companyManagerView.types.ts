@@ -47,6 +47,42 @@ export type CompanyManagerRosterRow = {
   work_mix: CompanyManagerRosterWorkMix;
 };
 
+export type CompanyManagerRollupMetricSummary = {
+  value: number | null;
+  band: BandKey | null;
+};
+
+export type CompanyManagerMetricOrderItem = {
+  kpi_key: string;
+  label: string;
+};
+
+export type CompanyManagerOfficeRollupRow = {
+  office: string;
+  headcount: number;
+  jobs: number;
+  installs: number;
+  tcs: number;
+  sros: number;
+  below_target_count: number;
+  metrics: Map<string, CompanyManagerRollupMetricSummary>;
+  metric_order: CompanyManagerMetricOrderItem[];
+};
+
+export type CompanyManagerLeadershipRollupRow = {
+  leader_key: string;
+  leader_name: string;
+  leader_title: string | null;
+  headcount: number;
+  jobs: number;
+  installs: number;
+  tcs: number;
+  sros: number;
+  below_target_count: number;
+  metrics: Map<string, CompanyManagerRollupMetricSummary>;
+  metric_order: CompanyManagerMetricOrderItem[];
+};
+
 export type CompanyManagerWorkMix = {
   total: number;
   installs: number;
@@ -83,4 +119,16 @@ export type CompanyManagerPayload = {
   }>;
 
   roster_rows: CompanyManagerRosterRow[];
+  office_rollups: {
+    ALL: CompanyManagerOfficeRollupRow[];
+    ITG: CompanyManagerOfficeRollupRow[];
+    BP: CompanyManagerOfficeRollupRow[];
+    BP_BY_CONTRACTOR: Record<string, CompanyManagerOfficeRollupRow[]>;
+  };
+  leadership_rollups: {
+    ALL: CompanyManagerLeadershipRollupRow[];
+    ITG: CompanyManagerLeadershipRollupRow[];
+    BP: CompanyManagerLeadershipRollupRow[];
+    BP_BY_CONTRACTOR: Record<string, CompanyManagerLeadershipRollupRow[]>;
+  };
 };

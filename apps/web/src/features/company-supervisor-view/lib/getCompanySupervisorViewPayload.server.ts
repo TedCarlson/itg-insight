@@ -13,7 +13,9 @@ import {
 import { sortBpRosterRows } from "@/features/bp-view/lib/sortBpRosterRows";
 
 import type {
+  CompanySupervisorParityRow,
   CompanySupervisorPayload,
+  CompanySupervisorRosterMetricCell,
   CompanySupervisorRosterRow,
 } from "./companySupervisorView.types";
 import { resolveCompanySupervisorScope } from "./resolveCompanySupervisorScope.server";
@@ -134,6 +136,71 @@ function pct(part: number, total: number): number | null {
   return (100 * part) / total;
 }
 
+function buildParityRows(
+  rosterRows: CompanySupervisorRosterRow[],
+  rosterColumns: Array<{ kpi_key: string; label: string }>
+): CompanySupervisorParityRow[] {
+  const groups = new Map<string, CompanySupervisorRosterRow[]>();
+
+  for (const row of rosterRows) {
+    const key = row.contractor_name?.trim() || row.team_class || "Unknown";
+    const arr = groups.get(key) ?? [];
+    arr.push(row);
+    groups.set(key, arr);
+  }
+
+  const out: CompanySupervisorParityRow[] = [];
+
+  for (const [label, rows] of groups.entries()) {
+    const metrics: CompanySupervisorRosterMetricCell[] = rosterColumns.map(
+      (col) => {
+        const cells = rows
+          .map((row) => row.metrics.find((metric) => metric.kpi_key === col.kpi_key))
+          .filter(
+            (cell): cell is CompanySupervisorRosterMetricCell => cell != null
+          );
+
+        const nums = cells
+          .map((cell) => cell.value)
+          .filter((value): value is number => value != null && Number.isFinite(value));
+
+        const avg =
+          nums.length > 0
+            ? nums.reduce((sum, value) => sum + value, 0) / nums.length
+            : null;
+
+        const exemplar = cells[0];
+
+        return {
+          kpi_key: col.kpi_key,
+          label: col.label,
+          value: avg,
+          value_display: avg == null ? null : avg.toFixed(1),
+          band_key: exemplar?.band_key ?? "NO_DATA",
+          delta_value: null,
+          delta_display: null,
+          rank_value: null,
+          rank_display: null,
+          rank_delta_value: null,
+          rank_delta_display: null,
+          score_value: null,
+          score_weight: null,
+          score_contribution: null,
+        };
+      }
+    );
+
+    out.push({
+      label,
+      metrics,
+      hc: rows.length,
+    });
+  }
+
+  out.sort((a, b) => a.label.localeCompare(b.label));
+  return out;
+}
+
 export async function getCompanySupervisorViewPayload(
   args: Args
 ): Promise<CompanySupervisorPayload> {
@@ -202,7 +269,10 @@ export async function getCompanySupervisorViewPayload(
     return {
       ...row,
       team_class: assignment?.team_class ?? "BP",
-      contractor_name: assignment?.contractor_name ?? null,
+      contractor_name:
+        assignment?.contractor_name == null
+          ? null
+          : String(assignment.contractor_name).trim() || null,
     };
   }) as CompanySupervisorRosterRow[];
 
@@ -210,6 +280,8 @@ export async function getCompanySupervisorViewPayload(
     unsortedRosterRows,
     rosterColumns
   ) as CompanySupervisorRosterRow[];
+
+  const parityRows = buildParityRows(roster_rows, rosterColumns);
 
   const kpi_strip = buildBpKpiStrip({
     rosterRows: roster_rows as any,
@@ -271,7 +343,7 @@ export async function getCompanySupervisorViewPayload(
     },
 
     roster_columns: rosterColumns,
-
     roster_rows,
+    parityRows,
   };
 }

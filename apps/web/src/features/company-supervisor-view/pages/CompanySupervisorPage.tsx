@@ -191,6 +191,15 @@ export default function CompanySupervisorPage(props: {
     payload.header.rep_full_name,
   ].filter(Boolean);
 
+  const parityRows =
+    primarySegment === "ITG"
+      ? payload.parityRows.filter((row) => row.label === "ITG")
+      : primarySegment === "BP"
+        ? bpContractor === "ALL"
+          ? payload.parityRows.filter((row) => row.label === "BP")
+          : payload.parityRows.filter((row) => row.label === bpContractor)
+        : payload.parityRows;
+
   return (
     <PageShell>
       <div className="space-y-6">
@@ -321,7 +330,7 @@ export default function CompanySupervisorPage(props: {
         </Card>
 
         <CompanySupervisorParityTable
-          rows={payload.roster_rows}
+          rows={parityRows}
           rosterColumns={payload.roster_columns}
           primarySegment={primarySegment}
           bpContractor={bpContractor}
