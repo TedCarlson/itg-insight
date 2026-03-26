@@ -80,6 +80,53 @@ function asAccessError(err: unknown) {
   return jsonError(500, { ok: false, error: "server_error" });
 }
 
+async function resolveIdentity(args: {
+  admin: ReturnType<typeof supabaseAdmin>;
+  pc_org_id: string;
+  shift_date: string;
+  assignment_id: string;
+}) {
+  const { admin, pc_org_id, shift_date, assignment_id } = args;
+
+  const day = await admin
+    .from("dispatch_day_tech")
+    .select("person_id,tech_id,affiliation_id")
+    .eq("pc_org_id", pc_org_id)
+    .eq("shift_date", shift_date)
+    .eq("assignment_id", assignment_id)
+    .maybeSingle();
+
+  let person_id: string | null = day.data?.person_id ?? null;
+  let tech_id: string | null = day.data?.tech_id ?? null;
+  let affiliation_id: string | null = day.data?.affiliation_id ?? null;
+
+  if (!person_id || !tech_id) {
+    const roster = await admin
+      .from("route_lock_roster_tech_v")
+      .select("person_id,tech_id")
+      .eq("pc_org_id", pc_org_id)
+      .eq("assignment_id", assignment_id)
+      .maybeSingle();
+
+    if (roster.error) {
+      return { error: jsonError(400, { ok: false, error: "roster_lookup_failed", supabase: roster.error }) };
+    }
+
+    person_id = person_id ?? roster.data?.person_id ?? null;
+    tech_id = tech_id ?? (roster.data?.tech_id ? String(roster.data.tech_id) : null);
+  }
+
+  if (!person_id || !tech_id) {
+    return { error: jsonError(400, { ok: false, error: "identity_unresolved" }) };
+  }
+
+  return {
+    person_id,
+    tech_id,
+    affiliation_id,
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const pc_org_id = req.nextUrl.searchParams.get("pc_org_id") ?? "";
@@ -160,16 +207,37 @@ export async function POST(req: NextRequest) {
 
     const admin = supabaseAdmin();
 
+    // NOTE can now be tech-linked when assignment_id is provided.
+    // If no assignment_id is provided, it remains org-level.
     if (event_type === "NOTE") {
+      let person_id: string | null = null;
+      let tech_id: string | null = null;
+      let affiliation_id: string | null = null;
+
+      if (assignment_id) {
+        const identity = await resolveIdentity({
+          admin,
+          pc_org_id,
+          shift_date,
+          assignment_id,
+        });
+
+        if ("error" in identity) return identity.error;
+
+        person_id = identity.person_id;
+        tech_id = identity.tech_id;
+        affiliation_id = identity.affiliation_id;
+      }
+
       const ins = await admin
         .from("dispatch_console_log")
         .insert({
           pc_org_id,
           shift_date,
-          assignment_id: null,
-          person_id: null,
-          tech_id: null,
-          affiliation_id: null,
+          assignment_id: assignment_id || null,
+          person_id,
+          tech_id,
+          affiliation_id,
           event_type,
           capacity_delta_routes: 0,
           message,
@@ -194,33 +262,109 @@ export async function POST(req: NextRequest) {
 
     if (!assignment_id) return jsonError(400, { ok: false, error: "missing_assignment_id" });
 
-    const day = await admin
-      .from("dispatch_day_tech")
-      .select("person_id,tech_id,affiliation_id")
-      .eq("pc_org_id", pc_org_id)
-      .eq("shift_date", shift_date)
-      .eq("assignment_id", assignment_id)
-      .maybeSingle();
+    const identity = await resolveIdentity({
+      admin,
+      pc_org_id,
+      shift_date,
+      assignment_id,
+    });
 
-    let person_id: string | null = day.data?.person_id ?? null;
-    let tech_id: string | null = day.data?.tech_id ?? null;
-    let affiliation_id: string | null = day.data?.affiliation_id ?? null;
+    if ("error" in identity) return identity.error;
 
-    if (!person_id || !tech_id) {
-      const roster = await admin
-        .from("route_lock_roster_tech_v")
-        .select("person_id,tech_id")
+    const { person_id, tech_id, affiliation_id } = identity;
+
+    if (event_type === "ADD_IN") {
+      const logInsert = await admin
+        .from("dispatch_console_log")
+        .insert({
+          pc_org_id,
+          shift_date,
+          assignment_id,
+          person_id,
+          tech_id,
+          affiliation_id,
+          event_type,
+          capacity_delta_routes: 1,
+          message,
+          tags,
+          meta,
+          dedupe_key,
+          event_group_id,
+          created_by_user_id: userId,
+        })
+        .select(SELECT_COLS)
+        .single();
+
+      if (logInsert.error) {
+        return jsonError(400, { ok: false, error: "log_insert_failed", supabase: logInsert.error });
+      }
+
+      const existing = await admin
+        .from("schedule_exception_day")
+        .select("schedule_exception_day_id, exception_type, status")
         .eq("pc_org_id", pc_org_id)
-        .eq("assignment_id", assignment_id)
+        .eq("shift_date", shift_date)
+        .eq("tech_id", tech_id)
         .maybeSingle();
 
-      if (roster.error) return jsonError(400, { ok: false, error: "roster_lookup_failed", supabase: roster.error });
+      if (existing.error) {
+        return jsonError(400, { ok: false, error: "exception_lookup_failed", supabase: existing.error });
+      }
 
-      person_id = person_id ?? roster.data?.person_id ?? null;
-      tech_id = tech_id ?? (roster.data?.tech_id ? String(roster.data.tech_id) : null);
+      if (existing.data) {
+        const upd = await admin
+          .from("schedule_exception_day")
+          .update({
+            exception_type: "ADD_IN",
+            approved: true,
+            status: "APPROVED",
+            force_off: false,
+            notes: message,
+            requested_by: userId,
+            approved_by: userId,
+            decision_notes: "Overridden by Dispatch ADD_IN",
+            decision_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("schedule_exception_day_id", existing.data.schedule_exception_day_id);
+
+        if (upd.error) {
+          return jsonError(400, { ok: false, error: "exception_update_failed", supabase: upd.error });
+        }
+      } else {
+        const insEx = await admin.from("schedule_exception_day").insert({
+          pc_org_id,
+          shift_date,
+          tech_id,
+          exception_type: "ADD_IN",
+          approved: true,
+          force_off: false,
+          notes: message,
+          requested_by: userId,
+          approved_by: userId,
+          status: "APPROVED",
+          decision_notes: "Created by Dispatch ADD_IN",
+          decision_at: new Date().toISOString(),
+        });
+
+        if (insEx.error) {
+          return jsonError(400, { ok: false, error: "exception_insert_failed", supabase: insEx.error });
+        }
+      }
+
+      const nameMap = await resolveUserLabels(admin, [String(logInsert.data?.created_by_user_id ?? "")]);
+
+      return NextResponse.json(
+        {
+          ok: true,
+          row: {
+            ...logInsert.data,
+            created_by_name: nameMap.get(String(logInsert.data?.created_by_user_id ?? "")) ?? null,
+          },
+        },
+        { status: 200 }
+      );
     }
-
-    if (!person_id || !tech_id) return jsonError(400, { ok: false, error: "identity_unresolved" });
 
     const ins = await admin
       .from("dispatch_console_log")

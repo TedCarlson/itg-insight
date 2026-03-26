@@ -1,7 +1,3 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/features/dispatch-console/hooks/useDispatchConsoleDraft.ts
-
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -10,9 +6,6 @@ import type { EntryType, LogRow, WorkforceRow } from "../lib/types";
 import { buildAutoDraft } from "../lib/labels";
 
 type DraftArgs = {
-  initialEntryType?: EntryType;
-
-  // create-mode context (page-owned)
   selectedAssignmentId: string | null;
   setSelectedAssignmentId: (v: string | null) => void;
   selectedTech: WorkforceRow | null;
@@ -44,49 +37,30 @@ function mutateMessagePrefix(prevType: EntryType, nextType: EntryType, curMessag
 export function useDispatchConsoleDraft(args: DraftArgs) {
   const { selectedTech } = args;
 
-  // Draft fields
-  const [entryType, setEntryType] = useState<EntryType>(args.initialEntryType ?? "NOTE");
+  const [entryType, setEntryType] = useState<EntryType | null>(null);
   const [message, setMessage] = useState("");
 
-  // Edit-mode state (ISOLATED from workforce selection)
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editingIsNote, setEditingIsNote] = useState<boolean>(false);
 
-  // Tracks last auto-draft produced (create-mode only)
   const lastAutoDraftRef = useRef<string>("");
 
   const editing = Boolean(editingLogId);
-
-  // In edit mode, assignment context comes from the row being edited
   const effectiveAssignmentId = editing ? (editingAssignmentId ?? null) : (args.selectedAssignmentId ?? null);
-
-  // NOTE guardrail:
-  // - If editing a NOTE row, type is locked (message-only edits)
   const typeLocked = editing && editingIsNote;
 
   const onSelectAssignment = useCallback(
     (aid: string | null) => {
       args.setSelectedAssignmentId(aid);
       lastAutoDraftRef.current = "";
+      if (!editing) {
+        setEntryType(null);
+        setMessage("");
+      }
     },
-    [args]
+    [args, editing]
   );
-
-  const onSelectedTechContext = useCallback(() => {
-    if (!selectedTech) return;
-    if (editing) return; // edit isolated
-
-    const nextAuto = buildAutoDraft(entryType, selectedTech);
-    const cur = norm(message);
-    const lastAuto = norm(lastAutoDraftRef.current);
-
-    const safeToReplace = cur.length === 0 || cur === lastAuto;
-    if (safeToReplace) {
-      setMessage(nextAuto);
-      lastAutoDraftRef.current = nextAuto;
-    }
-  }, [selectedTech, editing, entryType, message]);
 
   const setEntryTypeWithDraftMutation = useCallback(
     (nextType: EntryType) => {
@@ -94,12 +68,14 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
 
       setEntryType((prev) => {
         if (editing) {
-          // edit-mode (non-note): prefix only
-          setMessage((cur) => mutateMessagePrefix(prev, nextType, cur));
+          if (prev) {
+            setMessage((cur) => mutateMessagePrefix(prev, nextType, cur));
+          } else if (selectedTech) {
+            setMessage(buildAutoDraft(nextType, selectedTech));
+          }
           return nextType;
         }
 
-        // create-mode: auto draft if safe
         if (selectedTech) {
           const nextAuto = buildAutoDraft(nextType, selectedTech);
           const cur = norm(message);
@@ -123,12 +99,8 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
   const clearDraft = useCallback(() => {
     setMessage("");
     lastAutoDraftRef.current = "";
-    setEntryType(args.initialEntryType ?? "NOTE");
-
-    // Clear create-mode selection
+    setEntryType(null);
     args.setSelectedAssignmentId(null);
-
-    // Clear edit-mode
     setEditingLogId(null);
     setEditingAssignmentId(null);
     setEditingIsNote(false);
@@ -140,8 +112,8 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     setEditingIsNote(false);
     setMessage("");
     lastAutoDraftRef.current = "";
-    setEntryType(args.initialEntryType ?? "NOTE");
-  }, [args.initialEntryType]);
+    setEntryType(null);
+  }, []);
 
   const beginEdit = useCallback((row: LogRow) => {
     setEditingLogId(row.dispatch_console_log_id);
@@ -152,10 +124,8 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     const isNote = row.event_type === "NOTE";
     setEditingIsNote(isNote);
 
-    // NOTE edit = NOTE locked
     setEntryType(isNote ? "NOTE" : row.event_type);
     setMessage(row.message ?? "");
-
     lastAutoDraftRef.current = "";
   }, []);
 
@@ -163,29 +133,22 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     const hasMsg = norm(message).length > 0;
     if (!hasMsg) return false;
 
-    // Editing NOTE: message-only save is allowed (no assignment requirement)
     if (editing && editingIsNote) return true;
+    if (!entryType) return false;
 
-    // For non-NOTE, require assignment context.
     if (entryType !== "NOTE") return Boolean(effectiveAssignmentId);
-
-    // NOTE can be org-level OR tied to assignment.
     return true;
   }, [message, entryType, effectiveAssignmentId, editing, editingIsNote]);
 
   return {
-    // create-mode selection (page-owned)
     selectedAssignmentId: args.selectedAssignmentId,
     onSelectAssignment,
 
-    // draft fields
     entryType,
     setEntryType: setEntryTypeWithDraftMutation,
-    setEntryTypeWithDraftMutation,
     message,
     setMessage,
 
-    // edit-mode
     editingLogId,
     editingAssignmentId,
     editing,
@@ -197,10 +160,6 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     cancelEdit,
     clearDraft,
 
-    // create-mode helper
-    onSelectedTechContext,
-
-    // computed
     canSubmit,
   };
 }

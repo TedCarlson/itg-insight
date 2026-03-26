@@ -11,10 +11,9 @@ function isISODate(d: string) {
 type DayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
 
 function dayKeyFromISODate(shift_date: string): DayKey {
-  // Use UTC noon to avoid timezone edge cases
   const [y, m, d] = shift_date.split("-").map((s) => parseInt(s, 10));
   const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const idx = dt.getUTCDay(); // 0=Sun..6=Sat
+  const idx = dt.getUTCDay();
   const keys: DayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
   return keys[idx] ?? "mon";
 }
@@ -35,7 +34,6 @@ export async function GET(req: NextRequest) {
 
   const admin = supabaseAdmin();
 
-  // Ensure dispatch snapshot exists (idempotent)
   const seed = await admin.rpc("dispatch_day_seed_from_schedule", {
     p_pc_org_id: pc_org_id,
     p_shift_date: shift_date,
@@ -44,7 +42,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "seed_failed", details: seed.error }, { status: 400 });
   }
 
-  // Determine fiscal month for the date
   const monthRes = await admin
     .from("fiscal_month_dim")
     .select("fiscal_month_id,start_date,end_date,label,month_key")
@@ -63,7 +60,6 @@ export async function GET(req: NextRequest) {
 
   const dow = dayKeyFromISODate(shift_date);
 
-  // Scheduled today assignment_ids from the seeded day fact
   const scheduledRes = await admin
     .from("dispatch_day_tech")
     .select("assignment_id")
@@ -76,7 +72,26 @@ export async function GET(req: NextRequest) {
 
   const scheduledSet = new Set<string>((scheduledRes.data ?? []).map((r: any) => String(r.assignment_id ?? "")));
 
-  // Baseline schedule pattern for the month
+  const addInExRes = await admin
+    .from("schedule_exception_day")
+    .select("tech_id")
+    .eq("pc_org_id", pc_org_id)
+    .eq("shift_date", shift_date)
+    .eq("exception_type", "ADD_IN")
+    .eq("approved", true)
+    .eq("status", "APPROVED")
+    .eq("force_off", false);
+
+  if (addInExRes.error) {
+    return NextResponse.json({ ok: false, error: "add_in_exception_lookup_failed", details: addInExRes.error }, { status: 400 });
+  }
+
+  const addInTechSet = new Set<string>(
+    (addInExRes.data ?? [])
+      .map((r: any) => String(r.tech_id ?? "").trim())
+      .filter(Boolean)
+  );
+
   const baseRes = await admin
     .from("schedule_baseline_month")
     .select("assignment_id,tech_id,sun,mon,tue,wed,thu,fri,sat")
@@ -87,15 +102,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "baseline_lookup_failed", details: baseRes.error }, { status: 400 });
   }
 
-  // OFF today = today's flag is NOT true
   const offAssignmentIds = (baseRes.data ?? [])
     .map((r: any) => ({
       assignment_id: String(r.assignment_id ?? ""),
-      tech_id: r.tech_id ?? null,
+      tech_id: r.tech_id ? String(r.tech_id) : "",
       todayFlag: r[dow] as boolean | null,
     }))
     .filter((r) => r.assignment_id && r.todayFlag !== true)
     .filter((r) => !scheduledSet.has(r.assignment_id))
+    .filter((r) => !addInTechSet.has(r.tech_id))
     .map((r) => r.assignment_id);
 
   if (offAssignmentIds.length === 0) {
@@ -111,7 +126,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Join to roster view for human names; filter is naturally "not scheduled today" + "on roster"
   const rosterRes = await admin
     .from("route_lock_roster_tech_v")
     .select("assignment_id,person_id,tech_id,full_name,co_name")
@@ -122,7 +136,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "roster_lookup_failed", details: rosterRes.error }, { status: 400 });
   }
 
-  // Shape to match WorkforceRow-ish fields used by the UI
   const rows = (rosterRes.data ?? [])
     .map((r: any) => ({
       pc_org_id,

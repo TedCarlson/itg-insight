@@ -74,12 +74,92 @@ export async function GET(req: NextRequest) {
       return jsonError(400, { ok: false, error: "summary_fetch_failed", details: sumRes.error });
     }
 
+    const baseRows = (rowsRes.data ?? []) as any[];
+    const byAssignment = new Map<string, any>();
+
+    for (const row of baseRows) {
+      const assignmentId = String(row.assignment_id ?? "").trim();
+      if (!assignmentId) continue;
+      byAssignment.set(assignmentId, row);
+    }
+
+    const addInExRes = await admin
+      .from("schedule_exception_day")
+      .select("tech_id")
+      .eq("pc_org_id", pc_org_id)
+      .eq("shift_date", shift_date)
+      .eq("exception_type", "ADD_IN")
+      .eq("approved", true)
+      .eq("status", "APPROVED")
+      .eq("force_off", false);
+
+    if (addInExRes.error) {
+      return jsonError(400, { ok: false, error: "add_in_exception_lookup_failed", details: addInExRes.error });
+    }
+
+    const addInTechIds = Array.from(
+      new Set(
+        (addInExRes.data ?? [])
+          .map((r: any) => String(r.tech_id ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (addInTechIds.length > 0) {
+      const rosterRes = await admin
+        .from("route_lock_roster_tech_v")
+        .select("assignment_id,person_id,tech_id,full_name,co_name")
+        .eq("pc_org_id", pc_org_id)
+        .in("tech_id", addInTechIds);
+
+      if (rosterRes.error) {
+        return jsonError(400, { ok: false, error: "add_in_roster_lookup_failed", details: rosterRes.error });
+      }
+
+      for (const r of rosterRes.data ?? []) {
+        const assignmentId = String((r as any).assignment_id ?? "").trim();
+        if (!assignmentId) continue;
+        if (byAssignment.has(assignmentId)) continue;
+
+        byAssignment.set(assignmentId, {
+          pc_org_id,
+          shift_date,
+          assignment_id: assignmentId,
+          person_id: (r as any).person_id ? String((r as any).person_id) : "",
+          tech_id: (r as any).tech_id ? String((r as any).tech_id) : "",
+          affiliation_id: null,
+          full_name: (r as any).full_name ?? "",
+          co_name: (r as any).co_name ?? null,
+
+          planned_route_id: null,
+          planned_route_name: null,
+          planned_start_time: null,
+          planned_end_time: null,
+          planned_hours: null,
+          planned_units: null,
+
+          sv_built: null,
+          sv_route_id: null,
+          sv_route_name: null,
+
+          checked_in_at: null,
+          schedule_as_of: null,
+          sv_as_of: null,
+          check_in_as_of: null,
+        });
+      }
+    }
+
+    const rows = Array.from(byAssignment.values()).sort((a: any, b: any) =>
+      String(a.full_name ?? "").localeCompare(String(b.full_name ?? ""))
+    );
+
     return NextResponse.json(
       {
         ok: true,
         seeded: seed.data ?? 0,
         summary: sumRes.data ?? null,
-        rows: rowsRes.data ?? [],
+        rows,
       },
       { status: 200 }
     );

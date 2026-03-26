@@ -1,7 +1,3 @@
-// RUN THIS
-// Replace the entire file:
-// apps/web/src/features/dispatch-console/hooks/useDispatchConsoleData.ts
-
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -28,10 +24,8 @@ function asArray<T>(v: unknown): T[] {
 }
 
 export function useDispatchConsoleData(toast: ToastLike) {
-  // workforce selection highlight (page can also drive this; keeping here to avoid refactor churn)
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
 
-  // workforce + summary
   const [loadingWorkforce, setLoadingWorkforce] = useState(false);
   const [workforce, setWorkforce] = useState<WorkforceRow[]>([]);
   const [summary, setSummary] = useState<DaySummary | null>(null);
@@ -39,15 +33,12 @@ export function useDispatchConsoleData(toast: ToastLike) {
   const [loadingNotScheduled, setLoadingNotScheduled] = useState(false);
   const [notScheduled, setNotScheduled] = useState<WorkforceRow[]>([]);
 
-  // history log
   const [loadingLog, setLoadingLog] = useState(false);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
 
-  // rollup (chips)
   const [loadingRollup, setLoadingRollup] = useState(false);
   const [logRollupRows, setLogRollupRows] = useState<Array<{ assignment_id: string; event_type: EventType }>>([]);
 
-  // simple inflight guards to prevent “loop of death” from re-requesting same key
   const inflight = useRef<Record<string, string>>({});
 
   const loadWorkforce = useCallback(
@@ -66,7 +57,6 @@ export function useDispatchConsoleData(toast: ToastLike) {
           throw new Error(json?.error ?? "workforce_fetch_failed");
         }
 
-        // YOUR API RETURNS: { ok:true, summary, rows: [...] }
         setWorkforce(asArray<WorkforceRow>(json?.rows ?? json?.workforce ?? json?.data ?? json?.result));
         setSummary((json?.summary ?? json?.day_summary ?? null) as DaySummary | null);
       } catch (e: any) {
@@ -135,7 +125,6 @@ export function useDispatchConsoleData(toast: ToastLike) {
           throw new Error(json?.error ?? "log_fetch_failed");
         }
 
-        // accept multiple shapes
         const rows = asArray<LogRow>(json?.rows ?? json?.log_rows ?? json?.data ?? json?.result);
         setLogRows(rows);
       } catch (e: any) {
@@ -149,72 +138,61 @@ export function useDispatchConsoleData(toast: ToastLike) {
     [toast]
   );
 
-  const loadLogRollup = useCallback(
-    async (pc_org_id: string, shiftDate: string) => {
-      const key = `rollup:${pc_org_id}:${shiftDate}`;
-      if (inflight.current["rollup"] === key) return;
-      inflight.current["rollup"] = key;
+  const loadLogRollup = useCallback(async (pc_org_id: string, shiftDate: string) => {
+    const key = `rollup:${pc_org_id}:${shiftDate}`;
+    if (inflight.current["rollup"] === key) return;
+    inflight.current["rollup"] = key;
 
-      setLoadingRollup(true);
-      try {
-        const url = `/api/dispatch-console/log-rollup?${qs({ pc_org_id, shift_date: shiftDate })}`;
-        const res = await fetch(url, { method: "GET" });
+    setLoadingRollup(true);
+    try {
+      const url = `/api/dispatch-console/log-rollup?${qs({ pc_org_id, shift_date: shiftDate })}`;
+      const res = await fetch(url, { method: "GET" });
 
-        // your logs show 404 here — don’t spam toast, just no chips
-        if (res.status === 404) {
-          setLogRollupRows([]);
-          return;
-        }
-
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || json?.ok !== true) {
-          throw new Error(json?.error ?? "rollup_fetch_failed");
-        }
-
-        const rows = asArray<any>(json?.rows ?? json?.data ?? json?.result);
-        setLogRollupRows(
-          rows
-            .map((r) => ({
-              assignment_id: String(r.assignment_id ?? "").trim(),
-              event_type: r.event_type as EventType,
-            }))
-            .filter((r) => r.assignment_id)
-        );
-      } catch {
-        // silent fail (rollup is non-critical)
+      if (res.status === 404) {
         setLogRollupRows([]);
-      } finally {
-        setLoadingRollup(false);
-        inflight.current["rollup"] = "";
+        return;
       }
-    },
-    []
-  );
 
-  const api = useMemo(
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok !== true) {
+        throw new Error(json?.error ?? "rollup_fetch_failed");
+      }
+
+      const rows = asArray<any>(json?.rows ?? json?.data ?? json?.result);
+      setLogRollupRows(
+        rows
+          .map((r) => ({
+            assignment_id: String(r.assignment_id ?? "").trim(),
+            event_type: r.event_type as EventType,
+          }))
+          .filter((r) => r.assignment_id)
+      );
+    } catch {
+      setLogRollupRows([]);
+    } finally {
+      setLoadingRollup(false);
+      inflight.current["rollup"] = "";
+    }
+  }, []);
+
+  return useMemo(
     () => ({
-      // selection
       selectedAssignmentId,
       setSelectedAssignmentId,
 
-      // workforce
       loadingWorkforce,
       workforce,
       summary,
 
-      // not scheduled
       loadingNotScheduled,
       notScheduled,
 
-      // log
       loadingLog,
       logRows,
 
-      // rollup
       loadingRollup,
       logRollupRows,
 
-      // loaders
       loadWorkforce,
       loadNotScheduled,
       loadLog,
@@ -237,6 +215,4 @@ export function useDispatchConsoleData(toast: ToastLike) {
       loadLogRollup,
     ]
   );
-
-  return api;
 }
