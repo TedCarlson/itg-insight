@@ -16,10 +16,6 @@ type RubricRow = {
   max_value: number | null;
 };
 
-type FactRow = {
-  [key: string]: unknown;
-};
-
 type WorkMixRow = {
   installs: number;
   tcs: number;
@@ -27,21 +23,22 @@ type WorkMixRow = {
   total: number;
 };
 
+type KpiOverrideMap = Map<string, number | null>;
+type KpiOverrideRecord = Record<string, KpiOverrideMap>;
+
 type Params = {
   scopedAssignments: any[];
   peopleById: Map<string, any>;
-  factByTech: Map<string, FactRow>;
   kpis: KpiCfg[];
   rubricByKpi: Map<string, RubricRow[]>;
   orgLabelsById: Map<string, string>;
   workMixByTech: Map<string, WorkMixRow>;
-  kpiOverrides?: Record<string, Map<string, number | null>>;
+  kpiOverrides?: KpiOverrideRecord | Map<string, KpiOverrideMap>;
 };
 
 function formatValue(value: number | null): string | null {
   if (value == null || !Number.isFinite(value)) return null;
-
-  if (value >= 10) return value.toFixed(1);
+  if (Math.abs(value) >= 10) return value.toFixed(1);
   return value.toFixed(2);
 }
 
@@ -60,92 +57,81 @@ function resolveBand(value: number | null, rubric?: RubricRow[]): BandKey {
   return "NO_DATA" as BandKey;
 }
 
-function parseRawFactValue(value: unknown): Record<string, unknown> | null {
-  if (!value) return null;
+function getKpiAliases(kpiKey: string): string[] {
+  const key = kpiKey.trim().toLowerCase();
 
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return parsed && typeof parsed === "object"
-        ? (parsed as Record<string, unknown>)
-        : null;
-    } catch {
-      return null;
+  const aliasMap: Record<string, string[]> = {
+    tnps: ["tnps", "tnps_score"],
+    tnps_score: ["tnps_score", "tnps"],
+
+    ftr: ["ftr", "ftr_rate"],
+    ftr_rate: ["ftr_rate", "ftr"],
+
+    tool_usage: ["tool_usage", "tool_usage_rate", "toolusage", "tu_rate"],
+    tool_usage_rate: ["tool_usage_rate", "tool_usage", "toolusage", "tu_rate"],
+    toolusage: ["toolusage", "tool_usage", "tool_usage_rate", "tu_rate"],
+    tu_rate: ["tu_rate", "tool_usage", "tool_usage_rate", "toolusage"],
+
+    pure_pass: ["pure_pass", "pure_pass_rate", "pht_pure_pass_rate", "purepass"],
+    pure_pass_rate: ["pure_pass_rate", "pure_pass", "pht_pure_pass_rate", "purepass"],
+    pht_pure_pass_rate: ["pht_pure_pass_rate", "pure_pass_rate", "pure_pass", "purepass"],
+    purepass: ["purepass", "pure_pass", "pure_pass_rate", "pht_pure_pass_rate"],
+
+    contact_48hr: ["contact_48hr", "contact_48hr_rate", "callback_rate_48hr", "48hr_contact", "48_hr_contact", "callback_48hr"],
+    contact_48hr_rate: ["contact_48hr_rate", "contact_48hr", "callback_rate_48hr", "48hr_contact", "48_hr_contact", "callback_48hr"],
+    callback_rate_48hr: ["callback_rate_48hr", "contact_48hr_rate", "contact_48hr", "48hr_contact", "48_hr_contact", "callback_48hr"],
+    "48hr_contact": ["48hr_contact", "contact_48hr", "contact_48hr_rate", "callback_rate_48hr", "48_hr_contact", "callback_48hr"],
+    "48_hr_contact": ["48_hr_contact", "48hr_contact", "contact_48hr", "contact_48hr_rate", "callback_rate_48hr", "callback_48hr"],
+    callback_48hr: ["callback_48hr", "callback_rate_48hr", "contact_48hr_rate", "contact_48hr", "48hr_contact", "48_hr_contact"],
+
+    repeat: ["repeat", "repeat_rate"],
+    repeat_rate: ["repeat_rate", "repeat"],
+
+    rework: ["rework", "rework_rate"],
+    rework_rate: ["rework_rate", "rework"],
+
+    soi: ["soi", "soi_rate"],
+    soi_rate: ["soi_rate", "soi"],
+
+    met: ["met", "met_rate"],
+    met_rate: ["met_rate", "met"],
+  };
+
+  return aliasMap[key] ?? [key];
+}
+
+function getOverrideMap(
+  kpiOverrides: Params["kpiOverrides"],
+  kpiKey: string
+): KpiOverrideMap | null {
+  if (!kpiOverrides) return null;
+
+  const aliases = getKpiAliases(kpiKey);
+
+  if (kpiOverrides instanceof Map) {
+    for (const alias of aliases) {
+      const found = kpiOverrides.get(alias);
+      if (found) return found;
     }
+    return null;
   }
 
-  if (typeof value === "object") {
-    return value as Record<string, unknown>;
+  for (const alias of aliases) {
+    const found = kpiOverrides[alias];
+    if (found) return found;
   }
 
   return null;
 }
 
-function extractFromFact(fact: FactRow, kpiKey: string): number | null {
-  if (!fact) return null;
-
-  const directRaw = fact?.[kpiKey];
-  if (directRaw != null) {
-    const directNum = Number(directRaw);
-    if (Number.isFinite(directNum)) return directNum;
-  }
-
-  const raw = parseRawFactValue(fact.raw);
-  if (!raw) return null;
-
-  const rawFieldMap: Record<string, string[]> = {
-    tnps: ["tNPS Rate", "tnps", "tnps_score", "tNPS"],
-    tnps_score: ["tNPS Rate", "tnps_score", "tnps", "tNPS"],
-
-    ftr_rate: ["FTR%", "ftr_rate", "FTR Rate"],
-
-    tool_usage: ["ToolUsage", "Tool Usage", "tool_usage", "tool_usage_rate"],
-    tool_usage_rate: ["ToolUsage", "Tool Usage", "tool_usage_rate", "tool_usage"],
-
-    pure_pass: ["PHT Pure Pass%", "pure_pass", "pure_pass_rate", "pht_pure_pass_rate"],
-    pure_pass_rate: ["PHT Pure Pass%", "pure_pass_rate", "pure_pass", "pht_pure_pass_rate"],
-    pht_pure_pass_rate: ["PHT Pure Pass%", "pht_pure_pass_rate", "pure_pass_rate", "pure_pass"],
-
-    contact_48hr: [
-      "48Hr Contact Rate%",
-      "contact_48hr",
-      "contact_48hr_rate",
-      "callback_rate_48hr",
-    ],
-    contact_48hr_rate: [
-      "48Hr Contact Rate%",
-      "contact_48hr_rate",
-      "contact_48hr",
-      "callback_rate_48hr",
-    ],
-    callback_rate_48hr: [
-      "48Hr Contact Rate%",
-      "callback_rate_48hr",
-      "contact_48hr_rate",
-      "contact_48hr",
-    ],
-
-    repeat: ["Repeat Rate%", "repeat", "repeat_rate"],
-    repeat_rate: ["Repeat Rate%", "repeat_rate", "repeat"],
-
-    rework: ["Rework Rate%", "rework", "rework_rate"],
-    rework_rate: ["Rework Rate%", "rework_rate", "rework"],
-
-    soi: ["SOI Rate%", "soi", "soi_rate"],
-    soi_rate: ["SOI Rate%", "soi_rate", "soi"],
-
-    met: ["MetRate", "met", "met_rate"],
-    met_rate: ["MetRate", "met_rate", "met"],
-  };
-
-  const candidateKeys = rawFieldMap[kpiKey] ?? [kpiKey];
-
-  for (const candidateKey of candidateKeys) {
-    const value = raw[candidateKey];
-    if (value == null) continue;
-
-    const n = Number(value);
-    if (Number.isFinite(n)) return n;
+function resolveMetricValue(args: {
+  techId: string;
+  kpiKey: string;
+  kpiOverrides?: Params["kpiOverrides"];
+}): number | null {
+  const overrideMap = getOverrideMap(args.kpiOverrides, args.kpiKey);
+  if (overrideMap?.has(args.techId)) {
+    return overrideMap.get(args.techId) ?? null;
   }
 
   return null;
@@ -191,7 +177,6 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
   const {
     scopedAssignments,
     peopleById,
-    factByTech,
     kpis,
     rubricByKpi,
     orgLabelsById,
@@ -202,25 +187,21 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
   const rows: BpViewRosterRow[] = [];
 
   for (const assignment of scopedAssignments) {
-    const techId = String(assignment.tech_id ?? "");
+    const techId = String(assignment.tech_id ?? "").trim();
     if (!techId) continue;
 
-    const person = peopleById.get(String(assignment.person_id ?? ""));
-    const fact = factByTech.get(techId);
+    const personId = String(assignment.person_id ?? "").trim();
+    const person = peopleById.get(personId);
 
     const metrics: BpViewRosterMetricCell[] = [];
     let belowTargetCount = 0;
 
     for (const kpi of kpis) {
-      let value: number | null = null;
-
-      const overrideMap = kpiOverrides?.[kpi.kpi_key];
-
-      if (overrideMap) {
-        value = overrideMap.get(techId) ?? null;
-      } else if (fact) {
-        value = extractFromFact(fact, kpi.kpi_key);
-      }
+      const value = resolveMetricValue({
+        techId,
+        kpiKey: kpi.kpi_key,
+        kpiOverrides,
+      });
 
       const band = resolveBand(value, rubricByKpi.get(kpi.kpi_key));
 
@@ -231,20 +212,15 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
       metrics.push({
         kpi_key: kpi.kpi_key,
         label: kpi.label,
-
         value,
         value_display: formatValue(value),
         band_key: band,
-
         delta_value: null,
         delta_display: null,
-
         rank_value: null,
         rank_display: null,
-
         rank_delta_value: null,
         rank_delta_display: null,
-
         score_value: null,
         score_weight: null,
         score_contribution: null,
@@ -268,7 +244,7 @@ export function buildBpRosterRows(params: Params): BpViewRosterRow[] {
     };
 
     rows.push({
-      person_id: String(assignment.person_id ?? ""),
+      person_id: personId,
       tech_id: techId,
       full_name: fullNameWithTechId,
       context: officeLabel,

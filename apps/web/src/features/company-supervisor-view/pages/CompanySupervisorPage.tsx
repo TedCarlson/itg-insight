@@ -31,8 +31,7 @@ function normalizeRange(value: string | null | undefined): RangeKey {
   return "FM";
 }
 
-function mapRangeForDrawer(range: RangeKey): "FM" | "3FM" | "12FM" {
-  if (range === "PREVIOUS") return "FM";
+function mapRangeForDrawer(range: RangeKey): RangeKey {
   return range;
 }
 

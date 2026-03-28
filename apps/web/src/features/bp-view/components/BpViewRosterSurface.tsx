@@ -31,6 +31,16 @@ function sectionDividerClass(index: number) {
   return index === 3 ? "border-l border-[var(--to-border)] pl-4" : "";
 }
 
+function rowKey(row: BpViewRosterRow) {
+  const techId = String(row.tech_id ?? "").trim();
+  if (techId) return `tech:${techId}`;
+
+  const personId = String(row.person_id ?? "").trim();
+  if (personId) return `person:${personId}`;
+
+  return `fallback:${String(row.full_name ?? "").trim()}`;
+}
+
 function MobileMetricCard(props: { metric: BpViewRosterMetricCell }) {
   return (
     <div
@@ -192,7 +202,6 @@ export default function BpViewRosterSurface(props: {
 }) {
   const [showWorkMix, setShowWorkMix] = useState(false);
 
-  const workMixColumnCount = showWorkMix ? 4 : 0;
   const gridTemplate = `180px repeat(${props.columns.length}, minmax(84px, 1fr)) ${
     showWorkMix ? "repeat(4, minmax(84px, 1fr)) " : ""
   }72px`;
@@ -226,7 +235,7 @@ export default function BpViewRosterSurface(props: {
       <div className="space-y-3 md:hidden">
         {props.rows.map((row) => (
           <MobileRowCard
-            key={row.person_id}
+            key={rowKey(row)}
             row={row}
             onSelectRow={props.onSelectRow}
             showWorkMix={showWorkMix}
@@ -271,7 +280,7 @@ export default function BpViewRosterSurface(props: {
 
           {props.rows.map((row) => (
             <button
-              key={row.person_id}
+              key={rowKey(row)}
               type="button"
               onClick={() => props.onSelectRow(row)}
               className="grid w-full border-b text-left hover:bg-muted/10"

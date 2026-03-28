@@ -1,3 +1,4 @@
+import { sortWorkforceRows } from "@/shared/kpis/core/sortWorkforceRows";
 import type { BpViewRiskItem, BpViewRosterRow } from "./bpView.types";
 
 type KpiCfg = {
@@ -6,22 +7,36 @@ type KpiCfg = {
   sort: number;
 };
 
+function hasMetricValue(row: BpViewRosterRow) {
+  return row.metrics.some((metric) => metric.value != null);
+}
+
 function hasPositiveJobs(row: BpViewRosterRow) {
   return (row.work_mix?.total ?? 0) > 0;
+}
+
+function hasVisibleData(row: BpViewRosterRow) {
+  return hasPositiveJobs(row) || hasMetricValue(row);
 }
 
 export function buildBpRiskStrip(args: {
   rosterRows: BpViewRosterRow[];
   kpis: KpiCfg[];
 }): BpViewRiskItem[] {
-  const eligibleRows = args.rosterRows.filter(hasPositiveJobs);
+  const eligibleRows = args.rosterRows.filter(hasVisibleData);
 
   const belowThresholdCount = eligibleRows.filter(
-    (r) => r.below_target_count >= 2
+    (row) => row.below_target_count >= 2
+  ).length;
+
+  const coachingQueue = eligibleRows.filter(
+    (row) => row.below_target_count >= 1
   ).length;
 
   const kpiConcernCounts = new Map<string, number>();
-  for (const kpi of args.kpis) kpiConcernCounts.set(kpi.kpi_key, 0);
+  for (const kpi of args.kpis) {
+    kpiConcernCounts.set(kpi.kpi_key, 0);
+  }
 
   for (const row of eligibleRows) {
     for (const metric of row.metrics) {
@@ -37,24 +52,25 @@ export function buildBpRiskStrip(args: {
     }
   }
 
-  const topConcern = [...kpiConcernCounts.entries()].sort(
-    (a, b) => b[1] - a[1]
-  )[0];
+  const topConcern = [...kpiConcernCounts.entries()].sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+
+    const aIndex = args.kpis.findIndex((kpi) => kpi.kpi_key === a[0]);
+    const bIndex = args.kpis.findIndex((kpi) => kpi.kpi_key === b[0]);
+    return aIndex - bIndex;
+  })[0];
 
   const topConcernLabel =
-    args.kpis.find((k) => k.kpi_key === topConcern?.[0])?.label ?? "—";
+    args.kpis.find((kpi) => kpi.kpi_key === topConcern?.[0])?.label ?? "—";
   const topConcernCount = topConcern?.[1] ?? 0;
 
-  const coachingQueue = eligibleRows.filter(
-    (r) => r.below_target_count >= 1
-  ).length;
-
-  const strongestTech =
-    [...eligibleRows].sort(
-      (a, b) =>
-        a.below_target_count - b.below_target_count ||
-        b.work_mix.total - a.work_mix.total ||
-        a.full_name.localeCompare(b.full_name)
+  const strongestStanding =
+    sortWorkforceRows(
+      eligibleRows,
+      args.kpis.map((kpi) => ({
+        kpi_key: kpi.kpi_key,
+        label: kpi.label,
+      }))
     )[0]?.full_name ?? "—";
 
   return [
@@ -75,8 +91,8 @@ export function buildBpRiskStrip(args: {
     },
     {
       title: "Strongest Standing",
-      value: strongestTech,
-      note: "Lowest current risk footprint",
+      value: strongestStanding,
+      note: "Best current KPI standing in scope",
     },
   ];
 }

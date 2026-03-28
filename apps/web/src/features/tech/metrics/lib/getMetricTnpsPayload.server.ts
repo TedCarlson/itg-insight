@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateTnps } from "@/shared/kpis/core/aggregateTnps";
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
 type Args = {
@@ -19,15 +20,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
   return null;
 }
 
-function computeTnpsScore(
-  surveys: number,
-  promoters: number,
-  detractors: number
-): number | null {
-  if (surveys > 0) return (100 * (promoters - detractors)) / surveys;
-  return null;
-}
-
 function parseRaw(raw: unknown): Record<string, unknown> {
   if (!raw) return {};
 
@@ -43,6 +35,19 @@ function parseRaw(raw: unknown): Record<string, unknown> {
   }
 
   return typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+}
+
+function extractTnpsFacts(raw: Record<string, unknown>) {
+  return {
+    tnps_surveys: pickNum(raw, [
+      "tNPS Surveys",
+      "tnps_surveys",
+      "tNPS_Surveys",
+      "Surveys",
+    ]),
+    tnps_promoters: pickNum(raw, ["Promoters", "tnps_promoters"]),
+    tnps_detractors: pickNum(raw, ["Detractors", "tnps_detractors"]),
+  };
 }
 
 export async function getMetricTnpsPayload(args: Args) {
@@ -91,33 +96,8 @@ export async function getMetricTnpsPayload(args: Args) {
         : []
       : selectedFinalRows.map((x) => x.row);
 
-  let totalSurveys = 0;
-  let totalPromoters = 0;
-  let totalDetractors = 0;
-
-  for (const row of summaryRows) {
-    const surveys = pickNum(row.raw, [
-      "tNPS Surveys",
-      "tnps_surveys",
-      "tNPS_Surveys",
-      "Surveys",
-    ]);
-
-    const promoters = pickNum(row.raw, ["Promoters", "tnps_promoters"]);
-
-    const detractors = pickNum(row.raw, ["Detractors", "tnps_detractors"]);
-
-    if (surveys != null && surveys > 0) {
-      totalSurveys += surveys;
-      totalPromoters += promoters ?? 0;
-      totalDetractors += detractors ?? 0;
-    }
-  }
-
-  const summaryTnps =
-    totalSurveys > 0
-      ? computeTnpsScore(totalSurveys, totalPromoters, totalDetractors)
-      : null;
+  const summaryFacts = summaryRows.map((row) => extractTnpsFacts(row.raw));
+  const summaryAgg = aggregateTnps(summaryFacts);
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -129,31 +109,18 @@ export async function getMetricTnpsPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const surveys = pickNum(r.raw, [
-        "tNPS Surveys",
-        "tnps_surveys",
-        "tNPS_Surveys",
-        "Surveys",
-      ]);
-
-      const promoters = pickNum(r.raw, ["Promoters", "tnps_promoters"]);
-
-      const detractors = pickNum(r.raw, ["Detractors", "tnps_detractors"]);
-
-      const kpiValue =
-        surveys != null && surveys > 0
-          ? computeTnpsScore(surveys, promoters ?? 0, detractors ?? 0)
-          : null;
+      const facts = extractTnpsFacts(r.raw);
+      const agg = aggregateTnps([facts]);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        tnps_surveys: surveys,
-        tnps_promoters: promoters,
-        tnps_detractors: detractors,
-        kpi_value: kpiValue,
+        tnps_surveys: facts.tnps_surveys,
+        tnps_promoters: facts.tnps_promoters,
+        tnps_detractors: facts.tnps_detractors,
+        kpi_value: agg.tnps_score,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -179,16 +146,7 @@ export async function getMetricTnpsPayload(args: Args) {
       distinct_fiscal_months_found: distinctFiscalMonthsFound,
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const surveys = pickNum(x.row.raw, [
-          "tNPS Surveys",
-          "tnps_surveys",
-          "tNPS_Surveys",
-          "Surveys",
-        ]);
-
-        const promoters = pickNum(x.row.raw, ["Promoters", "tnps_promoters"]);
-
-        const detractors = pickNum(x.row.raw, ["Detractors", "tnps_detractors"]);
+        const facts = extractTnpsFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -196,18 +154,18 @@ export async function getMetricTnpsPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          tnps_surveys: surveys,
-          tnps_promoters: promoters,
-          tnps_detractors: detractors,
+          tnps_surveys: facts.tnps_surveys,
+          tnps_promoters: facts.tnps_promoters,
+          tnps_detractors: facts.tnps_detractors,
         };
       }),
       trend,
     },
     summary: {
-      tnps_score: summaryTnps,
-      tnps_surveys: totalSurveys,
-      tnps_promoters: totalPromoters,
-      tnps_detractors: totalDetractors,
+      tnps_score: summaryAgg.tnps_score,
+      tnps_surveys: summaryAgg.tnps_surveys,
+      tnps_promoters: summaryAgg.tnps_promoters,
+      tnps_detractors: summaryAgg.tnps_detractors,
     },
     trend,
   };

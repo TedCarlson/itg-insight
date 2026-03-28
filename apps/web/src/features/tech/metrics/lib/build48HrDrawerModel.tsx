@@ -1,5 +1,6 @@
-import Sparkline from "@/features/tech/metrics/components/Sparkline";
+import Sparkline from "@/shared/components/Sparkline";
 import MetricPeriodDetailTable from "@/features/tech/metrics/components/MetricPeriodDetailTable";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { MetricsRangeKey as RangeKey } from "@/shared/kpis/core/types";
 
@@ -38,11 +39,6 @@ function formatPct(n: number | null): string {
   return `${n.toFixed(1)}%`;
 }
 
-function computePct(eligible: number, orders: number): number | null {
-  if (eligible > 0) return (100 * orders) / eligible;
-  return null;
-}
-
 function computeRangeValue(
   rows: Array<{
     eligible_jobs_48hr: number | null;
@@ -50,21 +46,18 @@ function computeRangeValue(
     callback_rate_48hr: number | null;
   }>
 ): string {
-  const eligible = rows.reduce((sum, row) => sum + (row.eligible_jobs_48hr ?? 0), 0);
-  const orders = rows.reduce((sum, row) => sum + (row.contact_orders_48hr ?? 0), 0);
+  const agg = aggregateRatio({
+    rows,
+    getNumerator: (row) => row.contact_orders_48hr ?? 0,
+    getDenominator: (row) => row.eligible_jobs_48hr ?? 0,
+  });
 
-  if (eligible > 0) {
-    return formatPct(computePct(eligible, orders));
+  if (agg.denominator > 0) {
+    return formatPct(agg.value);
   }
 
-  const fallbackRates = rows
-    .map((row) => row.callback_rate_48hr)
-    .filter((v): v is number => v != null && Number.isFinite(v));
-
-  if (fallbackRates.length > 0) {
-    return formatPct(
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
-    );
+  if (rows.length === 1) {
+    return formatPct(rows[0]?.callback_rate_48hr ?? null);
   }
 
   return "—";
@@ -106,20 +99,26 @@ export function build48HrDrawerModel(args: {
     });
   }
 
-  const totalEligible = selectedRows.reduce(
-    (sum, row) => sum + (row.eligible_jobs_48hr ?? 0),
-    0
-  );
-  const totalOrders = selectedRows.reduce(
-    (sum, row) => sum + (row.contact_orders_48hr ?? 0),
-    0
-  );
+  const totalAgg = aggregateRatio({
+    rows: selectedRows,
+    getNumerator: (row) => row.contact_orders_48hr ?? 0,
+    getDenominator: (row) => row.eligible_jobs_48hr ?? 0,
+  });
+
+  const totalEligible = totalAgg.denominator;
+  const totalOrders = totalAgg.numerator;
   const totalRate = computeRangeValue(selectedRows);
 
   const periodRows = selectedRows.map((row) => {
+    const rowAgg = aggregateRatio({
+      rows: [row],
+      getNumerator: (r) => r.contact_orders_48hr ?? 0,
+      getDenominator: (r) => r.eligible_jobs_48hr ?? 0,
+    });
+
     const rowPct =
-      row.eligible_jobs_48hr != null && row.eligible_jobs_48hr > 0
-        ? formatPct(computePct(row.eligible_jobs_48hr, row.contact_orders_48hr ?? 0))
+      rowAgg.denominator > 0
+        ? formatPct(rowAgg.value)
         : formatPct(row.callback_rate_48hr);
 
     return {
@@ -158,10 +157,28 @@ export function build48HrDrawerModel(args: {
       <MetricPeriodDetailTable
         title="Period Detail"
         columns={[
-          { key: "metric_date", label: "Metric Date" },
-          { key: "callback_pct", label: "48Hr %", align: "right", widthClass: "90px" },
-          { key: "orders", label: "Orders", align: "right", widthClass: "90px" },
-          { key: "eligible", label: "Eligible", align: "right", widthClass: "90px" },
+          {
+            key: "metric_date",
+            label: "Metric Date",
+          },
+          {
+            key: "callback_pct",
+            label: "48Hr %",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "orders",
+            label: "Orders",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "eligible",
+            label: "Eligible",
+            align: "right",
+            widthClass: "90px",
+          },
         ]}
         rows={periodRows}
         footer={periodFooter}

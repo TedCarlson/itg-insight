@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computePurePass(jobs: number, purePass: number): number | null {
-  if (jobs > 0) return (100 * purePass) / jobs;
   return null;
 }
 
@@ -59,24 +55,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   ]);
 }
 
-function computeRowPurePass(raw: Record<string, unknown>) {
-  const jobs = pickPhtJobs(raw);
+function extractPurePassFacts(raw: Record<string, unknown>) {
+  const phtJobs = pickPhtJobs(raw);
   const purePass = pickPurePass(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (jobs != null && jobs > 0) {
-    return {
-      pht_jobs: jobs,
-      pure_pass: purePass,
-      rate: computePurePass(jobs, purePass ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ phtJobs, purePass }],
+    getNumerator: (row) => row.purePass ?? 0,
+    getDenominator: (row) => row.phtJobs ?? 0,
+  });
 
   return {
-    pht_jobs: jobs,
+    pht_jobs: phtJobs,
     pure_pass: purePass,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    pure_pass_rate: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -117,28 +111,26 @@ export async function getMetricPurePassPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalJobs = 0;
-  let totalPurePass = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractPurePassFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRowPurePass(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.pure_pass ?? 0,
+    getDenominator: (row) => row.pht_jobs ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.pht_jobs != null && rowData.pht_jobs > 0) {
-      totalJobs += rowData.pht_jobs;
-      totalPurePass += rowData.pure_pass ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.pure_pass_rate)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryPurePass: number | null = null;
-  if (totalJobs > 0) {
-    summaryPurePass = computePurePass(totalJobs, totalPurePass);
-  } else if (fallbackRates.length > 0) {
-    summaryPurePass =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryPurePass =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -150,17 +142,17 @@ export async function getMetricPurePassPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRowPurePass(r.raw);
+      const facts = extractPurePassFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        pht_jobs: rowData.pht_jobs,
-        pure_pass: rowData.pure_pass,
-        pure_pass_rate: rowData.rate,
-        kpi_value: rowData.rate,
+        pht_jobs: facts.pht_jobs,
+        pure_pass: facts.pure_pass,
+        pure_pass_rate: facts.pure_pass_rate,
+        kpi_value: facts.pure_pass_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -186,7 +178,7 @@ export async function getMetricPurePassPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRowPurePass(x.row.raw);
+        const facts = extractPurePassFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -194,17 +186,17 @@ export async function getMetricPurePassPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          pht_jobs: rowData.pht_jobs,
-          pure_pass: rowData.pure_pass,
-          pure_pass_rate: rowData.rate,
+          pht_jobs: facts.pht_jobs,
+          pure_pass: facts.pure_pass,
+          pure_pass_rate: facts.pure_pass_rate,
         };
       }),
       trend,
     },
     summary: {
       pure_pass_rate: summaryPurePass,
-      pht_jobs: totalJobs,
-      pure_pass: totalPurePass,
+      pht_jobs: summaryAgg.denominator,
+      pure_pass: summaryAgg.numerator,
     },
     trend,
   };

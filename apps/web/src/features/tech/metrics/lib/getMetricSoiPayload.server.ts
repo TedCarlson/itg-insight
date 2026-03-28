@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computePct(denominator: number, numerator: number): number | null {
-  if (denominator > 0) return (100 * numerator) / denominator;
   return null;
 }
 
@@ -54,24 +50,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   return pickNum(raw, ["SOI Rate%", "SOI Rate %", "soi_rate", "soi_rate_pct"]);
 }
 
-function computeRowSoi(raw: Record<string, unknown>) {
+function extractSoiFacts(raw: Record<string, unknown>) {
   const installs = pickInstalls(raw);
   const soiCount = pickSoiCount(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (installs != null && installs > 0) {
-    return {
-      installs,
-      soiCount,
-      rate: computePct(installs, soiCount ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ installs, soiCount }],
+    getNumerator: (row) => row.soiCount ?? 0,
+    getDenominator: (row) => row.installs ?? 0,
+  });
 
   return {
+    soi_count: soiCount,
     installs,
-    soiCount,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    soi_rate: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -112,28 +106,26 @@ export async function getMetricSoiPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalInstalls = 0;
-  let totalSoi = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractSoiFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRowSoi(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.soi_count ?? 0,
+    getDenominator: (row) => row.installs ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.installs != null && rowData.installs > 0) {
-      totalInstalls += rowData.installs;
-      totalSoi += rowData.soiCount ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.soi_rate)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryRate: number | null = null;
-  if (totalInstalls > 0) {
-    summaryRate = computePct(totalInstalls, totalSoi);
-  } else if (fallbackRates.length > 0) {
-    summaryRate =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryRate =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -145,17 +137,17 @@ export async function getMetricSoiPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRowSoi(r.raw);
+      const facts = extractSoiFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        soi_count: rowData.soiCount,
-        installs: rowData.installs,
-        soi_rate: rowData.rate,
-        kpi_value: rowData.rate,
+        soi_count: facts.soi_count,
+        installs: facts.installs,
+        soi_rate: facts.soi_rate,
+        kpi_value: facts.soi_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -181,7 +173,7 @@ export async function getMetricSoiPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRowSoi(x.row.raw);
+        const facts = extractSoiFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -189,17 +181,17 @@ export async function getMetricSoiPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          soi_count: rowData.soiCount,
-          installs: rowData.installs,
-          soi_rate: rowData.rate,
+          soi_count: facts.soi_count,
+          installs: facts.installs,
+          soi_rate: facts.soi_rate,
         };
       }),
       trend,
     },
     summary: {
       soi_rate: summaryRate,
-      soi_count: totalSoi,
-      installs: totalInstalls,
+      soi_count: summaryAgg.numerator,
+      installs: summaryAgg.denominator,
     },
     trend,
   };

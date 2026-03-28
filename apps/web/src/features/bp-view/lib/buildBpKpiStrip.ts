@@ -68,4 +68,4 @@ export function buildBpKpiStrip(args: {
       support: `${args.rosterRows.length} techs in scope`,
     };
   });
-}
+} 

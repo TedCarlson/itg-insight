@@ -1,5 +1,6 @@
-import Sparkline from "@/features/tech/metrics/components/Sparkline";
+import Sparkline from "@/shared/components/Sparkline";
 import MetricPeriodDetailTable from "@/features/tech/metrics/components/MetricPeriodDetailTable";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { MetricsRangeKey as RangeKey } from "@/shared/kpis/core/types";
 
@@ -38,11 +39,6 @@ function formatPct(n: number | null): string {
   return `${n.toFixed(1)}%`;
 }
 
-function computePct(installs: number, soiCount: number): number | null {
-  if (installs > 0) return (100 * soiCount) / installs;
-  return null;
-}
-
 function computeRangeValue(
   rows: Array<{
     installs: number | null;
@@ -50,21 +46,18 @@ function computeRangeValue(
     soi_rate: number | null;
   }>
 ): string {
-  const installs = rows.reduce((sum, row) => sum + (row.installs ?? 0), 0);
-  const soiCount = rows.reduce((sum, row) => sum + (row.soi_count ?? 0), 0);
+  const agg = aggregateRatio({
+    rows,
+    getNumerator: (row) => row.soi_count ?? 0,
+    getDenominator: (row) => row.installs ?? 0,
+  });
 
-  if (installs > 0) {
-    return formatPct(computePct(installs, soiCount));
+  if (agg.denominator > 0) {
+    return formatPct(agg.value);
   }
 
-  const fallbackRates = rows
-    .map((row) => row.soi_rate)
-    .filter((v): v is number => v != null && Number.isFinite(v));
-
-  if (fallbackRates.length > 0) {
-    return formatPct(
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
-    );
+  if (rows.length === 1) {
+    return formatPct(rows[0]?.soi_rate ?? null);
   }
 
   return "—";
@@ -106,14 +99,26 @@ export function buildSoiDrawerModel(args: {
     });
   }
 
-  const totalInstalls = selectedRows.reduce((sum, row) => sum + (row.installs ?? 0), 0);
-  const totalSoi = selectedRows.reduce((sum, row) => sum + (row.soi_count ?? 0), 0);
+  const totalAgg = aggregateRatio({
+    rows: selectedRows,
+    getNumerator: (row) => row.soi_count ?? 0,
+    getDenominator: (row) => row.installs ?? 0,
+  });
+
+  const totalInstalls = totalAgg.denominator;
+  const totalSoi = totalAgg.numerator;
   const totalRate = computeRangeValue(selectedRows);
 
   const periodRows = selectedRows.map((row) => {
+    const rowAgg = aggregateRatio({
+      rows: [row],
+      getNumerator: (r) => r.soi_count ?? 0,
+      getDenominator: (r) => r.installs ?? 0,
+    });
+
     const rowPct =
-      row.installs != null && row.installs > 0
-        ? formatPct(computePct(row.installs, row.soi_count ?? 0))
+      rowAgg.denominator > 0
+        ? formatPct(rowAgg.value)
         : formatPct(row.soi_rate);
 
     return {
@@ -152,10 +157,28 @@ export function buildSoiDrawerModel(args: {
       <MetricPeriodDetailTable
         title="Period Detail"
         columns={[
-          { key: "metric_date", label: "Metric Date" },
-          { key: "soi_pct", label: "SOI %", align: "right", widthClass: "90px" },
-          { key: "soi_count", label: "SOI", align: "right", widthClass: "90px" },
-          { key: "installs", label: "Installs", align: "right", widthClass: "90px" },
+          {
+            key: "metric_date",
+            label: "Metric Date",
+          },
+          {
+            key: "soi_pct",
+            label: "SOI %",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "soi_count",
+            label: "SOI",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "installs",
+            label: "Installs",
+            align: "right",
+            widthClass: "90px",
+          },
         ]}
         rows={periodRows}
         footer={periodFooter}

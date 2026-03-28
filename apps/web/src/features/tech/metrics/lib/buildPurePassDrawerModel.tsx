@@ -1,5 +1,6 @@
-import Sparkline from "@/features/tech/metrics/components/Sparkline";
+import Sparkline from "@/shared/components/Sparkline";
 import MetricPeriodDetailTable from "@/features/tech/metrics/components/MetricPeriodDetailTable";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { MetricsRangeKey as RangeKey } from "@/shared/kpis/core/types";
 
@@ -38,11 +39,6 @@ function formatPct(n: number | null): string {
   return `${n.toFixed(1)}%`;
 }
 
-function computePct(jobs: number, purePass: number): number | null {
-  if (jobs > 0) return (100 * purePass) / jobs;
-  return null;
-}
-
 function computeRangeValue(
   rows: Array<{
     pht_jobs: number | null;
@@ -50,21 +46,18 @@ function computeRangeValue(
     pure_pass_rate: number | null;
   }>
 ): string {
-  const jobs = rows.reduce((sum, row) => sum + (row.pht_jobs ?? 0), 0);
-  const purePass = rows.reduce((sum, row) => sum + (row.pure_pass ?? 0), 0);
+  const agg = aggregateRatio({
+    rows,
+    getNumerator: (row) => row.pure_pass ?? 0,
+    getDenominator: (row) => row.pht_jobs ?? 0,
+  });
 
-  if (jobs > 0) {
-    return formatPct(computePct(jobs, purePass));
+  if (agg.denominator > 0) {
+    return formatPct(agg.value);
   }
 
-  const fallbackRates = rows
-    .map((row) => row.pure_pass_rate)
-    .filter((v): v is number => v != null && Number.isFinite(v));
-
-  if (fallbackRates.length > 0) {
-    return formatPct(
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
-    );
+  if (rows.length === 1) {
+    return formatPct(rows[0]?.pure_pass_rate ?? null);
   }
 
   return "—";
@@ -106,14 +99,26 @@ export function buildPurePassDrawerModel(args: {
     });
   }
 
-  const totalJobs = selectedRows.reduce((sum, row) => sum + (row.pht_jobs ?? 0), 0);
-  const totalPurePass = selectedRows.reduce((sum, row) => sum + (row.pure_pass ?? 0), 0);
+  const totalAgg = aggregateRatio({
+    rows: selectedRows,
+    getNumerator: (row) => row.pure_pass ?? 0,
+    getDenominator: (row) => row.pht_jobs ?? 0,
+  });
+
+  const totalJobs = totalAgg.denominator;
+  const totalPurePass = totalAgg.numerator;
   const totalRate = computeRangeValue(selectedRows);
 
   const periodRows = selectedRows.map((row) => {
+    const rowAgg = aggregateRatio({
+      rows: [row],
+      getNumerator: (r) => r.pure_pass ?? 0,
+      getDenominator: (r) => r.pht_jobs ?? 0,
+    });
+
     const rowPct =
-      row.pht_jobs != null && row.pht_jobs > 0
-        ? formatPct(computePct(row.pht_jobs, row.pure_pass ?? 0))
+      rowAgg.denominator > 0
+        ? formatPct(rowAgg.value)
         : formatPct(row.pure_pass_rate);
 
     return {
@@ -152,10 +157,28 @@ export function buildPurePassDrawerModel(args: {
       <MetricPeriodDetailTable
         title="Period Detail"
         columns={[
-          { key: "metric_date", label: "Metric Date" },
-          { key: "pure_pass_pct", label: "Pure %", align: "right", widthClass: "90px" },
-          { key: "pht_jobs", label: "PHT Jobs", align: "right", widthClass: "90px" },
-          { key: "pure_pass", label: "Pure Pass", align: "right", widthClass: "90px" },
+          {
+            key: "metric_date",
+            label: "Metric Date",
+          },
+          {
+            key: "pure_pass_pct",
+            label: "Pure %",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "pht_jobs",
+            label: "PHT Jobs",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "pure_pass",
+            label: "Pure Pass",
+            align: "right",
+            widthClass: "90px",
+          },
         ]}
         rows={periodRows}
         footer={periodFooter}

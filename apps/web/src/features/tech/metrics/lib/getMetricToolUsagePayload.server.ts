@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computeToolUsage(eligible: number, compliant: number): number | null {
-  if (eligible > 0) return (100 * compliant) / eligible;
   return null;
 }
 
@@ -70,24 +66,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   ]);
 }
 
-function computeRowToolUsage(raw: Record<string, unknown>) {
+function extractToolUsageFacts(raw: Record<string, unknown>) {
   const eligible = pickEligible(raw);
   const compliant = pickCompliant(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (eligible != null && eligible > 0) {
-    return {
-      eligible,
-      compliant,
-      rate: computeToolUsage(eligible, compliant ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ eligible, compliant }],
+    getNumerator: (row) => row.compliant ?? 0,
+    getDenominator: (row) => row.eligible ?? 0,
+  });
 
   return {
-    eligible,
-    compliant,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    tu_eligible_jobs: eligible,
+    tu_compliant_jobs: compliant,
+    tool_usage_rate: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -128,28 +122,26 @@ export async function getMetricToolUsagePayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalEligible = 0;
-  let totalCompliant = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractToolUsageFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRowToolUsage(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.tu_compliant_jobs ?? 0,
+    getDenominator: (row) => row.tu_eligible_jobs ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.eligible != null && rowData.eligible > 0) {
-      totalEligible += rowData.eligible;
-      totalCompliant += rowData.compliant ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.tool_usage_rate)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryToolUsage: number | null = null;
-  if (totalEligible > 0) {
-    summaryToolUsage = computeToolUsage(totalEligible, totalCompliant);
-  } else if (fallbackRates.length > 0) {
-    summaryToolUsage =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryToolUsage =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -161,17 +153,17 @@ export async function getMetricToolUsagePayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRowToolUsage(r.raw);
+      const facts = extractToolUsageFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        tu_eligible_jobs: rowData.eligible,
-        tu_compliant_jobs: rowData.compliant,
-        tool_usage_rate: rowData.rate,
-        kpi_value: rowData.rate,
+        tu_eligible_jobs: facts.tu_eligible_jobs,
+        tu_compliant_jobs: facts.tu_compliant_jobs,
+        tool_usage_rate: facts.tool_usage_rate,
+        kpi_value: facts.tool_usage_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -197,7 +189,7 @@ export async function getMetricToolUsagePayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRowToolUsage(x.row.raw);
+        const facts = extractToolUsageFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -205,17 +197,17 @@ export async function getMetricToolUsagePayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          tu_eligible_jobs: rowData.eligible,
-          tu_compliant_jobs: rowData.compliant,
-          tool_usage_rate: rowData.rate,
+          tu_eligible_jobs: facts.tu_eligible_jobs,
+          tu_compliant_jobs: facts.tu_compliant_jobs,
+          tool_usage_rate: facts.tool_usage_rate,
         };
       }),
       trend,
     },
     summary: {
       tool_usage_rate: summaryToolUsage,
-      tu_eligible_jobs: totalEligible,
-      tu_compliant_jobs: totalCompliant,
+      tu_eligible_jobs: summaryAgg.denominator,
+      tu_compliant_jobs: summaryAgg.numerator,
     },
     trend,
   };

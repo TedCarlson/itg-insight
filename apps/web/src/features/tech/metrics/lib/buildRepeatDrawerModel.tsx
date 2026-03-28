@@ -1,5 +1,6 @@
-import Sparkline from "@/features/tech/metrics/components/Sparkline";
+import Sparkline from "@/shared/components/Sparkline";
 import MetricPeriodDetailTable from "@/features/tech/metrics/components/MetricPeriodDetailTable";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { MetricsRangeKey as RangeKey } from "@/shared/kpis/core/types";
 
@@ -38,11 +39,6 @@ function formatPct(n: number | null): string {
   return `${n.toFixed(1)}%`;
 }
 
-function computePct(tcs: number, repeats: number): number | null {
-  if (tcs > 0) return (100 * repeats) / tcs;
-  return null;
-}
-
 function computeRangeValue(
   rows: Array<{
     tc_count: number | null;
@@ -50,21 +46,18 @@ function computeRangeValue(
     repeat_rate: number | null;
   }>
 ): string {
-  const tcs = rows.reduce((sum, row) => sum + (row.tc_count ?? 0), 0);
-  const repeats = rows.reduce((sum, row) => sum + (row.repeat_count ?? 0), 0);
+  const agg = aggregateRatio({
+    rows,
+    getNumerator: (row) => row.repeat_count ?? 0,
+    getDenominator: (row) => row.tc_count ?? 0,
+  });
 
-  if (tcs > 0) {
-    return formatPct(computePct(tcs, repeats));
+  if (agg.denominator > 0) {
+    return formatPct(agg.value);
   }
 
-  const fallbackRates = rows
-    .map((row) => row.repeat_rate)
-    .filter((v): v is number => v != null && Number.isFinite(v));
-
-  if (fallbackRates.length > 0) {
-    return formatPct(
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
-    );
+  if (rows.length === 1) {
+    return formatPct(rows[0]?.repeat_rate ?? null);
   }
 
   return "—";
@@ -106,17 +99,26 @@ export function buildRepeatDrawerModel(args: {
     });
   }
 
-  const totalTcs = selectedRows.reduce((sum, row) => sum + (row.tc_count ?? 0), 0);
-  const totalRepeats = selectedRows.reduce(
-    (sum, row) => sum + (row.repeat_count ?? 0),
-    0
-  );
+  const totalAgg = aggregateRatio({
+    rows: selectedRows,
+    getNumerator: (row) => row.repeat_count ?? 0,
+    getDenominator: (row) => row.tc_count ?? 0,
+  });
+
+  const totalTcs = totalAgg.denominator;
+  const totalRepeats = totalAgg.numerator;
   const totalRate = computeRangeValue(selectedRows);
 
   const periodRows = selectedRows.map((row) => {
+    const rowAgg = aggregateRatio({
+      rows: [row],
+      getNumerator: (r) => r.repeat_count ?? 0,
+      getDenominator: (r) => r.tc_count ?? 0,
+    });
+
     const rowPct =
-      row.tc_count != null && row.tc_count > 0
-        ? formatPct(computePct(row.tc_count, row.repeat_count ?? 0))
+      rowAgg.denominator > 0
+        ? formatPct(rowAgg.value)
         : formatPct(row.repeat_rate);
 
     return {
@@ -155,10 +157,28 @@ export function buildRepeatDrawerModel(args: {
       <MetricPeriodDetailTable
         title="Period Detail"
         columns={[
-          { key: "metric_date", label: "Metric Date" },
-          { key: "repeat_pct", label: "Repeat %", align: "right", widthClass: "90px" },
-          { key: "repeats", label: "Repeats", align: "right", widthClass: "90px" },
-          { key: "tcs", label: "TCs", align: "right", widthClass: "90px" },
+          {
+            key: "metric_date",
+            label: "Metric Date",
+          },
+          {
+            key: "repeat_pct",
+            label: "Repeat %",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "repeats",
+            label: "Repeats",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "tcs",
+            label: "TCs",
+            align: "right",
+            widthClass: "90px",
+          },
         ]}
         rows={periodRows}
         footer={periodFooter}

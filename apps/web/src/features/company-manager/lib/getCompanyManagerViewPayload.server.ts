@@ -418,7 +418,6 @@ export async function getCompanyManagerViewPayload(
   const unsortedRosterRows = buildBpRosterRows({
     scopedAssignments: scope.scoped_assignments,
     peopleById: scope.people_by_id,
-    factByTech: new Map(),
     kpis: p4pConfig,
     rubricByKpi,
     orgLabelsById: scope.org_labels_by_id,

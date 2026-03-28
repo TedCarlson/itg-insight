@@ -1,7 +1,11 @@
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
 
-import { isoToday } from "@/features/bp-view/lib/bpViewMetricHelpers";
+import {
+  isoToday,
+  pickBand,
+} from "@/features/bp-view/lib/bpViewMetricHelpers";
+
 import { buildBpKpiStrip } from "@/features/bp-view/lib/buildBpKpiStrip";
 import { buildBpRiskStrip } from "@/features/bp-view/lib/buildBpRiskStrip";
 import { buildBpRosterRows } from "@/features/bp-view/lib/buildBpRosterRows";
@@ -18,6 +22,7 @@ import type {
   CompanySupervisorRosterMetricCell,
   CompanySupervisorRosterRow,
 } from "./companySupervisorView.types";
+
 import { resolveCompanySupervisorScope } from "./resolveCompanySupervisorScope.server";
 
 type Args = {
@@ -37,6 +42,11 @@ type RubricRow = {
   max_value: number | null;
 };
 
+type RosterColumn = {
+  kpi_key: string;
+  label: string;
+};
+
 async function loadViewKpiConfig(
   admin: ReturnType<typeof supabaseAdmin>
 ): Promise<KpiCfg[]> {
@@ -50,42 +60,30 @@ async function loadViewKpiConfig(
     { customer_label?: string | null; label?: string | null }
   >();
 
-  for (const row of (defRows ?? []) as Array<{
-    kpi_key?: unknown;
-    customer_label?: unknown;
-    label?: unknown;
-  }>) {
+  for (const row of defRows ?? []) {
     const k = String(row?.kpi_key ?? "").trim();
     if (!k) continue;
 
     defByKey.set(k, {
-      customer_label:
-        row?.customer_label == null ? null : String(row.customer_label),
-      label: row?.label == null ? null : String(row.label),
+      customer_label: row?.customer_label ?? null,
+      label: row?.label ?? null,
     });
   }
 
   const out: KpiCfg[] = [];
 
-  for (const row of (classRows ?? []) as Array<Record<string, unknown>>) {
+  for (const row of classRows ?? []) {
     const kpi_key = String(row?.kpi_key ?? "").trim();
     if (!kpi_key) continue;
 
-    const enabled =
-      row.is_enabled ?? row.enabled ?? row.is_active ?? row.active ?? true;
-    const show = row.show_in_report ?? row.show ?? true;
+    const enabled = row.is_enabled ?? row.enabled ?? true;
+    const show = row.show_in_report ?? true;
     if (!enabled || !show) continue;
 
     const def = defByKey.get(kpi_key);
 
-    const label =
-      (row.label && String(row.label).trim()) ||
-      (def?.customer_label && String(def.customer_label).trim()) ||
-      (def?.label && String(def.label).trim()) ||
-      kpi_key;
-
-    const sort =
-      row.sort_order ?? row.display_order ?? row.report_order ?? 999;
+    const label = row.label || def?.customer_label || def?.label || kpi_key;
+    const sort = row.sort_order ?? 999;
 
     out.push({
       kpi_key,
@@ -94,16 +92,14 @@ async function loadViewKpiConfig(
     });
   }
 
-  out.sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label));
-  return out;
+  return out.sort((a, b) => a.sort - b.sort);
 }
 
 async function loadRubrics(
   admin: ReturnType<typeof supabaseAdmin>,
   kpiKeys: string[]
 ): Promise<Map<string, RubricRow[]>> {
-  const out = new Map<string, RubricRow[]>();
-  if (!kpiKeys.length) return out;
+  const map = new Map<string, RubricRow[]>();
 
   const { data } = await admin
     .from("metrics_kpi_rubric")
@@ -111,39 +107,69 @@ async function loadRubrics(
     .eq("is_active", true)
     .in("kpi_key", kpiKeys);
 
-  for (const row of (data ?? []) as Array<{
-    kpi_key: string;
-    band_key: BandKey;
-    min_value: number | null;
-    max_value: number | null;
-  }>) {
-    const key = String(row.kpi_key);
-    const arr = out.get(key) ?? [];
-    arr.push({
-      kpi_key: key,
-      band_key: row.band_key,
-      min_value: row.min_value,
-      max_value: row.max_value,
-    });
-    out.set(key, arr);
+  for (const row of data ?? []) {
+    const arr = map.get(row.kpi_key) ?? [];
+    arr.push(row);
+    map.set(row.kpi_key, arr);
   }
 
-  return out;
+  return map;
 }
 
 function pct(part: number, total: number): number | null {
-  if (total <= 0) return null;
-  return (100 * part) / total;
+  return total > 0 ? (100 * part) / total : null;
+}
+
+function safeNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parityPrimaryKpiAggregate(
+  row: CompanySupervisorParityRow,
+  rosterColumns: RosterColumn[]
+) {
+  const primaryKeys = rosterColumns.slice(0, 3).map((col) => col.kpi_key);
+
+  const values = primaryKeys
+    .map((kpiKey) => row.metrics.find((metric) => metric.kpi_key === kpiKey))
+    .map((metric) => safeNumber(metric?.value))
+    .filter((value): value is number => value != null);
+
+  if (!values.length) return -1;
+
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function sortParityRows(
+  rows: CompanySupervisorParityRow[],
+  rosterColumns: RosterColumn[]
+): CompanySupervisorParityRow[] {
+  return [...rows].sort((a, b) => {
+    const aHasRows = a.hc > 0 ? 1 : 0;
+    const bHasRows = b.hc > 0 ? 1 : 0;
+
+    if (aHasRows !== bHasRows) return bHasRows - aHasRows;
+
+    const aPrimary = parityPrimaryKpiAggregate(a, rosterColumns);
+    const bPrimary = parityPrimaryKpiAggregate(b, rosterColumns);
+
+    if (aPrimary !== bPrimary) return bPrimary - aPrimary;
+
+    if (a.hc !== b.hc) return b.hc - a.hc;
+
+    return a.label.localeCompare(b.label);
+  });
 }
 
 function buildParityRows(
   rosterRows: CompanySupervisorRosterRow[],
-  rosterColumns: Array<{ kpi_key: string; label: string }>
+  rosterColumns: RosterColumn[],
+  rubricByKpi: Map<string, RubricRow[]>
 ): CompanySupervisorParityRow[] {
   const groups = new Map<string, CompanySupervisorRosterRow[]>();
 
   for (const row of rosterRows) {
-    const key = row.contractor_name?.trim() || row.team_class || "Unknown";
+    const key = row.contractor_name || row.team_class || "Unknown";
     const arr = groups.get(key) ?? [];
     arr.push(row);
     groups.set(key, arr);
@@ -154,29 +180,21 @@ function buildParityRows(
   for (const [label, rows] of groups.entries()) {
     const metrics: CompanySupervisorRosterMetricCell[] = rosterColumns.map(
       (col) => {
-        const cells = rows
-          .map((row) => row.metrics.find((metric) => metric.kpi_key === col.kpi_key))
-          .filter(
-            (cell): cell is CompanySupervisorRosterMetricCell => cell != null
-          );
-
-        const nums = cells
-          .map((cell) => cell.value)
-          .filter((value): value is number => value != null && Number.isFinite(value));
+        const values = rows
+          .map((r) => r.metrics.find((m) => m.kpi_key === col.kpi_key)?.value)
+          .filter((v): v is number => v != null && Number.isFinite(v));
 
         const avg =
-          nums.length > 0
-            ? nums.reduce((sum, value) => sum + value, 0) / nums.length
+          values.length > 0
+            ? values.reduce((sum, value) => sum + value, 0) / values.length
             : null;
-
-        const exemplar = cells[0];
 
         return {
           kpi_key: col.kpi_key,
           label: col.label,
           value: avg,
           value_display: avg == null ? null : avg.toFixed(1),
-          band_key: exemplar?.band_key ?? "NO_DATA",
+          band_key: pickBand(avg, rubricByKpi.get(col.kpi_key)),
           delta_value: null,
           delta_display: null,
           rank_value: null,
@@ -197,8 +215,7 @@ function buildParityRows(
     });
   }
 
-  out.sort((a, b) => a.label.localeCompare(b.label));
-  return out;
+  return sortParityRows(out, rosterColumns);
 }
 
 export async function getCompanySupervisorViewPayload(
@@ -206,64 +223,61 @@ export async function getCompanySupervisorViewPayload(
 ): Promise<CompanySupervisorPayload> {
   const admin = supabaseAdmin();
 
-  const [scope, p4pConfig] = await Promise.all([
+  const [scope, config] = await Promise.all([
     resolveCompanySupervisorScope(),
     loadViewKpiConfig(admin),
   ]);
 
   const rubricByKpi = await loadRubrics(
     admin,
-    p4pConfig.map((k) => k.kpi_key)
+    config.map((k) => k.kpi_key)
   );
 
   const techIds = Array.from(
     new Set(
       scope.scoped_assignments
-        .map((r) => String(r.tech_id ?? ""))
-        .filter(Boolean)
+        .map((r) => {
+          const value = r.tech_id;
+          return value == null ? null : String(value).trim();
+        })
+        .filter((value): value is string => Boolean(value))
     )
   );
 
   const pcOrgIds = Array.from(
     new Set(
       scope.scoped_assignments
-        .map((r) => String(r.pc_org_id ?? ""))
-        .filter(Boolean)
+        .map((r) => {
+          const value = r.pc_org_id;
+          return value == null ? null : String(value).trim();
+        })
+        .filter((value): value is string => Boolean(value))
     )
   );
 
   const [kpiOverrides, workMixByTech] = await Promise.all([
-    resolveAllBpKpis({
-      admin,
-      techIds,
-      pcOrgIds,
-      range: args.range,
-    }),
-    resolveBpWorkMixByTech({
-      admin,
-      techIds,
-      pcOrgIds,
-      range: args.range,
-    }),
+    resolveAllBpKpis({ admin, techIds, pcOrgIds, range: args.range }),
+    resolveBpWorkMixByTech({ admin, techIds, pcOrgIds, range: args.range }),
   ]);
 
-  const rosterColumns = p4pConfig.map((k) => ({
+  const rosterColumns: RosterColumn[] = config.map((k) => ({
     kpi_key: k.kpi_key,
     label: k.label,
   }));
 
-  const unsortedRosterRows = buildBpRosterRows({
+  const baseRows = buildBpRosterRows({
     scopedAssignments: scope.scoped_assignments,
     peopleById: scope.people_by_id,
-    factByTech: new Map(),
-    kpis: p4pConfig,
+    kpis: config,
     rubricByKpi,
     orgLabelsById: scope.org_labels_by_id,
     workMixByTech,
     kpiOverrides,
-  }).map((row) => {
+  });
+
+  const enrichedRows: CompanySupervisorRosterRow[] = baseRows.map((row) => {
     const assignment = scope.scoped_assignments.find(
-      (a) => String(a.tech_id ?? "") === row.tech_id
+      (a) => String(a.tech_id ?? "").trim() === row.tech_id
     );
 
     return {
@@ -273,46 +287,42 @@ export async function getCompanySupervisorViewPayload(
         assignment?.contractor_name == null
           ? null
           : String(assignment.contractor_name).trim() || null,
-    };
-  }) as CompanySupervisorRosterRow[];
+    } as CompanySupervisorRosterRow;
+  });
 
   const roster_rows = sortBpRosterRows(
-    unsortedRosterRows,
+    enrichedRows,
     rosterColumns
   ) as CompanySupervisorRosterRow[];
 
-  const parityRows = buildParityRows(roster_rows, rosterColumns);
+  const parityRows = buildParityRows(
+    roster_rows,
+    rosterColumns,
+    rubricByKpi
+  );
 
   const kpi_strip = buildBpKpiStrip({
-    rosterRows: roster_rows as any,
-    kpis: p4pConfig,
+    rosterRows: roster_rows,
+    kpis: config,
     rubricByKpi,
   });
 
   const risk_strip = buildBpRiskStrip({
-    rosterRows: roster_rows as any,
-    kpis: p4pConfig,
+    rosterRows: roster_rows,
+    kpis: config,
   });
 
   let installs = 0;
   let tcs = 0;
   let sros = 0;
 
-  for (const row of roster_rows) {
-    installs += row.work_mix.installs;
-    tcs += row.work_mix.tcs;
-    sros += row.work_mix.sros;
+  for (const r of roster_rows) {
+    installs += r.work_mix.installs;
+    tcs += r.work_mix.tcs;
+    sros += r.work_mix.sros;
   }
 
   const total = installs + tcs + sros;
-
-  const orgIds = Array.from(
-    new Set(
-      scope.scoped_assignments
-        .map((r) => String(r.pc_org_id ?? ""))
-        .filter(Boolean)
-    )
-  );
 
   return {
     header: {
@@ -321,7 +331,7 @@ export async function getCompanySupervisorViewPayload(
       org_label:
         scope.org_labels_by_id.get(scope.selected_pc_org_id) ??
         scope.selected_pc_org_id,
-      org_count: orgIds.length,
+      org_count: pcOrgIds.length,
       contractor_name: scope.company_label ?? null,
       rep_full_name: scope.rep_full_name ?? null,
       headcount: techIds.length,

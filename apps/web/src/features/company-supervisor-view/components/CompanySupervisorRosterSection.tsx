@@ -3,6 +3,7 @@
 import { Card } from "@/components/ui/Card";
 import BpViewRosterSurface from "@/features/bp-view/components/BpViewRosterSurface";
 
+import type { BpViewRosterRow } from "@/features/bp-view/lib/bpView.types";
 import type { CompanySupervisorRosterRow } from "../lib/companySupervisorView.types";
 import type { CompanySupervisorPrimarySegment } from "./CompanySupervisorParityTable";
 
@@ -25,6 +26,12 @@ export default function CompanySupervisorRosterSection(props: {
     onSelectRow,
   } = props;
 
+  /**
+   * IMPORTANT:
+   * We only FILTER here.
+   * We do NOT sort here.
+   * Order must remain exactly as built upstream by the payload layer.
+   */
   const filteredRows =
     primarySegment === "ITG"
       ? rows.filter((row) => row.team_class === "ITG")
@@ -58,7 +65,7 @@ export default function CompanySupervisorRosterSection(props: {
 
       <BpViewRosterSurface
         columns={columns}
-        rows={filteredRows as any}
+        rows={filteredRows as BpViewRosterRow[]}
         onSelectRow={(row) => onSelectRow(row as CompanySupervisorRosterRow)}
       />
     </Card>

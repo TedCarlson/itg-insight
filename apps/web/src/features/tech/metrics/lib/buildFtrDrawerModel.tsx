@@ -1,4 +1,4 @@
-import Sparkline from "@/features/tech/metrics/components/Sparkline";
+import Sparkline from "@/shared/components/Sparkline";
 import MetricPeriodDetailTable from "@/features/tech/metrics/components/MetricPeriodDetailTable";
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { MetricsRangeKey as RangeKey } from "@/shared/kpis/core/types";
@@ -46,8 +46,15 @@ function computeRangeValue(
     ftr_fail_jobs: number | null;
   }>
 ): string {
-  const jobs = rows.reduce((sum, row) => sum + (row.total_ftr_contact_jobs ?? 0), 0);
-  const fails = rows.reduce((sum, row) => sum + (row.ftr_fail_jobs ?? 0), 0);
+  const jobs = rows.reduce(
+    (sum, row) => sum + (row.total_ftr_contact_jobs ?? 0),
+    0
+  );
+  const fails = rows.reduce(
+    (sum, row) => sum + (row.ftr_fail_jobs ?? 0),
+    0
+  );
+
   return formatPct(computePct(jobs, fails));
 }
 
@@ -66,13 +73,25 @@ export function buildFtrDrawerModel(args: {
   const summaryRows: Array<{ label: string; value: string }> = [];
 
   if (args.activeRange === "FM") {
-    summaryRows.push({ label: "Current FM", value: computeRangeValue(currentRows) });
+    summaryRows.push({
+      label: "Current FM",
+      value: computeRangeValue(currentRows),
+    });
   } else if (args.activeRange === "PREVIOUS") {
-    summaryRows.push({ label: "Previous FM", value: computeRangeValue(previousRows) });
+    summaryRows.push({
+      label: "Previous FM",
+      value: computeRangeValue(previousRows),
+    });
   } else if (args.activeRange === "3FM") {
-    summaryRows.push({ label: "Last 3 FM", value: computeRangeValue(last3Rows) });
+    summaryRows.push({
+      label: "Last 3 FM",
+      value: computeRangeValue(last3Rows),
+    });
   } else if (args.activeRange === "12FM") {
-    summaryRows.push({ label: "Last 12 FM", value: computeRangeValue(last12Rows) });
+    summaryRows.push({
+      label: "Last 12 FM",
+      value: computeRangeValue(last12Rows),
+    });
   }
 
   const totalJobs = selectedRows.reduce(
@@ -127,7 +146,12 @@ export function buildFtrDrawerModel(args: {
         title="Period Detail"
         columns={[
           { key: "metric_date", label: "Metric Date" },
-          { key: "ftr_pct", label: "FTR %", align: "right", widthClass: "90px" },
+          {
+            key: "ftr_pct",
+            label: "FTR %",
+            align: "right",
+            widthClass: "90px",
+          },
           { key: "jobs", label: "Jobs", align: "right", widthClass: "90px" },
           { key: "fails", label: "Fails", align: "right", widthClass: "90px" },
         ]}

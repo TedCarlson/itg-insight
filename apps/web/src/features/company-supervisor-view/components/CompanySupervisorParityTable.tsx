@@ -118,6 +118,11 @@ export default function CompanySupervisorParityTable(props: {
   const { rows, rosterColumns } = props;
   const [isOpen, setIsOpen] = useState(false);
 
+  /**
+   * IMPORTANT:
+   * We do NOT sort here.
+   * Parity row order must remain exactly as built upstream by the payload layer.
+   */
   const gridTemplate = `180px repeat(${rosterColumns.length}, minmax(84px, 1fr)) 72px`;
   const minWidth = "1040px";
 

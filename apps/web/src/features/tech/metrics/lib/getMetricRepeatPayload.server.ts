@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computePct(denominator: number, numerator: number): number | null {
-  if (denominator > 0) return (100 * numerator) / denominator;
   return null;
 }
 
@@ -67,24 +63,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   ]);
 }
 
-function computeRowRepeat(raw: Record<string, unknown>) {
-  const tcs = pickTcs(raw);
-  const repeats = pickRepeatCount(raw);
+function extractRepeatFacts(raw: Record<string, unknown>) {
+  const tcCount = pickTcs(raw);
+  const repeatCount = pickRepeatCount(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (tcs != null && tcs > 0) {
-    return {
-      tcs,
-      repeats,
-      rate: computePct(tcs, repeats ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ tcCount, repeatCount }],
+    getNumerator: (row) => row.repeatCount ?? 0,
+    getDenominator: (row) => row.tcCount ?? 0,
+  });
 
   return {
-    tcs,
-    repeats,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    repeat_count: repeatCount,
+    tc_count: tcCount,
+    repeat_rate: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -125,28 +119,26 @@ export async function getMetricRepeatPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalTcs = 0;
-  let totalRepeats = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractRepeatFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRowRepeat(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.repeat_count ?? 0,
+    getDenominator: (row) => row.tc_count ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.tcs != null && rowData.tcs > 0) {
-      totalTcs += rowData.tcs;
-      totalRepeats += rowData.repeats ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.repeat_rate)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryRate: number | null = null;
-  if (totalTcs > 0) {
-    summaryRate = computePct(totalTcs, totalRepeats);
-  } else if (fallbackRates.length > 0) {
-    summaryRate =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryRate =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -158,17 +150,17 @@ export async function getMetricRepeatPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRowRepeat(r.raw);
+      const facts = extractRepeatFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        repeat_count: rowData.repeats,
-        tc_count: rowData.tcs,
-        repeat_rate: rowData.rate,
-        kpi_value: rowData.rate,
+        repeat_count: facts.repeat_count,
+        tc_count: facts.tc_count,
+        repeat_rate: facts.repeat_rate,
+        kpi_value: facts.repeat_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -194,7 +186,7 @@ export async function getMetricRepeatPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRowRepeat(x.row.raw);
+        const facts = extractRepeatFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -202,17 +194,17 @@ export async function getMetricRepeatPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          repeat_count: rowData.repeats,
-          tc_count: rowData.tcs,
-          repeat_rate: rowData.rate,
+          repeat_count: facts.repeat_count,
+          tc_count: facts.tc_count,
+          repeat_rate: facts.repeat_rate,
         };
       }),
       trend,
     },
     summary: {
       repeat_rate: summaryRate,
-      repeat_count: totalRepeats,
-      tc_count: totalTcs,
+      repeat_count: summaryAgg.numerator,
+      tc_count: summaryAgg.denominator,
     },
     trend,
   };

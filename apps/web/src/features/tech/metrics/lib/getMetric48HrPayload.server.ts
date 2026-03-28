@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computePct(eligible: number, orders: number): number | null {
-  if (eligible > 0) return (100 * orders) / eligible;
   return null;
 }
 
@@ -67,24 +63,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   ]);
 }
 
-function computeRow48Hr(raw: Record<string, unknown>) {
+function extract48HrFacts(raw: Record<string, unknown>) {
   const eligible = pickEligible(raw);
   const orders = pickOrders(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (eligible != null && eligible > 0) {
-    return {
-      eligible,
-      orders,
-      rate: computePct(eligible, orders ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ eligible, orders }],
+    getNumerator: (row) => row.orders ?? 0,
+    getDenominator: (row) => row.eligible ?? 0,
+  });
 
   return {
-    eligible,
-    orders,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    contact_orders_48hr: orders,
+    eligible_jobs_48hr: eligible,
+    callback_rate_48hr: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -125,28 +119,26 @@ export async function getMetric48HrPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalEligible = 0;
-  let totalOrders = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extract48HrFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRow48Hr(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.contact_orders_48hr ?? 0,
+    getDenominator: (row) => row.eligible_jobs_48hr ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.eligible != null && rowData.eligible > 0) {
-      totalEligible += rowData.eligible;
-      totalOrders += rowData.orders ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.callback_rate_48hr)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryRate: number | null = null;
-  if (totalEligible > 0) {
-    summaryRate = computePct(totalEligible, totalOrders);
-  } else if (fallbackRates.length > 0) {
-    summaryRate =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryRate =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -158,17 +150,17 @@ export async function getMetric48HrPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRow48Hr(r.raw);
+      const facts = extract48HrFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        contact_orders_48hr: rowData.orders,
-        eligible_jobs_48hr: rowData.eligible,
-        callback_rate_48hr: rowData.rate,
-        kpi_value: rowData.rate,
+        contact_orders_48hr: facts.contact_orders_48hr,
+        eligible_jobs_48hr: facts.eligible_jobs_48hr,
+        callback_rate_48hr: facts.callback_rate_48hr,
+        kpi_value: facts.callback_rate_48hr,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -194,7 +186,7 @@ export async function getMetric48HrPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRow48Hr(x.row.raw);
+        const facts = extract48HrFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -202,17 +194,17 @@ export async function getMetric48HrPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          contact_orders_48hr: rowData.orders,
-          eligible_jobs_48hr: rowData.eligible,
-          callback_rate_48hr: rowData.rate,
+          contact_orders_48hr: facts.contact_orders_48hr,
+          eligible_jobs_48hr: facts.eligible_jobs_48hr,
+          callback_rate_48hr: facts.callback_rate_48hr,
         };
       }),
       trend,
     },
     summary: {
       callback_rate_48hr: summaryRate,
-      contact_orders_48hr: totalOrders,
-      eligible_jobs_48hr: totalEligible,
+      contact_orders_48hr: summaryAgg.numerator,
+      eligible_jobs_48hr: summaryAgg.denominator,
     },
     trend,
   };

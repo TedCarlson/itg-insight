@@ -1,5 +1,6 @@
-import Sparkline from "@/features/tech/metrics/components/Sparkline";
+import Sparkline from "@/shared/components/Sparkline";
 import MetricPeriodDetailTable from "@/features/tech/metrics/components/MetricPeriodDetailTable";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { MetricsRangeKey as RangeKey } from "@/shared/kpis/core/types";
 
@@ -38,11 +39,6 @@ function formatPct(n: number | null): string {
   return `${n.toFixed(1)}%`;
 }
 
-function computePct(totalAppts: number, metCount: number): number | null {
-  if (totalAppts > 0) return (100 * metCount) / totalAppts;
-  return null;
-}
-
 function computeRangeValue(
   rows: Array<{
     total_appts: number | null;
@@ -50,21 +46,18 @@ function computeRangeValue(
     met_rate: number | null;
   }>
 ): string {
-  const totalAppts = rows.reduce((sum, row) => sum + (row.total_appts ?? 0), 0);
-  const metCount = rows.reduce((sum, row) => sum + (row.met_count ?? 0), 0);
+  const agg = aggregateRatio({
+    rows,
+    getNumerator: (row) => row.met_count ?? 0,
+    getDenominator: (row) => row.total_appts ?? 0,
+  });
 
-  if (totalAppts > 0) {
-    return formatPct(computePct(totalAppts, metCount));
+  if (agg.denominator > 0) {
+    return formatPct(agg.value);
   }
 
-  const fallbackRates = rows
-    .map((row) => row.met_rate)
-    .filter((v): v is number => v != null && Number.isFinite(v));
-
-  if (fallbackRates.length > 0) {
-    return formatPct(
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
-    );
+  if (rows.length === 1) {
+    return formatPct(rows[0]?.met_rate ?? null);
   }
 
   return "—";
@@ -106,14 +99,26 @@ export function buildMetDrawerModel(args: {
     });
   }
 
-  const totalAppts = selectedRows.reduce((sum, row) => sum + (row.total_appts ?? 0), 0);
-  const totalMet = selectedRows.reduce((sum, row) => sum + (row.met_count ?? 0), 0);
+  const totalAgg = aggregateRatio({
+    rows: selectedRows,
+    getNumerator: (row) => row.met_count ?? 0,
+    getDenominator: (row) => row.total_appts ?? 0,
+  });
+
+  const totalAppts = totalAgg.denominator;
+  const totalMet = totalAgg.numerator;
   const totalRate = computeRangeValue(selectedRows);
 
   const periodRows = selectedRows.map((row) => {
+    const rowAgg = aggregateRatio({
+      rows: [row],
+      getNumerator: (r) => r.met_count ?? 0,
+      getDenominator: (r) => r.total_appts ?? 0,
+    });
+
     const rowPct =
-      row.total_appts != null && row.total_appts > 0
-        ? formatPct(computePct(row.total_appts, row.met_count ?? 0))
+      rowAgg.denominator > 0
+        ? formatPct(rowAgg.value)
         : formatPct(row.met_rate);
 
     return {
@@ -152,10 +157,28 @@ export function buildMetDrawerModel(args: {
       <MetricPeriodDetailTable
         title="Period Detail"
         columns={[
-          { key: "metric_date", label: "Metric Date" },
-          { key: "met_pct", label: "MET %", align: "right", widthClass: "90px" },
-          { key: "met_count", label: "Met", align: "right", widthClass: "90px" },
-          { key: "total_appts", label: "Appts", align: "right", widthClass: "90px" },
+          {
+            key: "metric_date",
+            label: "Metric Date",
+          },
+          {
+            key: "met_pct",
+            label: "MET %",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "met_count",
+            label: "Met",
+            align: "right",
+            widthClass: "90px",
+          },
+          {
+            key: "total_appts",
+            label: "Appts",
+            align: "right",
+            widthClass: "90px",
+          },
         ]}
         rows={periodRows}
         footer={periodFooter}

@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -20,12 +21,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
   return null;
 }
 
-function computeFtr(contact: number, fails: number): number {
-  if (contact > 0) return 100 * (1 - fails / contact);
-  if (fails > 0) return 0;
-  return 0;
-}
-
 function parseRaw(raw: unknown): Record<string, unknown> {
   if (!raw) return {};
 
@@ -41,6 +36,43 @@ function parseRaw(raw: unknown): Record<string, unknown> {
   }
 
   return typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+}
+
+function extractFtrFacts(raw: Record<string, unknown>) {
+  const totalContactJobs = pickNum(raw, [
+    "Total FTR/Contact Jobs",
+    "total_ftr_contact_jobs",
+    "ftr_contact_jobs",
+  ]);
+
+  const ftrFailJobs = pickNum(raw, [
+    "FTRFailJobs",
+    "ftr_fail_jobs",
+    "FTR Fail Jobs",
+  ]);
+
+  const agg = aggregateRatio({
+    rows: [{ totalContactJobs, ftrFailJobs }],
+    getNumerator: (row) => {
+      const contact = row.totalContactJobs ?? 0;
+      const fails = row.ftrFailJobs ?? 0;
+      return Math.max(0, contact - fails);
+    },
+    getDenominator: (row) => row.totalContactJobs ?? 0,
+  });
+
+  const ftrRate =
+    agg.denominator > 0
+      ? agg.value
+      : (ftrFailJobs ?? 0) > 0
+        ? 0
+        : null;
+
+  return {
+    total_ftr_contact_jobs: totalContactJobs,
+    ftr_fail_jobs: ftrFailJobs,
+    ftr_rate: ftrRate,
+  };
 }
 
 export async function getMetricFtrPayload(args: Args) {
@@ -80,35 +112,29 @@ export async function getMetricFtrPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalContact = 0;
-  let totalFails = 0;
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractFtrFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const r = item.row;
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => {
+      const contact = row.total_ftr_contact_jobs ?? 0;
+      const fails = row.ftr_fail_jobs ?? 0;
+      return Math.max(0, contact - fails);
+    },
+    getDenominator: (row) => row.total_ftr_contact_jobs ?? 0,
+  });
 
-    const contact = pickNum(r.raw, [
-      "Total FTR/Contact Jobs",
-      "total_ftr_contact_jobs",
-      "ftr_contact_jobs",
-    ]);
-
-    const fails = pickNum(r.raw, [
-      "FTRFailJobs",
-      "ftr_fail_jobs",
-      "FTR Fail Jobs",
-    ]);
-
-    if (contact != null && contact > 0) {
-      totalContact += contact;
-      totalFails += fails ?? 0;
-    } else if (fails != null && fails > 0) {
-      totalFails += fails;
-    }
-  }
+  const totalContact = summaryAgg.denominator;
+  const totalFails = selectedFacts.reduce(
+    (sum, row) => sum + (row.ftr_fail_jobs ?? 0),
+    0
+  );
 
   const summaryFtr =
-    totalContact > 0
-      ? computeFtr(totalContact, totalFails)
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
       : totalFails > 0
         ? 0
         : null;
@@ -123,34 +149,16 @@ export async function getMetricFtrPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const contact = pickNum(r.raw, [
-        "Total FTR/Contact Jobs",
-        "total_ftr_contact_jobs",
-        "ftr_contact_jobs",
-      ]);
-
-      const fails = pickNum(r.raw, [
-        "FTRFailJobs",
-        "ftr_fail_jobs",
-        "FTR Fail Jobs",
-      ]);
-
-      let ftr: number | null = null;
-
-      if (contact != null && contact > 0) {
-        ftr = computeFtr(contact, fails ?? 0);
-      } else if (fails != null && fails > 0) {
-        ftr = 0;
-      }
+      const facts = extractFtrFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        total_ftr_contact_jobs: contact,
-        ftr_fail_jobs: fails,
-        kpi_value: ftr,
+        total_ftr_contact_jobs: facts.total_ftr_contact_jobs,
+        ftr_fail_jobs: facts.ftr_fail_jobs,
+        kpi_value: facts.ftr_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -176,17 +184,7 @@ export async function getMetricFtrPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const contact = pickNum(x.row.raw, [
-          "Total FTR/Contact Jobs",
-          "total_ftr_contact_jobs",
-          "ftr_contact_jobs",
-        ]);
-
-        const fails = pickNum(x.row.raw, [
-          "FTRFailJobs",
-          "ftr_fail_jobs",
-          "FTR Fail Jobs",
-        ]);
+        const facts = extractFtrFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -194,8 +192,8 @@ export async function getMetricFtrPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          total_ftr_contact_jobs: contact,
-          ftr_fail_jobs: fails,
+          total_ftr_contact_jobs: facts.total_ftr_contact_jobs,
+          ftr_fail_jobs: facts.ftr_fail_jobs,
         };
       }),
       trend,

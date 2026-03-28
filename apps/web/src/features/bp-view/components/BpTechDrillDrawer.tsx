@@ -12,6 +12,17 @@ import type {
 
 import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
 import type { KpiBandKey as BandKey } from "@/shared/kpis/core/types";
+import {
+  is48HrKey,
+  isMetKey,
+  isPurePassKey,
+  isRepeatKey,
+  isReworkKey,
+  isSoiKey,
+  isTnpsKey,
+  isToolUsageKey,
+} from "@/shared/kpis/core/kpiKeyGuards";
+import { aggregateTnps } from "@/shared/kpis/core/aggregateTnps";
 
 import { buildFtrDrawerModel } from "@/features/tech/metrics/lib/buildFtrDrawerModel";
 import { buildToolUsageDrawerModel } from "@/features/tech/metrics/lib/buildToolUsageDrawerModel";
@@ -26,8 +37,7 @@ import BpMetricSparkline from "./BpMetricSparkline";
 import MetricPeriodDetailTable from "./MetricPeriodDetailTable";
 import BpTnpsSentimentMix from "./BpTnpsSentimentMix";
 
-function mapBpRangeToTechRange(range: "FM" | "PREVIOUS" | "3FM" | "12FM") {
-  if (range === "PREVIOUS") return "FM";
+function mapBpRangeToTechRange(range: BpRangeKey): BpRangeKey {
   return range;
 }
 
@@ -112,8 +122,8 @@ function toScorecardTile(metric: BpViewRosterMetricCell): ScorecardTile {
       label: bandLabel(bandKey),
       paint: bandPaint(bandKey),
     },
-    momentum: ({
-      state: "STABLE",
+    momentum: {
+      state: "stable",
       delta: null,
       delta_display: null,
       arrow: null,
@@ -122,7 +132,7 @@ function toScorecardTile(metric: BpViewRosterMetricCell): ScorecardTile {
         long_days: 30,
       },
       notes: null,
-    } as unknown) as ScorecardTile["momentum"],
+    },
     context: {
       sample_short: null,
       sample_long: null,
@@ -136,34 +146,6 @@ function fmtNum(value: number | null | undefined, decimals = 2) {
   return value.toFixed(decimals);
 }
 
-function computeTnpsScore(
-  surveys: number,
-  promoters: number,
-  detractors: number
-): number | null {
-  if (surveys > 0) return (100 * (promoters - detractors)) / surveys;
-  return null;
-}
-
-function buildRangeTnpsValue(
-  rows: Array<{
-    tnps_surveys: number | null;
-    tnps_promoters: number | null;
-    tnps_detractors: number | null;
-  }>
-) {
-  const surveys = rows.reduce((sum, row) => sum + (row.tnps_surveys ?? 0), 0);
-  const promoters = rows.reduce(
-    (sum, row) => sum + (row.tnps_promoters ?? 0),
-    0
-  );
-  const detractors = rows.reduce(
-    (sum, row) => sum + (row.tnps_detractors ?? 0),
-    0
-  );
-  return fmtNum(computeTnpsScore(surveys, promoters, detractors), 2);
-}
-
 function buildBpTnpsDrawerModel(args: {
   payload: any;
   activeRange: BpRangeKey;
@@ -172,49 +154,40 @@ function buildBpTnpsDrawerModel(args: {
   const trend = args.payload?.debug?.trend ?? args.payload?.trend ?? [];
 
   const currentRows = selectedRows.slice(0, 1);
+  const previousRows = selectedRows.slice(0, 1);
   const last3Rows = selectedRows.slice(0, 3);
-  const last12Rows = selectedRows;
+  const last12Rows = selectedRows.slice(0, 12);
 
-  const summaryRows: Array<{ label: string; value: string }> = [
-    { label: "Current FM", value: buildRangeTnpsValue(currentRows) },
-  ];
+  const summaryRows: Array<{ label: string; value: string }> = [];
 
-  if (args.activeRange !== "FM") {
+  if (args.activeRange === "FM") {
+    summaryRows.push({
+      label: "Current FM",
+      value: fmtNum(aggregateTnps(currentRows).tnps_score, 2),
+    });
+  } else if (args.activeRange === "PREVIOUS") {
+    summaryRows.push({
+      label: "Previous FM",
+      value: fmtNum(aggregateTnps(previousRows).tnps_score, 2),
+    });
+  } else if (args.activeRange === "3FM") {
     summaryRows.push({
       label: "Last 3 FM",
-      value: buildRangeTnpsValue(last3Rows),
+      value: fmtNum(aggregateTnps(last3Rows).tnps_score, 2),
     });
-  }
-
-  if (args.activeRange === "12FM") {
+  } else if (args.activeRange === "12FM") {
     summaryRows.push({
       label: "Last 12 FM",
-      value: buildRangeTnpsValue(last12Rows),
+      value: fmtNum(aggregateTnps(last12Rows).tnps_score, 2),
     });
   }
 
-  const totalSurveys =
-    args.payload?.summary?.tnps_surveys ??
-    selectedRows.reduce(
-      (sum: number, row: any) => sum + (row.tnps_surveys ?? 0),
-      0
-    );
+  const totals = aggregateTnps(selectedRows);
 
-  const totalPromoters =
-    args.payload?.summary?.tnps_promoters ??
-    selectedRows.reduce(
-      (sum: number, row: any) => sum + (row.tnps_promoters ?? 0),
-      0
-    );
-
-  const totalDetractors =
-    args.payload?.summary?.tnps_detractors ??
-    selectedRows.reduce(
-      (sum: number, row: any) => sum + (row.tnps_detractors ?? 0),
-      0
-    );
-
-  const totalScore = buildRangeTnpsValue(selectedRows);
+  const totalSurveys = totals.tnps_surveys;
+  const totalPromoters = totals.tnps_promoters;
+  const totalDetractors = totals.tnps_detractors;
+  const totalScore = fmtNum(totals.tnps_score, 2);
 
   const sparkValues = trend.map((row: any) => ({
     value: row.kpi_value,
@@ -223,11 +196,13 @@ function buildBpTnpsDrawerModel(args: {
 
   const periodRows = selectedRows.map((row: any) => {
     const score = fmtNum(
-      computeTnpsScore(
-        row.tnps_surveys ?? 0,
-        row.tnps_promoters ?? 0,
-        row.tnps_detractors ?? 0
-      ),
+      aggregateTnps([
+        {
+          tnps_surveys: row.tnps_surveys,
+          tnps_promoters: row.tnps_promoters,
+          tnps_detractors: row.tnps_detractors,
+        },
+      ]).tnps_score,
       2
     );
 
@@ -257,7 +232,7 @@ function buildBpTnpsDrawerModel(args: {
       <BpMetricSparkline
         label="tNPS Trend"
         values={sparkValues}
-        headlineValue={args.payload?.summary?.tnps_score ?? null}
+        headlineValue={args.payload?.summary?.tnps_score ?? totals.tnps_score ?? null}
       />
     ),
     periodDetail: (
@@ -320,10 +295,7 @@ type RegistryEntry = {
 const KPI_REGISTRY: RegistryEntry[] = [
   {
     id: "tnps",
-    test: (metric) => {
-      const k = metric.kpi_key.toLowerCase();
-      return k.includes("tnps");
-    },
+    test: (metric) => isTnpsKey(metric.kpi_key),
     build: ({ payload, range }) =>
       buildBpTnpsDrawerModel({
         payload,
@@ -342,10 +314,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "tool_usage",
-    test: (metric) => {
-      const k = metric.kpi_key.toLowerCase();
-      return k.includes("tool_usage") || k.includes("toolusage");
-    },
+    test: (metric) => isToolUsageKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       buildToolUsageDrawerModel({
         tile,
@@ -355,10 +324,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "pure_pass",
-    test: (metric) => {
-      const k = metric.kpi_key.toLowerCase();
-      return k.includes("pure_pass") || k.includes("purepass");
-    },
+    test: (metric) => isPurePassKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       buildPurePassDrawerModel({
         tile,
@@ -368,10 +334,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "48hr",
-    test: (metric) => {
-      const k = metric.kpi_key.toLowerCase();
-      return k.includes("48hr") || k.includes("48_hr") || k.includes("callback");
-    },
+    test: (metric) => is48HrKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       build48HrDrawerModel({
         tile,
@@ -381,7 +344,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "repeat",
-    test: (metric) => metric.kpi_key.toLowerCase().includes("repeat"),
+    test: (metric) => isRepeatKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       buildRepeatDrawerModel({
         tile,
@@ -391,7 +354,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "soi",
-    test: (metric) => metric.kpi_key.toLowerCase().includes("soi"),
+    test: (metric) => isSoiKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       buildSoiDrawerModel({
         tile,
@@ -401,7 +364,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "rework",
-    test: (metric) => metric.kpi_key.toLowerCase().includes("rework"),
+    test: (metric) => isReworkKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       buildReworkDrawerModel({
         tile,
@@ -411,10 +374,7 @@ const KPI_REGISTRY: RegistryEntry[] = [
   },
   {
     id: "met",
-    test: (metric) => {
-      const k = metric.kpi_key.toLowerCase();
-      return k === "met" || k === "met_rate" || k.includes("metrate");
-    },
+    test: (metric) => isMetKey(metric.kpi_key),
     build: ({ tile, payload, range }) =>
       buildMetDrawerModel({
         tile,
@@ -471,6 +431,21 @@ export default function BpTechDrillDrawer(props: {
 
   const metrics = useMemo(() => row?.metrics ?? [], [row?.metrics]);
 
+  useEffect(() => {
+    if (!open || !row) {
+      setSelectedKpi(null);
+      setPayload(null);
+      setLoading(false);
+      return;
+    }
+
+    setSelectedKpi((current) => {
+      if (!current) return row.metrics[0]?.kpi_key ?? null;
+      const stillExists = row.metrics.some((metric) => metric.kpi_key === current);
+      return stillExists ? current : (row.metrics[0]?.kpi_key ?? null);
+    });
+  }, [open, row]);
+
   const activeMetric = useMemo(() => {
     if (!metrics.length) return null;
     if (selectedKpi) {
@@ -515,12 +490,12 @@ export default function BpTechDrillDrawer(props: {
           .json()
           .catch(() => null)) as DrillApiResponse | null;
 
-        if (!cancelled) {
-          if (res.ok && json?.ok) {
-            setPayload(json.payload);
-          } else {
-            setPayload(null);
-          }
+        if (cancelled) return;
+
+        if (res.ok && json?.ok) {
+          setPayload(json.payload);
+        } else {
+          setPayload(null);
         }
       } catch {
         if (!cancelled) {

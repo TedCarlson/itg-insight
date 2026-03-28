@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computePct(denominator: number, numerator: number): number | null {
-  if (denominator > 0) return (100 * numerator) / denominator;
   return null;
 }
 
@@ -54,24 +50,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   return pickNum(raw, ["MetRate", "Met Rate", "met_rate", "met_rate_pct"]);
 }
 
-function computeRowMet(raw: Record<string, unknown>) {
+function extractMetFacts(raw: Record<string, unknown>) {
   const totalAppts = pickTotalAppts(raw);
   const metCount = pickMetCount(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (totalAppts != null && totalAppts > 0) {
-    return {
-      totalAppts,
-      metCount,
-      rate: computePct(totalAppts, metCount ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ totalAppts, metCount }],
+    getNumerator: (row) => row.metCount ?? 0,
+    getDenominator: (row) => row.totalAppts ?? 0,
+  });
 
   return {
-    totalAppts,
-    metCount,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    met_count: metCount,
+    total_appts: totalAppts,
+    met_rate: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -112,28 +106,26 @@ export async function getMetricMetPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalAppts = 0;
-  let totalMet = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractMetFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRowMet(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.met_count ?? 0,
+    getDenominator: (row) => row.total_appts ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.totalAppts != null && rowData.totalAppts > 0) {
-      totalAppts += rowData.totalAppts;
-      totalMet += rowData.metCount ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.met_rate)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryRate: number | null = null;
-  if (totalAppts > 0) {
-    summaryRate = computePct(totalAppts, totalMet);
-  } else if (fallbackRates.length > 0) {
-    summaryRate =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryRate =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -145,17 +137,17 @@ export async function getMetricMetPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRowMet(r.raw);
+      const facts = extractMetFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        met_count: rowData.metCount,
-        total_appts: rowData.totalAppts,
-        met_rate: rowData.rate,
-        kpi_value: rowData.rate,
+        met_count: facts.met_count,
+        total_appts: facts.total_appts,
+        met_rate: facts.met_rate,
+        kpi_value: facts.met_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -181,7 +173,7 @@ export async function getMetricMetPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRowMet(x.row.raw);
+        const facts = extractMetFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -189,17 +181,17 @@ export async function getMetricMetPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          met_count: rowData.metCount,
-          total_appts: rowData.totalAppts,
-          met_rate: rowData.rate,
+          met_count: facts.met_count,
+          total_appts: facts.total_appts,
+          met_rate: facts.met_rate,
         };
       }),
       trend,
     },
     summary: {
       met_rate: summaryRate,
-      met_count: totalMet,
-      total_appts: totalAppts,
+      met_count: summaryAgg.numerator,
+      total_appts: summaryAgg.denominator,
     },
     trend,
   };

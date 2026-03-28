@@ -10,7 +10,7 @@ import { getMetricSoiPayload } from "@/features/tech/metrics/lib/getMetricSoiPay
 import { getMetricReworkPayload } from "@/features/tech/metrics/lib/getMetricReworkPayload.server";
 import { getMetricMetPayload } from "@/features/tech/metrics/lib/getMetricMetPayload.server";
 
-type RangeKey = "FM" | "3FM" | "12FM";
+type RangeKey = "FM" | "PREVIOUS" | "3FM" | "12FM";
 
 type DrillResponse = {
   ok: true;
@@ -20,15 +20,13 @@ type DrillResponse = {
 
 function badRequest(message: string) {
   return NextResponse.json(
-    {
-      ok: false,
-      error: message,
-    },
+    { ok: false, error: message },
     { status: 400 }
   );
 }
 
 function normalizeRange(value: string | null): RangeKey {
+  if (value === "PREVIOUS") return "PREVIOUS";
   if (value === "3FM") return "3FM";
   if (value === "12FM") return "12FM";
   return "FM";

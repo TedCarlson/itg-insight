@@ -1,6 +1,7 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
+import { aggregateRatio } from "@/shared/kpis/core/aggregateRatio";
 
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 
@@ -17,11 +18,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
-  return null;
-}
-
-function computePct(denominator: number, numerator: number): number | null {
-  if (denominator > 0) return (100 * numerator) / denominator;
   return null;
 }
 
@@ -59,24 +55,22 @@ function pickDirectRate(raw: Record<string, unknown>) {
   ]);
 }
 
-function computeRowRework(raw: Record<string, unknown>) {
+function extractReworkFacts(raw: Record<string, unknown>) {
   const totalAppts = pickTotalAppts(raw);
   const reworkCount = pickReworkCount(raw);
+  const directRate = pickDirectRate(raw);
 
-  if (totalAppts != null && totalAppts > 0) {
-    return {
-      totalAppts,
-      reworkCount,
-      rate: computePct(totalAppts, reworkCount ?? 0),
-      usesFacts: true,
-    };
-  }
+  const agg = aggregateRatio({
+    rows: [{ totalAppts, reworkCount }],
+    getNumerator: (row) => row.reworkCount ?? 0,
+    getDenominator: (row) => row.totalAppts ?? 0,
+  });
 
   return {
-    totalAppts,
-    reworkCount,
-    rate: pickDirectRate(raw),
-    usesFacts: false,
+    rework_count: reworkCount,
+    total_appts: totalAppts,
+    rework_rate: agg.denominator > 0 ? agg.value : directRate,
+    usesFacts: agg.denominator > 0,
   };
 }
 
@@ -117,28 +111,26 @@ export async function getMetricReworkPayload(args: Args) {
     selectedFiscalMonths,
   } = resolveFiscalSelection(rows, args.range);
 
-  let totalAppts = 0;
-  let totalRework = 0;
-  const fallbackRates: number[] = [];
+  const selectedFacts = selectedFinalRows.map((item) =>
+    extractReworkFacts(item.row.raw)
+  );
 
-  for (const item of selectedFinalRows) {
-    const rowData = computeRowRework(item.row.raw);
+  const summaryAgg = aggregateRatio({
+    rows: selectedFacts,
+    getNumerator: (row) => row.rework_count ?? 0,
+    getDenominator: (row) => row.total_appts ?? 0,
+  });
 
-    if (rowData.usesFacts && rowData.totalAppts != null && rowData.totalAppts > 0) {
-      totalAppts += rowData.totalAppts;
-      totalRework += rowData.reworkCount ?? 0;
-    } else if (rowData.rate != null && Number.isFinite(rowData.rate)) {
-      fallbackRates.push(rowData.rate);
-    }
-  }
+  const fallbackRates = selectedFacts
+    .map((row) => row.rework_rate)
+    .filter((v): v is number => v != null && Number.isFinite(v));
 
-  let summaryRate: number | null = null;
-  if (totalAppts > 0) {
-    summaryRate = computePct(totalAppts, totalRework);
-  } else if (fallbackRates.length > 0) {
-    summaryRate =
-      fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length;
-  }
+  const summaryRate =
+    summaryAgg.denominator > 0
+      ? summaryAgg.value
+      : fallbackRates.length > 0
+        ? fallbackRates.reduce((sum, value) => sum + value, 0) / fallbackRates.length
+        : null;
 
   const monthFinalMap = new Set(
     selectedFinalRows.map(
@@ -150,17 +142,17 @@ export async function getMetricReworkPayload(args: Args) {
   const trend = rows
     .filter((r) => selectedFiscalMonths.has(r.fiscal_end_date))
     .map((r) => {
-      const rowData = computeRowRework(r.raw);
+      const facts = extractReworkFacts(r.raw);
 
       return {
         fiscal_end_date: r.fiscal_end_date,
         metric_date: r.metric_date,
         batch_id: r.batch_id,
         inserted_at: r.inserted_at,
-        rework_count: rowData.reworkCount,
-        total_appts: rowData.totalAppts,
-        rework_rate: rowData.rate,
-        kpi_value: rowData.rate,
+        rework_count: facts.rework_count,
+        total_appts: facts.total_appts,
+        rework_rate: facts.rework_rate,
+        kpi_value: facts.rework_rate,
         is_month_final: monthFinalMap.has(
           `${r.fiscal_end_date}::${r.metric_date}::${r.inserted_at}::${r.batch_id}`
         ),
@@ -186,7 +178,7 @@ export async function getMetricReworkPayload(args: Args) {
       distinct_fiscal_months_found: finalRowsByMonth.map((x) => x.fiscal_end_date),
       selected_month_count: selectedFinalRows.length,
       selected_final_rows: selectedFinalRows.map((x) => {
-        const rowData = computeRowRework(x.row.raw);
+        const facts = extractReworkFacts(x.row.raw);
 
         return {
           fiscal_end_date: x.row.fiscal_end_date,
@@ -194,17 +186,17 @@ export async function getMetricReworkPayload(args: Args) {
           batch_id: x.row.batch_id,
           inserted_at: x.row.inserted_at,
           rows_in_month: x.rows_in_month,
-          rework_count: rowData.reworkCount,
-          total_appts: rowData.totalAppts,
-          rework_rate: rowData.rate,
+          rework_count: facts.rework_count,
+          total_appts: facts.total_appts,
+          rework_rate: facts.rework_rate,
         };
       }),
       trend,
     },
     summary: {
       rework_rate: summaryRate,
-      rework_count: totalRework,
-      total_appts: totalAppts,
+      rework_count: summaryAgg.numerator,
+      total_appts: summaryAgg.denominator,
     },
     trend,
   };
