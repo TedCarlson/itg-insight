@@ -9,7 +9,6 @@ type RawBatchRecord = {
   pc_org_id?: string | null;
   metric_date?: string | null;
   fiscal_end_date?: string | null;
-  inserted_at?: string | null;
 };
 
 function toMetricsBatchRef(row: RawBatchRecord): MetricsBatchRef | null {
@@ -27,7 +26,6 @@ function toMetricsBatchRef(row: RawBatchRecord): MetricsBatchRef | null {
     pc_org_id,
     metric_date,
     fiscal_end_date,
-    inserted_at: row.inserted_at ? String(row.inserted_at) : undefined,
   };
 }
 
@@ -44,12 +42,10 @@ export async function getLatestBatch(
         "pc_org_id",
         "metric_date",
         "fiscal_end_date",
-        "inserted_at",
       ].join(",")
     )
     .eq("pc_org_id", args.pc_org_id)
     .order("metric_date", { ascending: false })
-    .order("inserted_at", { ascending: false })
     .limit(1);
 
   if (args.fiscal_end_date) {

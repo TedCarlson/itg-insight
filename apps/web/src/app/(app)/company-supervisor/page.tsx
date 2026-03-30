@@ -1,7 +1,6 @@
 import { unstable_noStore as noStore } from "next/cache";
 
-import { getCompanySupervisorViewPayload } from "@/features/company-supervisor-view/lib/getCompanySupervisorViewPayload.server";
-import CompanySupervisorPage from "@/features/company-supervisor-view/pages/CompanySupervisorPage";
+import CompanySupervisorPageShell from "@/features/role-company-supervisor/pages/CompanySupervisorPageShell";
 
 type Props = {
   searchParams: Promise<{
@@ -18,7 +17,5 @@ export default async function Route(props: Props) {
   const sp = await props.searchParams;
   const range = sp?.range ?? "FM";
 
-  const payload = await getCompanySupervisorViewPayload({ range });
-
-  return <CompanySupervisorPage payload={payload} />;
+  return <CompanySupervisorPageShell range={range} />;
 }
