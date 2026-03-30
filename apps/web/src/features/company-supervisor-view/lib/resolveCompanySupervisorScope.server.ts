@@ -35,6 +35,7 @@ export type CompanySupervisorBpSupervisorGroup = {
 
 export type CompanySupervisorScopeResult = {
   selected_pc_org_id: string;
+  supervisor_person_id: string;
   role_label: CompanySupervisorScopeRole;
   rep_full_name: string | null;
   company_label: string | null;
@@ -264,6 +265,7 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
   if (!myAssignmentIds.length) {
     return {
       selected_pc_org_id,
+      supervisor_person_id: String(boot.person_id),
       role_label: "Company Supervisor",
       rep_full_name: me.full_name ? String(me.full_name) : null,
       company_label: null,
@@ -412,6 +414,7 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
 
   return {
     selected_pc_org_id,
+    supervisor_person_id: String(boot.person_id),
     role_label: "Company Supervisor",
     rep_full_name: me.full_name ? String(me.full_name) : null,
     company_label: null,

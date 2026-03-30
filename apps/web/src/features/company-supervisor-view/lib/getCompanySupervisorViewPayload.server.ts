@@ -15,7 +15,7 @@ import {
   type RangeKey,
 } from "@/features/bp-view/lib/bpViewResolverRegistry";
 import { sortBpRosterRows } from "@/features/bp-view/lib/sortBpRosterRows";
-
+import { resolveRankContextByTech } from "@/shared/kpis/engine/resolveRankContextByTech";
 import type {
   CompanySupervisorParityRow,
   CompanySupervisorPayload,
@@ -138,6 +138,71 @@ function parityPrimaryKpiAggregate(
   if (!values.length) return -1;
 
   return values.reduce((sum, value) => sum + value, 0);
+}
+
+function buildTeamFallbackMap(scope: Awaited<ReturnType<typeof resolveCompanySupervisorScope>>) {
+  const map = new Map<string, string>();
+
+  // ITG → supervisor
+  for (const a of scope.scoped_assignments) {
+    if (a.team_class === "ITG" && a.tech_id) {
+      map.set(String(a.tech_id), scope.supervisor_person_id);
+    }
+  }
+
+  // BP → supervisor groups
+  for (const group of scope.bp_supervisor_groups) {
+    if (!group.person_id) continue;
+
+    for (const techId of group.tech_ids) {
+      map.set(String(techId), String(group.person_id));
+    }
+  }
+
+  return map;
+}
+
+function buildRankRows(
+  rows: CompanySupervisorRosterRow[],
+  teamFallback: Map<string, string>
+) {
+  return rows.map((row) => {
+    const values = row.metrics
+      .map((m) => m.value)
+      .filter((v): v is number => v != null);
+
+    const composite =
+      values.length > 0
+        ? values.reduce((s, v) => s + v, 0) / values.length
+        : null;
+
+    return {
+      person_id: row.person_id,
+      tech_id: row.tech_id,
+      composite_score: composite,
+      team_key: teamFallback.get(row.tech_id) ?? null,
+      region_key: null,
+      division_key: null,
+      tiebreak_value: null,
+      tiebreak_direction: "HIGHER_BETTER" as const,
+      fallback_value: composite,
+    };
+  });
+}
+
+function attachRankContext(
+  rows: CompanySupervisorRosterRow[],
+  rankMap: Map<string, any>
+): CompanySupervisorRosterRow[] {
+  return rows.map((row) => {
+    const ctx = rankMap.get(row.person_id) ?? null;
+
+    return {
+      ...row,
+      rank: ctx?.team?.rank ?? null,
+      rank_context: ctx ?? null,
+    };
+  });
 }
 
 function sortParityRows(
@@ -290,8 +355,16 @@ export async function getCompanySupervisorViewPayload(
     } as CompanySupervisorRosterRow;
   });
 
+  // ---------- RANKING LAYER ----------
+  const teamFallback = buildTeamFallbackMap(scope);
+  const rankRows = buildRankRows(enrichedRows, teamFallback);
+  const rankContext = resolveRankContextByTech(rankRows);
+
+  const rankedRows = attachRankContext(enrichedRows, rankContext);
+
+  // KEEP YOUR EXISTING SORT (no behavior change yet)
   const roster_rows = sortBpRosterRows(
-    enrichedRows,
+    rankedRows,
     rosterColumns
   ) as CompanySupervisorRosterRow[];
 

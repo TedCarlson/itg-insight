@@ -88,6 +88,29 @@ function toMaybeString(value: unknown) {
   return out || null;
 }
 
+function compareRosterRowsByRank(
+  a: CompanySupervisorRosterRow,
+  b: CompanySupervisorRosterRow
+) {
+  const aRegion = a.rank_context?.region?.rank ?? Number.POSITIVE_INFINITY;
+  const bRegion = b.rank_context?.region?.rank ?? Number.POSITIVE_INFINITY;
+
+  if (aRegion !== bRegion) return aRegion - bRegion;
+
+  const aTeam = a.rank_context?.team?.rank ?? Number.POSITIVE_INFINITY;
+  const bTeam = b.rank_context?.team?.rank ?? Number.POSITIVE_INFINITY;
+
+  if (aTeam !== bTeam) return aTeam - bTeam;
+
+  const aName = toMaybeString((a as { full_name?: unknown }).full_name) ?? "";
+  const bName = toMaybeString((b as { full_name?: unknown }).full_name) ?? "";
+
+  const nameCompare = aName.localeCompare(bName);
+  if (nameCompare !== 0) return nameCompare;
+
+  return String(a.tech_id ?? "").localeCompare(String(b.tech_id ?? ""));
+}
+
 export async function getCompanySupervisorViewPayload(args: Args = {}) {
   const admin = supabaseAdmin();
   const range: RangeKey = args.range ?? "FM";
@@ -211,7 +234,9 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
 
   const personIdByTechId = new Map<string, string>();
   for (const assignment of scope.scoped_assignments) {
-    const techId = toMaybeString((assignment as { tech_id?: unknown }).tech_id);
+    const techId = toMaybeString(
+      (assignment as { tech_id?: unknown }).tech_id
+    );
     if (!techId) continue;
 
     const personId =
@@ -227,25 +252,29 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     personIdByTechId.set(techId, personId);
   }
 
-  const roster_rows: CompanySupervisorRosterRow[] = sortedBaseRows.map((row) => {
-    const assignment = scope.scoped_assignments.find(
-      (a) => toMaybeString(a.tech_id) === row.tech_id
-    );
+  const roster_rows_unsorted: CompanySupervisorRosterRow[] = sortedBaseRows.map(
+    (row) => {
+      const assignment = scope.scoped_assignments.find(
+        (a) => toMaybeString(a.tech_id) === row.tech_id
+      );
 
-    const personId = personIdByTechId.get(row.tech_id) ?? null;
+      const personId = personIdByTechId.get(row.tech_id) ?? null;
 
-    return {
-      ...row,
-      team_class: assignment?.team_class ?? "BP",
-      contractor_name:
-        assignment?.contractor_name == null
-          ? null
-          : String(assignment.contractor_name).trim() || null,
-      rank_context: personId
-        ? rankContextByPerson.get(personId) ?? null
-        : null,
-    };
-  });
+      return {
+        ...row,
+        team_class: assignment?.team_class ?? "BP",
+        contractor_name:
+          assignment?.contractor_name == null
+            ? null
+            : String(assignment.contractor_name).trim() || null,
+        rank_context: personId
+          ? rankContextByPerson.get(personId) ?? null
+          : null,
+      };
+    }
+  );
+
+  const roster_rows = [...roster_rows_unsorted].sort(compareRosterRowsByRank);
 
   const supervisorFacts = roster_rows.flatMap(
     (row) => metricFactsByTech.get(row.tech_id) ?? []

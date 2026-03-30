@@ -1,6 +1,7 @@
 import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
-import type { RangeKey } from "@/features/bp-view/lib/bpViewResolverRegistry";
+import type { MetricsRangeKey } from "@/shared/kpis/core/types";
 
+export type RangeKey = MetricsRangeKey;
 export type TeamClass = "ITG" | "BP";
 
 export type CompanySupervisorRosterMetricCell = {
@@ -32,6 +33,11 @@ export type CompanySupervisorRosterWorkMix = {
   total: number;
 };
 
+export type CompanySupervisorRankSeat = {
+  rank: number;
+  population: number;
+};
+
 export type CompanySupervisorRosterRow = {
   person_id: string;
   tech_id: string;
@@ -42,6 +48,12 @@ export type CompanySupervisorRosterRow = {
   contractor_name: string | null;
 
   rank: number | null;
+  rank_context?: {
+    team: CompanySupervisorRankSeat | null;
+    region: CompanySupervisorRankSeat | null;
+    division: CompanySupervisorRankSeat | null;
+  } | null;
+
   metrics: CompanySupervisorRosterMetricCell[];
   below_target_count: number;
   work_mix: CompanySupervisorRosterWorkMix;
