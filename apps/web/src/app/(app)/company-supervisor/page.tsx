@@ -4,7 +4,7 @@ import CompanySupervisorPageShell from "@/features/role-company-supervisor/pages
 
 type Props = {
   searchParams: Promise<{
-    range?: "FM" | "3FM" | "12FM";
+    range?: "FM" | "PREVIOUS" | "3FM" | "12FM";
   }>;
 };
 

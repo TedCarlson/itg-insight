@@ -26,12 +26,18 @@ import {
 import { resolveRegionForPcOrg } from "@/shared/org/resolveRegionForPcOrg.server";
 import { loadParityRankPopulation } from "@/shared/kpis/sources/loadParityRankPopulation.server";
 
-import { buildCompanySupervisorKpiStripPayload } from "./buildCompanySupervisorKpiStripPayload";
-import { resolveCompanySupervisorScope } from "@/features/company-supervisor-view/lib/resolveCompanySupervisorScope.server";
+import { buildCompanySupervisorKpiStripPayload } from "@/features/role-company-supervisor/lib/buildCompanySupervisorKpiStripPayload";
+import { resolveCompanyManagerScope } from "./resolveCompanyManagerScope.server";
+import { buildOfficeRollupRows } from "./buildOfficeRollupRows";
+import { buildLeadershipRollupRows } from "./buildLeadershipRollupRows";
+import type {
+  CompanyManagerSegment,
+  CompanyManagerViewMode,
+} from "./companyManagerView.types";
 
 type ReportClassType = "P4P" | "SMART" | "TECH";
 
-type CompanySupervisorRosterRow = WorkforceRow & {
+type CompanyManagerRosterRow = WorkforceRow & {
   team_class: string;
   contractor_name: string | null;
   metrics: WorkforceMetricCell[];
@@ -55,6 +61,8 @@ type LegacyRubricRow = WorkforceRubricRow & {
 type Args = {
   range?: RangeKey;
   class_type?: ReportClassType;
+  active_mode?: CompanyManagerViewMode;
+  active_segment?: CompanyManagerSegment;
 };
 
 function normalizeClassType(value: string | null | undefined): ReportClassType {
@@ -62,6 +70,24 @@ function normalizeClassType(value: string | null | undefined): ReportClassType {
   if (upper === "SMART") return "SMART";
   if (upper === "TECH") return "TECH";
   return "P4P";
+}
+
+function normalizeMode(
+  value: CompanyManagerViewMode | string | null | undefined
+): CompanyManagerViewMode {
+  const upper = String(value ?? "WORKFORCE").toUpperCase();
+  if (upper === "OFFICE") return "OFFICE";
+  if (upper === "LEADERSHIP") return "LEADERSHIP";
+  return "WORKFORCE";
+}
+
+function normalizeSegment(
+  value: CompanyManagerSegment | string | null | undefined
+): CompanyManagerSegment {
+  const upper = String(value ?? "ALL").toUpperCase();
+  if (upper === "ITG") return "ITG";
+  if (upper === "BP") return "BP";
+  return "ALL";
 }
 
 function toLegacyRubricMap(
@@ -90,8 +116,8 @@ function toMaybeString(value: unknown) {
 }
 
 function compareRosterRowsByRank(
-  a: CompanySupervisorRosterRow,
-  b: CompanySupervisorRosterRow
+  a: CompanyManagerRosterRow,
+  b: CompanyManagerRosterRow
 ) {
   const aRegion = a.rank_context?.region?.rank ?? Number.POSITIVE_INFINITY;
   const bRegion = b.rank_context?.region?.rank ?? Number.POSITIVE_INFINITY;
@@ -112,12 +138,14 @@ function compareRosterRowsByRank(
   return String(a.tech_id ?? "").localeCompare(String(b.tech_id ?? ""));
 }
 
-export async function getCompanySupervisorViewPayload(args: Args = {}) {
+export async function getCompanyManagerViewPayload(args: Args = {}) {
   const admin = supabaseAdmin();
   const range: RangeKey = args.range ?? "FM";
   const class_type: ReportClassType = normalizeClassType(args.class_type);
+  const active_mode = normalizeMode(args.active_mode);
+  const active_segment = normalizeSegment(args.active_segment);
 
-  const scope = await resolveCompanySupervisorScope();
+  const scope = await resolveCompanyManagerScope();
 
   const config = await loadKpiConfig({
     class_type: "TECH",
@@ -195,10 +223,11 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     }),
   ]);
 
-  const comparison_scope_code = resolvedRegion?.region_code ?? "ORG";
+  const comparison_scope_code = "PRIOR";
 
   const resolvedRegionLike = resolvedRegion as
     | {
+        region_code?: string | null;
         region_name?: string | null;
         division_name?: string | null;
         pc_org_name?: string | null;
@@ -214,11 +243,12 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
           .full_name
     ) ?? null;
 
-  const division_label = toMaybeString(resolvedRegionLike?.division_name);
-  const org_display = toMaybeString(comparison_scope_code);
+  const division_label = null;
+  const org_display = toMaybeString(resolvedRegionLike?.region_code);
   const pc_label =
     toMaybeString(resolvedRegionLike?.pc_org_name) ??
-    (selectedPcOrgId ? `PC ${scope.company_label ?? ""}`.trim() : null);
+    toMaybeString(scope.company_label) ??
+    null;
 
   const roster_columns: RosterColumn[] = config.map((k) => ({
     kpi_key: k.kpi_key,
@@ -260,7 +290,7 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     personIdByTechId.set(techId, personId);
   }
 
-  const roster_rows_unsorted: CompanySupervisorRosterRow[] = sortedBaseRows.map(
+  const roster_rows_unsorted: CompanyManagerRosterRow[] = sortedBaseRows.map(
     (row) => {
       const assignment = scope.scoped_assignments.find(
         (a) => toMaybeString(a.tech_id) === row.tech_id
@@ -284,13 +314,13 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
 
   const roster_rows = [...roster_rows_unsorted].sort(compareRosterRowsByRank);
 
-  const supervisorFacts = roster_rows.flatMap(
+  const managerFacts = roster_rows.flatMap(
     (row) => metricFactsByTech.get(row.tech_id) ?? []
   );
 
   const kpi_strip = buildCompanySupervisorKpiStripPayload({
     definitions: config,
-    supervisorFacts,
+    supervisorFacts: managerFacts,
     orgFacts,
     rubricByKpi: loadedRubricByKpi,
     support: null,
@@ -316,9 +346,12 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     rank_population: parityRankPopulation,
   });
 
+  const office_rows = buildOfficeRollupRows(roster_rows);
+  const leadership_rows = buildLeadershipRollupRows(roster_rows);
+
   return {
     header: {
-      role_label: scope.role_label ?? "Company Supervisor",
+      role_label: scope.role_label ?? "Company Manager",
       rep_full_name,
       division_label,
       org_display,
@@ -328,6 +361,8 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
       class_type,
       comparison_scope_code,
     },
+    active_mode,
+    active_segment,
     rubricByKpi,
     roster_columns,
     kpi_strip,
@@ -335,5 +370,7 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     work_mix,
     parityRows,
     roster_rows,
+    office_rows,
+    leadership_rows,
   };
 }

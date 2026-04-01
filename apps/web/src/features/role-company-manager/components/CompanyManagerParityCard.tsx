@@ -61,7 +61,7 @@ function RankPill(props: { value?: string | null }) {
   );
 }
 
-export default function CompanySupervisorParityCard({ rows }: Props) {
+export default function CompanyManagerParityCard({ rows }: Props) {
   const allColumns = rows[0]?.metrics ?? [];
 
   return (
