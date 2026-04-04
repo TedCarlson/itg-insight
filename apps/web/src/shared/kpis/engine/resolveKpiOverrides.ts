@@ -54,16 +54,6 @@ type FactViewRow = {
   rework_count: number | string | null;
 };
 
-type CompositeRow = {
-  tech_id: string | null;
-  class_type: string | null;
-  metric_date: string | null;
-  fiscal_end_date: string | null;
-  batch_id: string | null;
-  created_at: string | null;
-  composite_score: number | string | null;
-};
-
 function emptyOverrides(): KpiOverrideMaps {
   const make = () => new Map<string, number | null>();
 
@@ -123,21 +113,6 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
 
 function groupRowsByTech(rows: TechMetricRow[]) {
   const map = new Map<string, TechMetricRow[]>();
-
-  for (const row of rows) {
-    const techId = String(row.tech_id ?? "").trim();
-    if (!techId) continue;
-
-    const arr = map.get(techId) ?? [];
-    arr.push(row);
-    map.set(techId, arr);
-  }
-
-  return map;
-}
-
-function groupCompositeRowsByTech(rows: CompositeRow[]) {
-  const map = new Map<string, CompositeRow[]>();
 
   for (const row of rows) {
     const techId = String(row.tech_id ?? "").trim();
@@ -366,32 +341,6 @@ function shiftTodayByMonths(monthsBack: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function resolveCompositeValue(
-  rows: CompositeRow[],
-  range: RangeKey
-): number | null {
-  if (!rows.length) return null;
-
-  const normalizedRows: RawMetricRow[] = rows.map((row) => ({
-    metric_date: String(row.metric_date ?? "").slice(0, 10),
-    fiscal_end_date: String(row.fiscal_end_date ?? "").slice(0, 10),
-    batch_id: String(row.batch_id ?? ""),
-    inserted_at: String(row.created_at ?? ""),
-    raw: {
-      composite_score: toNum(row.composite_score),
-    },
-  }));
-
-  const { selectedFinalRows } = resolveFiscalSelection(normalizedRows, range);
-  const selectedValues = selectedFinalRows
-    .map((item) => toNum(item.row.raw?.composite_score))
-    .filter((value): value is number => value != null);
-
-  if (!selectedValues.length) return null;
-
-  return selectedValues[0] ?? null;
-}
-
 function resolveRangeStartDate(range: RangeKey): string {
   if (range === "FM") return shiftTodayByMonths(0);
   if (range === "PREVIOUS") return shiftTodayByMonths(2);
@@ -402,7 +351,7 @@ function resolveRangeStartDate(range: RangeKey): string {
 
 export async function resolveKpiOverrides(args: Args): Promise<KpiOverrideMaps> {
   const admin = args.admin ?? supabaseAdmin();
-  const { techIds, pcOrgIds, range, class_type } = args;
+  const { techIds, pcOrgIds, range } = args;
 
   const overrides = emptyOverrides();
 
@@ -426,43 +375,14 @@ export async function resolveKpiOverrides(args: Args): Promise<KpiOverrideMaps> 
     .order("batch_id", { ascending: false })
     .limit(10000);
 
-  const compositeQuery = class_type
-    ? admin
-        .from("ui_master_metric_v2")
-        .select(
-          "tech_id,class_type,metric_date,fiscal_end_date,batch_id,created_at,composite_score"
-        )
-        .in("pc_org_id", pcOrgIds)
-        .in("tech_id", techIds)
-        .eq("class_type", class_type)
-        .eq("is_outlier", false)
-        .gte("fiscal_end_date", startDate)
-        .order("fiscal_end_date", { ascending: false })
-        .order("metric_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .order("batch_id", { ascending: false })
-        .limit(10000)
-    : Promise.resolve({ data: [], error: null } as const);
-
-  const [{ data, error }, { data: compositeData, error: compositeError }] =
-    await Promise.all([factQuery, compositeQuery]);
+  const { data, error } = await factQuery;
 
   if (error) {
     throw new Error(`resolveKpiOverrides failed: ${error.message}`);
   }
 
-  if (compositeError) {
-    throw new Error(
-      `resolveKpiOverrides failed loading composite_score: ${compositeError.message}`
-    );
-  }
-
   const rows: TechMetricRow[] = ((data ?? []) as FactViewRow[]).map(
     factViewRowToTechMetricRow
-  );
-
-  const compositeRowsByTech = groupCompositeRowsByTech(
-    (compositeData ?? []) as CompositeRow[]
   );
 
   const rowsByTech = groupRowsByTech(rows);
@@ -481,10 +401,6 @@ export async function resolveKpiOverrides(args: Args): Promise<KpiOverrideMaps> 
     const rework = computeReworkRate(selectedFacts);
     const soi = computeSoiRate(selectedFacts);
     const met = computeMetRate(selectedFacts);
-    const composite = resolveCompositeValue(
-      compositeRowsByTech.get(techId) ?? [],
-      range
-    );
 
     overrides.tnps.set(techId, tnps);
     overrides.tnps_score.set(techId, tnps);
@@ -513,14 +429,7 @@ export async function resolveKpiOverrides(args: Args): Promise<KpiOverrideMaps> 
 
     overrides.met.set(techId, met);
     overrides.met_rate.set(techId, met);
-
-    overrides.composite.set(techId, composite);
-    overrides.composite_score.set(techId, composite);
-    overrides.weighted_score.set(techId, composite);
-    overrides.ws.set(techId, composite);
   }
 
   return overrides;
 }
-
-// path: src/shared/kpis/engine/resolveKpiOverrides.ts

@@ -1,3 +1,5 @@
+// path: src/shared/kpis/engine/buildWorkforceRows.ts
+
 import type { BandKey } from "@/features/metrics/scorecard/lib/scorecard.types";
 import type {
   WorkforceKpiConfig,
@@ -21,6 +23,7 @@ type Params = {
   orgLabelsById: Map<string, string>;
   workMixByTech: Map<string, WorkforceWorkMix>;
   kpiOverrides?: KpiOverrideRecord | Map<string, KpiOverrideMap>;
+  compositeScoresByTech?: Map<string, number | null>;
 };
 
 type RankedMetricEntry = {
@@ -253,7 +256,10 @@ function compareValuesForDirection(args: {
 
 function assignDenseMetricRanks(
   rows: WorkforceRow[],
-  kpis: (WorkforceKpiConfig & { direction?: string | null; sort_order?: number | null })[]
+  kpis: (WorkforceKpiConfig & {
+    direction?: string | null;
+    sort_order?: number | null;
+  })[]
 ) {
   const orderedKpis = [...kpis].sort((a, b) => {
     const aSort = a.sort_order ?? Number.POSITIVE_INFINITY;
@@ -286,9 +292,7 @@ function assignDenseMetricRanks(
           } as WorkforceMetricCell),
         direction: kpi.direction,
       }))
-      .filter((entry) =>
-        rowHasMetric(entry.row, kpi.kpi_key)
-      )
+      .filter((entry) => rowHasMetric(entry.row, kpi.kpi_key))
       .sort((a, b) => {
         const byValue = compareValuesForDirection({
           a: a.metric.value,
@@ -342,6 +346,7 @@ export function buildWorkforceRows(params: Params): WorkforceRow[] {
     orgLabelsById,
     workMixByTech,
     kpiOverrides,
+    compositeScoresByTech,
   } = params;
 
   const rows: WorkforceRow[] = [];
@@ -403,11 +408,7 @@ export function buildWorkforceRows(params: Params): WorkforceRow[] {
       total: 0,
     };
 
-    const composite_score = resolveMetricValue({
-      techId,
-      kpiKey: "composite_score",
-      kpiOverrides,
-    });
+    const composite_score = compositeScoresByTech?.get(techId) ?? null;
 
     rows.push({
       person_id: personId,

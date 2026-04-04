@@ -1,3 +1,5 @@
+// path: src/features/role-company-supervisor/lib/getCompanySupervisorViewPayload.server.ts
+
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 import { loadKpiConfig } from "@/shared/kpis/engine/loadKpiConfig.server";
@@ -12,6 +14,7 @@ import { buildRiskStrip } from "@/shared/kpis/engine/buildRiskStrip";
 import { getRankContextByTech } from "@/shared/kpis/engine/getRankContextByTech.server";
 import { resolveMetricFactsByTech } from "@/shared/kpis/engine/resolveMetricFactsByTech";
 import { resolveOrgMetricFacts } from "@/shared/kpis/engine/resolveOrgMetricFacts";
+import { resolveCompositeScoresByTech } from "@/shared/kpis/engine/resolveCompositeScoresByTech";
 import type {
   WorkforceMetricCell,
   WorkforceRow,
@@ -128,6 +131,7 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
 
   const [
     kpiOverrides,
+    compositeScoresByTech,
     workMixByTech,
     metricFactsByTech,
     orgFacts,
@@ -136,6 +140,13 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     parityRankPopulation,
   ] = await Promise.all([
     resolveKpiOverrides({
+      admin,
+      techIds,
+      pcOrgIds,
+      range,
+      class_type,
+    }),
+    resolveCompositeScoresByTech({
       admin,
       techIds,
       pcOrgIds,
@@ -217,6 +228,7 @@ export async function getCompanySupervisorViewPayload(args: Args = {}) {
     orgLabelsById: scope.org_labels_by_id,
     workMixByTech,
     kpiOverrides,
+    compositeScoresByTech,
   });
 
   const sortedBaseRows = sortWorkforceRows(baseRows, roster_columns);
