@@ -1,3 +1,5 @@
+// path: src/shared/kpis/contracts/rankTypes.ts
+
 export type RankScope = "team" | "region" | "division";
 
 export type RankDirection = "HIGHER_BETTER" | "LOWER_BETTER";
@@ -34,6 +36,15 @@ export type RankInputRow = {
 
   // 4️⃣ RISK
   risk_flags: number | null;
+
+  // 5️⃣ RESOLUTION STATUS
+  row_resolution_status:
+    | "ACTIVE_ASSIGNMENT_MATCH"
+    | "RANGE_MATCH_NO_ACTIVE_ASSIGNMENT"
+    | "REPORTED_TECH_NO_ASSIGNMENT"
+    | "COMPOSITE_WITHOUT_KPI_PAYLOAD"
+    | "KPI_PAYLOAD_PRESENT"
+    | "NO_REPORTED_METRICS_IN_RANGE";
 };
 
 export type RankResolverConfig = {

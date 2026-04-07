@@ -1,6 +1,6 @@
 // path: src/shared/kpis/engine/resolveEligibleRankPopulation.server.ts
 
-import { supabaseServer } from "@/shared/data/supabase/server";
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { resolveFiscalSelection } from "@/shared/kpis/core/rowSelection";
 import type { MetricsRangeKey, RawMetricRow } from "@/shared/kpis/core/types";
 import type {
@@ -30,18 +30,13 @@ type PopulationSeedRow = {
   fiscal_end_date: string | null;
   batch_id: string | null;
   created_at: string | null;
-};
-
-type PopulationDetailRow = {
-  person_id: string | null;
-  tech_id: string | null;
-  metric_date: string | null;
-  fiscal_end_date: string | null;
-  batch_id: string | null;
   metrics_json: unknown;
 };
 
-type RankCandidateRow = PopulationSeedRow & RawMetricRow;
+type RankCandidateRow = PopulationSeedRow &
+  RawMetricRow & {
+    metrics_json: unknown;
+  };
 
 type PcOrgAdminRow = {
   pc_org_id: string | null;
@@ -204,35 +199,25 @@ function toRankCandidateRow(row: PopulationSeedRow): RankCandidateRow | null {
   const fiscal_end_date = toTrimmedString(row.fiscal_end_date);
   const batch_id = toTrimmedString(row.batch_id);
   const inserted_at = toTrimmedString(row.created_at);
+  const tech_id = toTrimmedString(row.tech_id);
 
-  if (!metric_date || !fiscal_end_date || !batch_id || !inserted_at) {
+  if (!metric_date || !fiscal_end_date || !batch_id || !inserted_at || !tech_id) {
     return null;
   }
 
   return {
     ...row,
+    tech_id,
     metric_date,
     fiscal_end_date,
     batch_id,
     inserted_at,
-    raw: {},
+    metrics_json: row.metrics_json,
+    raw: {
+      composite_score: parseNumber(row.composite_score),
+      metrics_json: row.metrics_json,
+    },
   };
-}
-
-function buildDetailKey(args: {
-  person_id: string | null;
-  tech_id: string | null;
-  metric_date: string | null;
-  fiscal_end_date: string | null;
-  batch_id: string | null;
-}) {
-  return [
-    toTrimmedString(args.person_id) ?? "",
-    toTrimmedString(args.tech_id) ?? "",
-    toTrimmedString(args.metric_date) ?? "",
-    toTrimmedString(args.fiscal_end_date) ?? "",
-    toTrimmedString(args.batch_id) ?? "",
-  ].join("::");
 }
 
 function shiftTodayByMonths(monthsBack: number): string {
@@ -253,7 +238,7 @@ function resolveRangeStartDate(range: MetricsRangeKey): string {
 export async function resolveEligibleRankPopulation(
   args: Args
 ): Promise<RankInputRow[]> {
-  const supabase = await supabaseServer();
+  const supabase = supabaseAdmin();
 
   const pcOrgIds = Array.from(
     new Set(
@@ -268,12 +253,12 @@ export async function resolveEligibleRankPopulation(
   const allowedPersonIds =
     args.allowed_person_ids && args.allowed_person_ids.length
       ? Array.from(
-          new Set(
-            args.allowed_person_ids
-              .map((value) => String(value ?? "").trim())
-              .filter(Boolean)
-          )
+        new Set(
+          args.allowed_person_ids
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean)
         )
+      )
       : null;
 
   const startDate = resolveRangeStartDate(args.range);
@@ -291,7 +276,8 @@ export async function resolveEligibleRankPopulation(
       metric_date,
       fiscal_end_date,
       batch_id,
-      created_at
+      created_at,
+      metrics_json
     `
     )
     .in("pc_org_id", pcOrgIds)
@@ -429,7 +415,10 @@ export async function resolveEligibleRankPopulation(
 
     let best = selectedFinalRows[0].row as RankCandidateRow;
     for (let i = 1; i < selectedFinalRows.length; i += 1) {
-      best = choosePreferredRow(best, selectedFinalRows[i].row as RankCandidateRow);
+      best = choosePreferredRow(
+        best,
+        selectedFinalRows[i].row as RankCandidateRow
+      );
     }
 
     bestRowByPersonId.set(personId, best);
@@ -437,44 +426,6 @@ export async function resolveEligibleRankPopulation(
 
   if (!bestRowByPersonId.size) {
     return [];
-  }
-
-  const selectedPersonIds = Array.from(bestRowByPersonId.keys());
-
-  let populationDetailQuery = supabase
-    .from("ui_master_metric_v2")
-    .select("person_id,tech_id,metric_date,fiscal_end_date,batch_id,metrics_json")
-    .in("pc_org_id", pcOrgIds)
-    .eq("class_type", args.class_type)
-    .eq("is_outlier", false)
-    .gte("fiscal_end_date", startDate)
-    .in("person_id", selectedPersonIds);
-
-  if (args.batch_id) {
-    populationDetailQuery = populationDetailQuery.eq("batch_id", args.batch_id);
-  }
-
-  const { data: populationDetailRows, error: populationDetailError } =
-    await populationDetailQuery.limit(5000);
-
-  if (populationDetailError) {
-    throw new Error(
-      `resolveEligibleRankPopulation failed loading ui_master_metric_v2 detail: ${populationDetailError.message}`
-    );
-  }
-
-  const detailByKey = new Map<string, PopulationDetailRow>();
-  for (const row of (populationDetailRows ?? []) as PopulationDetailRow[]) {
-    detailByKey.set(
-      buildDetailKey({
-        person_id: row.person_id,
-        tech_id: row.tech_id,
-        metric_date: row.metric_date,
-        fiscal_end_date: row.fiscal_end_date,
-        batch_id: row.batch_id,
-      }),
-      row
-    );
   }
 
   const out: RankInputRow[] = [];
@@ -492,23 +443,27 @@ export async function resolveEligibleRankPopulation(
       args.team_key_by_person?.get(personId) ??
       null;
 
-    const detail =
-      detailByKey.get(
-        buildDetailKey({
-          person_id: row.person_id,
-          tech_id: row.tech_id,
-          metric_date: row.metric_date,
-          fiscal_end_date: row.fiscal_end_date,
-          batch_id: row.batch_id,
-        })
-      ) ?? null;
+    const metricsJson = row.metrics_json ?? null;
 
-    const metricsJson = detail?.metrics_json ?? null;
+    const record = extractRecord(metricsJson);
+    const hasKpis = Object.keys(record).length > 0;
+
+    const composite = parseNumber(row.composite_score);
+
+    let rowStatus: RankInputRow["row_resolution_status"];
+
+    if (composite != null && !hasKpis) {
+      rowStatus = "COMPOSITE_WITHOUT_KPI_PAYLOAD";
+    } else if (hasKpis) {
+      rowStatus = "KPI_PAYLOAD_PRESENT";
+    } else {
+      rowStatus = "NO_REPORTED_METRICS_IN_RANGE";
+    }
 
     out.push({
       person_id: personId,
       tech_id: techId,
-      composite_score: parseNumber(row.composite_score),
+      composite_score: composite,
       team_key: teamKey,
       region_key: regionByPcOrg.get(pcOrgId) ?? null,
       division_key: coCode ? divisionIdByCode.get(coCode) ?? null : null,
@@ -516,6 +471,9 @@ export async function resolveEligibleRankPopulation(
       tiebreak_direction: tiebreakerDirection,
       total_jobs: extractTotalJobs(metricsJson),
       risk_flags: extractRiskFlags(metricsJson),
+
+      // 🔥 ADD THIS
+      row_resolution_status: rowStatus,
     });
   }
 

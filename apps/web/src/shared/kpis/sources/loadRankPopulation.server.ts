@@ -193,6 +193,7 @@ export async function loadRankPopulation(
       tiebreak_direction: "HIGHER_BETTER",
       total_jobs: row.total_jobs,
       risk_flags: row.risk_flags ?? 0,
+      row_resolution_status: "KPI_PAYLOAD_PRESENT",
     });
   }
 

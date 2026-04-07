@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/internal/metrics/process-queue?max_jobs=3&secret=3RLR07R51zkpYaHMyBSrctKOQuHJXAFUR5tRqwR8saphVkS1fiKCCAiYueXIDoSncaJ64Bv5M2aWIwJ",
+      "schedule": "*/1 * * * *"
+    }
+  ]
+}

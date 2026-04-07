@@ -44,21 +44,6 @@ function groupCompositeRowsByTech(rows: CompositeRow[]) {
   return map;
 }
 
-function shiftTodayByMonths(monthsBack: number): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setMonth(d.getMonth() - monthsBack);
-  return d.toISOString().slice(0, 10);
-}
-
-function resolveRangeStartDate(range: MetricsRangeKey): string {
-  if (range === "FM") return shiftTodayByMonths(0);
-  if (range === "PREVIOUS") return shiftTodayByMonths(2);
-  if (range === "3FM") return shiftTodayByMonths(3);
-  if (range === "12FM") return shiftTodayByMonths(11);
-  return "2000-01-01";
-}
-
 function resolveCompositeValue(
   rows: CompositeRow[],
   range: MetricsRangeKey
@@ -76,13 +61,15 @@ function resolveCompositeValue(
   }));
 
   const { selectedFinalRows } = resolveFiscalSelection(normalizedRows, range);
-  const selectedValues = selectedFinalRows
+
+  const selected = selectedFinalRows
     .map((item) => toNum(item.row.raw?.composite_score))
-    .filter((value): value is number => value != null);
+    .filter((v): v is number => v != null);
 
-  if (!selectedValues.length) return null;
+  if (!selected.length) return null;
 
-  return selectedValues[0] ?? null;
+  // IMPORTANT: take FIRST selected (same pattern as KPI path)
+  return selected[0];
 }
 
 export async function resolveCompositeScoresByTech(
@@ -97,8 +84,13 @@ export async function resolveCompositeScoresByTech(
     return out;
   }
 
-  const startDate = resolveRangeStartDate(range);
-
+  /**
+   * 🔑 CRITICAL CHANGE:
+   * REMOVE date windowing here.
+   *
+   * Let resolveFiscalSelection control the window.
+   * We just fetch recent history.
+   */
   const { data, error } = await admin
     .from("ui_master_metric_v2")
     .select(
@@ -108,7 +100,6 @@ export async function resolveCompositeScoresByTech(
     .in("tech_id", techIds)
     .eq("class_type", class_type)
     .eq("is_outlier", false)
-    .gte("fiscal_end_date", startDate)
     .order("fiscal_end_date", { ascending: false })
     .order("metric_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -124,7 +115,10 @@ export async function resolveCompositeScoresByTech(
   const grouped = groupCompositeRowsByTech((data ?? []) as CompositeRow[]);
 
   for (const techId of techIds) {
-    out.set(techId, resolveCompositeValue(grouped.get(techId) ?? [], range));
+    out.set(
+      techId,
+      resolveCompositeValue(grouped.get(techId) ?? [], range)
+    );
   }
 
   return out;

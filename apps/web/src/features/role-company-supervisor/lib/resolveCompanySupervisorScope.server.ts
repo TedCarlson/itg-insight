@@ -103,13 +103,16 @@ async function loadOrgLabels(
   return out;
 }
 
-function uniqueByTech(rows: CompanySupervisorScopeAssignmentRow[]) {
+function uniqueByAssignment(rows: CompanySupervisorScopeAssignmentRow[]) {
   const out = new Map<string, CompanySupervisorScopeAssignmentRow>();
 
   for (const row of rows) {
-    const techId = String(row.tech_id ?? "").trim();
-    if (!techId) continue;
-    if (!out.has(techId)) out.set(techId, row);
+    const assignmentId = String(row.assignment_id ?? "").trim();
+    if (!assignmentId) continue;
+
+    if (!out.has(assignmentId)) {
+      out.set(assignmentId, row);
+    }
   }
 
   return [...out.values()];
@@ -238,18 +241,18 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
   const [assignmentRes, peopleRes] = await Promise.all([
     activePersonIds.length
       ? admin
-          .from("assignment_admin_v")
-          .select(
-            "assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active"
-          )
-          .eq("pc_org_id", selected_pc_org_id)
-          .in("person_id", activePersonIds)
+        .from("assignment_admin_v")
+        .select(
+          "assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active"
+        )
+        .eq("pc_org_id", selected_pc_org_id)
+        .in("person_id", activePersonIds)
       : Promise.resolve({ data: [], error: null } as any),
     activePersonIds.length
       ? admin
-          .from("person")
-          .select("person_id,full_name,role,co_ref_id")
-          .in("person_id", Array.from(new Set([...activePersonIds, boot.person_id])))
+        .from("person")
+        .select("person_id,full_name,role,co_ref_id")
+        .in("person_id", Array.from(new Set([...activePersonIds, boot.person_id])))
       : Promise.resolve({ data: [], error: null } as any),
   ]);
 
@@ -280,7 +283,7 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
     childrenByParent,
   });
 
-  const scopedAssignmentsSource = uniqueByTech(
+  const scopedAssignmentsSource = uniqueByAssignment(
     allOrgAssignments.filter((a) =>
       descendantAssignmentIds.has(String(a.assignment_id ?? "").trim())
     )
@@ -293,7 +296,7 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
     people_by_id.set(personId, row);
   }
 
-  const normalizedAssignments = uniqueByTech(
+  const normalizedAssignments = uniqueByAssignment(
     scopedAssignmentsSource.map((assignment) => {
       const person = people_by_id.get(String(assignment.person_id ?? "").trim());
       const team_class: TeamClass = isItgAssignment({ assignment, person }) ? "ITG" : "BP";

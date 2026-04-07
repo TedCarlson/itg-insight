@@ -24,36 +24,6 @@ type Args = {
   class_type?: ReportClassType;
 };
 
-type FactViewRow = {
-  tech_id: string | null;
-  metric_date: string | null;
-  fiscal_end_date: string | null;
-  batch_id: string | null;
-  inserted_at: string | null;
-  tnps_score: number | string | null;
-  ftr_rate: number | string | null;
-  tool_usage_rate: number | string | null;
-  contact_48hr_rate: number | string | null;
-  pht_pure_pass_rate: number | string | null;
-  met_rate: number | string | null;
-  soi_rate: number | string | null;
-  repeat_rate: number | string | null;
-  rework_rate: number | string | null;
-  tnps_surveys: number | string | null;
-  tnps_promoters: number | string | null;
-  tnps_detractors: number | string | null;
-  total_jobs: number | string | null;
-  total_appts: number | string | null;
-  total_met_appts: number | string | null;
-  total_ftr_contact_jobs: number | string | null;
-  ftr_fail_jobs: number | string | null;
-  tu_eligible_jobs: number | string | null;
-  tu_compliant_jobs: number | string | null;
-  contact_48hr_orders: number | string | null;
-  repeat_count: number | string | null;
-  rework_count: number | string | null;
-};
-
 function emptyOverrides(): KpiOverrideMaps {
   const make = () => new Map<string, number | null>();
 
@@ -99,6 +69,25 @@ function toNum(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function extractRecord(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 function pickNum(obj: Record<string, unknown>, keys: string[]): number | null {
   for (const key of keys) {
     const value = obj[key];
@@ -124,71 +113,6 @@ function groupRowsByTech(rows: TechMetricRow[]) {
   }
 
   return map;
-}
-
-function factViewRowToTechMetricRow(row: FactViewRow): TechMetricRow {
-  const raw: Record<string, unknown> = {
-    tnps_score: toNum(row.tnps_score),
-    ftr_rate: toNum(row.ftr_rate),
-    tool_usage_rate: toNum(row.tool_usage_rate),
-    contact_48hr_rate: toNum(row.contact_48hr_rate),
-    pht_pure_pass_rate: toNum(row.pht_pure_pass_rate),
-    met_rate: toNum(row.met_rate),
-    soi_rate: toNum(row.soi_rate),
-    repeat_rate: toNum(row.repeat_rate),
-    rework_rate: toNum(row.rework_rate),
-
-    tnps_surveys: toNum(row.tnps_surveys),
-    tnps_promoters: toNum(row.tnps_promoters),
-    tnps_detractors: toNum(row.tnps_detractors),
-    total_jobs: toNum(row.total_jobs),
-    total_appts: toNum(row.total_appts),
-    total_met_appts: toNum(row.total_met_appts),
-    total_ftr_contact_jobs: toNum(row.total_ftr_contact_jobs),
-    ftr_fail_jobs: toNum(row.ftr_fail_jobs),
-    tu_eligible_jobs: toNum(row.tu_eligible_jobs),
-    tu_compliant_jobs: toNum(row.tu_compliant_jobs),
-    contact_48hr_orders: toNum(row.contact_48hr_orders),
-    repeat_count: toNum(row.repeat_count),
-    rework_count: toNum(row.rework_count),
-
-    Promoters: toNum(row.tnps_promoters),
-    Detractors: toNum(row.tnps_detractors),
-    "tNPS Surveys": toNum(row.tnps_surveys),
-
-    "Total FTR/Contact Jobs": toNum(row.total_ftr_contact_jobs),
-    FTRFailJobs: toNum(row.ftr_fail_jobs),
-
-    TUEligibleJobs: toNum(row.tu_eligible_jobs),
-    TUResult: toNum(row.tu_compliant_jobs),
-
-    "48Hr Contact Orders": toNum(row.contact_48hr_orders),
-
-    "Repeat Count": toNum(row.repeat_count),
-    "Rework Count": toNum(row.rework_count),
-
-    TotalAppts: toNum(row.total_appts),
-    TotalMetAppts: toNum(row.total_met_appts),
-
-    "tNPS Rate": toNum(row.tnps_score),
-    "FTR%": toNum(row.ftr_rate),
-    ToolUsage: toNum(row.tool_usage_rate),
-    "48Hr Contact Rate%": toNum(row.contact_48hr_rate),
-    "PHT Pure Pass%": toNum(row.pht_pure_pass_rate),
-    MetRate: toNum(row.met_rate),
-    "SOI Rate%": toNum(row.soi_rate),
-    "Repeat Rate%": toNum(row.repeat_rate),
-    "Rework Rate%": toNum(row.rework_rate),
-  };
-
-  return {
-    tech_id: String(row.tech_id ?? "").trim(),
-    metric_date: String(row.metric_date ?? "").slice(0, 10),
-    fiscal_end_date: String(row.fiscal_end_date ?? "").slice(0, 10),
-    batch_id: String(row.batch_id ?? ""),
-    inserted_at: String(row.inserted_at ?? ""),
-    raw,
-  };
 }
 
 function computeFtrRate(rows: MetricFact[]): number | null {
@@ -362,16 +286,24 @@ export async function resolveKpiOverrides(args: Args): Promise<KpiOverrideMaps> 
   const startDate = resolveRangeStartDate(range);
 
   const factQuery = admin
-    .from("metrics_tech_fact_day")
+    .from("ui_master_metric_v2")
     .select(
-      "pc_org_id,tech_id,metric_date,fiscal_end_date,batch_id,inserted_at,tnps_score,ftr_rate,tool_usage_rate,contact_48hr_rate,pht_pure_pass_rate,met_rate,soi_rate,repeat_rate,rework_rate,tnps_surveys,tnps_promoters,tnps_detractors,total_jobs,total_appts,total_met_appts,total_ftr_contact_jobs,ftr_fail_jobs,tu_eligible_jobs,tu_compliant_jobs,contact_48hr_orders,repeat_count,rework_count"
+      `
+      tech_id,
+      metric_date,
+      fiscal_end_date,
+      batch_id,
+      created_at,
+      metrics_json
+    `
     )
     .in("pc_org_id", pcOrgIds)
     .in("tech_id", techIds)
+    .eq("is_outlier", false)
     .gte("fiscal_end_date", startDate)
     .order("fiscal_end_date", { ascending: false })
     .order("metric_date", { ascending: false })
-    .order("inserted_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .order("batch_id", { ascending: false })
     .limit(10000);
 
@@ -381,9 +313,18 @@ export async function resolveKpiOverrides(args: Args): Promise<KpiOverrideMaps> 
     throw new Error(`resolveKpiOverrides failed: ${error.message}`);
   }
 
-  const rows: TechMetricRow[] = ((data ?? []) as FactViewRow[]).map(
-    factViewRowToTechMetricRow
-  );
+  const rows: TechMetricRow[] = ((data ?? []) as any[]).map((row) => {
+    const record = extractRecord(row.metrics_json);
+
+    return {
+      tech_id: String(row.tech_id ?? "").trim(),
+      metric_date: String(row.metric_date ?? "").slice(0, 10),
+      fiscal_end_date: String(row.fiscal_end_date ?? "").slice(0, 10),
+      batch_id: String(row.batch_id ?? ""),
+      inserted_at: String(row.created_at ?? ""),
+      raw: record,
+    };
+  });
 
   const rowsByTech = groupRowsByTech(rows);
 
