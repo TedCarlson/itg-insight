@@ -5,7 +5,7 @@ import Link from "next/link";
 import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
 import MetricsExecutiveKpiStrip from "@/shared/surfaces/MetricsExecutiveKpiStrip";
 import MetricsRiskStrip from "@/shared/surfaces/MetricsRiskStrip";
-import MetricsTeamPerformanceTable from "@/shared/surfaces/MetricsTeamPerformanceTable";
+import MetricsTeamPerformanceTableClient from "@/shared/surfaces/MetricsTeamPerformanceTableClient";
 
 import { getCompanySupervisorSurfacePayload } from "../lib/getCompanySupervisorSurfacePayload.server";
 
@@ -44,6 +44,11 @@ function buildHref(args: {
   params.set("class_type", args.class_type);
   params.set("range", args.range);
   return `/company-supervisor?${params.toString()}`;
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 function ClassSelector(props: {
@@ -90,6 +95,59 @@ export default async function CompanySupervisorPageShell(props: Props) {
     range,
   });
 
+  const workMixContent = payload.overlays.work_mix ? (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-xl border bg-card px-3 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Total Jobs
+          </div>
+          <div className="mt-1 text-2xl font-semibold">
+            {payload.overlays.work_mix.total}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card px-3 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Installs
+          </div>
+          <div className="mt-1 text-2xl font-semibold">
+            {payload.overlays.work_mix.installs}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {formatPercent(payload.overlays.work_mix.install_pct)}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card px-3 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            TCs
+          </div>
+          <div className="mt-1 text-2xl font-semibold">
+            {payload.overlays.work_mix.tcs}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {formatPercent(payload.overlays.work_mix.tc_pct)}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card px-3 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            SROs
+          </div>
+          <div className="mt-1 text-2xl font-semibold">
+            {payload.overlays.work_mix.sros}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {formatPercent(payload.overlays.work_mix.sro_pct)}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div className="text-sm text-muted-foreground">No work mix available.</div>
+  );
+
   return (
     <div className="space-y-4 p-4">
       <MetricsSmartHeader
@@ -97,11 +155,11 @@ export default async function CompanySupervisorPageShell(props: Props) {
         rangeOptions={
           payload.permissions.can_filter_range
             ? payload.filters.available_ranges.map((rangeKey) => ({
-                key: rangeKey,
-                label: toRangeLabel(rangeKey),
-                active: payload.filters.active_range === rangeKey,
-                onClick: undefined,
-              }))
+              key: rangeKey,
+              label: toRangeLabel(rangeKey),
+              active: payload.filters.active_range === rangeKey,
+              onClick: undefined,
+            }))
             : []
         }
         rightActions={
@@ -120,11 +178,14 @@ export default async function CompanySupervisorPageShell(props: Props) {
       ) : null}
 
       {payload.permissions.can_view_risk_strip ? (
-        <MetricsRiskStrip items={payload.risk_strip ?? []} />
+        <MetricsRiskStrip
+          items={payload.risk_strip ?? []}
+          insights={payload.risk_insights ?? null}
+        />
       ) : null}
 
       {payload.permissions.can_view_team_table ? (
-        <MetricsTeamPerformanceTable
+        <MetricsTeamPerformanceTableClient
           columns={payload.team_table.columns.map((column) => ({
             kpi_key: column.kpi_key,
             label: column.label,
@@ -139,8 +200,9 @@ export default async function CompanySupervisorPageShell(props: Props) {
             tech_id: row.tech_id,
             composite_score: row.composite_score,
             rank: row.rank,
-            jobs_display: row.jobs_display,
+            jobs_display: row.jobs_display ?? null,
             risk_count: row.risk_count ?? null,
+            work_mix: row.work_mix ?? null,
             metrics: row.metrics.map((metric) => ({
               metric_key: metric.metric_key,
               label:
@@ -152,6 +214,8 @@ export default async function CompanySupervisorPageShell(props: Props) {
               weighted_points: metric.weighted_points,
             })),
           }))}
+          workMixTitle="Work Mix"
+          workMixContent={workMixContent}
         />
       ) : null}
     </div>

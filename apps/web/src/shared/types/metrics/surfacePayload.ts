@@ -86,6 +86,46 @@ export type MetricsRiskStripItem = {
   note: string;
 };
 
+export type MetricsRiskInsightTopPriority = {
+  kpi_key: string | null;
+  label: string | null;
+  miss_count: number;
+  tech_ids: string[];
+  new_tech_ids: string[];
+  persistent_tech_ids: string[];
+  recovered_tech_ids: string[];
+};
+
+export type MetricsRiskInsightParticipationBucket = {
+  count: number;
+  tech_ids: string[];
+};
+
+export type MetricsRiskInsightParticipation = {
+  meets_3: MetricsRiskInsightParticipationBucket;
+  meets_2: MetricsRiskInsightParticipationBucket;
+  meets_1: MetricsRiskInsightParticipationBucket;
+  meets_0: MetricsRiskInsightParticipationBucket;
+};
+
+export type MetricsRiskInsightPerformer = {
+  tech_id: string;
+  full_name: string | null;
+  rank: number | null;
+  composite_score: number | null;
+  risk_count: number;
+  streak_count?: number | null;
+  primary_kpi_key?: string | null;
+  primary_kpi_label?: string | null;
+};
+
+export type MetricsRiskInsights = {
+  top_priority_kpi: MetricsRiskInsightTopPriority;
+  participation: MetricsRiskInsightParticipation;
+  top_performers: MetricsRiskInsightPerformer[];
+  bottom_performers: MetricsRiskInsightPerformer[];
+};
+
 export type MetricsWorkMixSummary = {
   total: number;
   installs: number;
@@ -139,6 +179,7 @@ export type MetricsSurfacePayload = {
   visibility: MetricsSurfaceVisibility;
   executive_kpis: MetricsExecutiveKpiItem[];
   risk_strip: MetricsRiskStripItem[];
+  risk_insights?: MetricsRiskInsights | null;
   team_table: MetricsSurfaceTeamTable;
   overlays: MetricsSurfaceOverlays;
 };

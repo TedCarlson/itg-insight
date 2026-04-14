@@ -9,6 +9,9 @@ import { resolveMetricsRegionContext } from "@/shared/server/metrics/resolveMetr
 import { loadMetricWorkMixRows } from "@/shared/server/metrics/loadMetricWorkMixRows.server";
 import type {
   MetricsRangeKey,
+  MetricsRiskInsightPerformer,
+  MetricsRiskInsights,
+  MetricsRiskStripItem,
   MetricsSurfacePayload,
   MetricsSurfaceTeamCell,
   MetricsSurfaceTeamColumn,
@@ -24,6 +27,7 @@ type DefinitionRow = {
   direction: string | null;
   sort_order: number;
   report_order: number | null;
+  weight: number | null;
 };
 
 type RubricRow = {
@@ -199,6 +203,251 @@ function dedupeLatestWorkMixRows(
   return out;
 }
 
+function isRiskBand(bandKey: string | null | undefined) {
+  return bandKey === "NEEDS_IMPROVEMENT" || bandKey === "MISSES";
+}
+
+// REPLACE THIS FUNCTION ONLY inside:
+function buildRiskState(args: {
+  teamRows: Array<{
+    tech_id: string;
+    full_name: string | null;
+    rank: number | null;
+    composite_score: number | null;
+  }>;
+  definitions: DefinitionRow[];
+  scoreMap: Map<string, MetricsSurfaceTeamCell[]>;
+  workMixMap: Map<
+    string,
+    {
+      total: number;
+      installs: number;
+      tcs: number;
+      sros: number;
+    }
+  >;
+}) {
+  const riskCountByTech = new Map<string, number>();
+
+  function isFail(band: string | null | undefined) {
+    return band === "NEEDS_IMPROVEMENT" || band === "MISSES";
+  }
+
+  function isPass(band: string | null | undefined) {
+    return band === "MEETS" || band === "EXCEEDS";
+  }
+
+  function isMiss(band: string | null | undefined) {
+    return band === "MISSES";
+  }
+
+  const scopedDefinitions = [...args.definitions]
+    .filter((def) => (def.weight ?? 0) > 0)
+    .sort((a, b) => {
+      const ao = a.report_order ?? 999;
+      const bo = b.report_order ?? 999;
+      if (ao !== bo) return ao - bo;
+      return a.kpi_key.localeCompare(b.kpi_key);
+    })
+    .slice(0, 3);
+
+  const scopedKpiKeys = new Set(scopedDefinitions.map((def) => def.kpi_key));
+
+  const labelByKpi = new Map(
+    args.definitions.map((def) => [def.kpi_key, def.customer_label || def.label])
+  );
+
+  const techFailMap = new Map<string, string[]>();
+  const techScopedPassMap = new Map<string, string[]>();
+  const techScopedFailMap = new Map<string, string[]>();
+  const kpiMissMap = new Map<string, string[]>();
+
+  for (const row of args.teamRows) {
+    const techId = row.tech_id;
+    const metrics = args.scoreMap.get(techId) ?? [];
+
+    let totalRiskCount = 0;
+    const failedKpis: string[] = [];
+    const scopedPassedKpis: string[] = [];
+    const scopedFailedKpis: string[] = [];
+
+    for (const metric of metrics) {
+      if (isFail(metric.band_key)) {
+        totalRiskCount += 1;
+        failedKpis.push(metric.metric_key);
+      }
+
+      if (!scopedKpiKeys.has(metric.metric_key)) continue;
+
+      if (isPass(metric.band_key)) {
+        scopedPassedKpis.push(metric.metric_key);
+      } else if (isFail(metric.band_key)) {
+        scopedFailedKpis.push(metric.metric_key);
+      }
+
+      if (isMiss(metric.band_key)) {
+        const list = kpiMissMap.get(metric.metric_key) ?? [];
+        list.push(techId);
+        kpiMissMap.set(metric.metric_key, list);
+      }
+    }
+
+    techFailMap.set(techId, failedKpis);
+    techScopedPassMap.set(techId, scopedPassedKpis);
+    techScopedFailMap.set(techId, scopedFailedKpis);
+    riskCountByTech.set(techId, totalRiskCount);
+  }
+
+  let topKpi: string | null = null;
+  let topKpiCount = 0;
+
+  for (const [kpiKey, techIds] of kpiMissMap.entries()) {
+    if (!scopedKpiKeys.has(kpiKey)) continue;
+    if (techIds.length > topKpiCount) {
+      topKpi = kpiKey;
+      topKpiCount = techIds.length;
+    }
+  }
+
+  let meets3 = 0;
+  let meets2 = 0;
+  let meets1 = 0;
+  let meets0 = 0;
+
+  const meets3TechIds: string[] = [];
+  const meets2TechIds: string[] = [];
+  const meets1TechIds: string[] = [];
+  const meets0TechIds: string[] = [];
+
+  for (const row of args.teamRows) {
+    const passCount = techScopedPassMap.get(row.tech_id)?.length ?? 0;
+
+    if (passCount >= 3) {
+      meets3 += 1;
+      meets3TechIds.push(row.tech_id);
+    } else if (passCount === 2) {
+      meets2 += 1;
+      meets2TechIds.push(row.tech_id);
+    } else if (passCount === 1) {
+      meets1 += 1;
+      meets1TechIds.push(row.tech_id);
+    } else {
+      meets0 += 1;
+      meets0TechIds.push(row.tech_id);
+    }
+  }
+
+  const sortedByRiskThenComposite = [...args.teamRows].sort((a, b) => {
+    const riskA = riskCountByTech.get(a.tech_id) ?? 0;
+    const riskB = riskCountByTech.get(b.tech_id) ?? 0;
+    if (riskA !== riskB) return riskA - riskB;
+
+    const compA =
+      typeof a.composite_score === "number" && Number.isFinite(a.composite_score)
+        ? a.composite_score
+        : -1;
+    const compB =
+      typeof b.composite_score === "number" && Number.isFinite(b.composite_score)
+        ? b.composite_score
+        : -1;
+    return compB - compA;
+  });
+
+  function toPerformer(row: {
+    tech_id: string;
+    full_name: string | null;
+    rank: number | null;
+    composite_score: number | null;
+  }): MetricsRiskInsightPerformer {
+    const failed = techScopedFailMap.get(row.tech_id) ?? [];
+    const primaryKpiKey = failed[0] ?? null;
+
+    return {
+      tech_id: row.tech_id,
+      full_name: row.full_name,
+      rank: row.rank,
+      composite_score: row.composite_score,
+      risk_count: riskCountByTech.get(row.tech_id) ?? 0,
+      streak_count: null,
+      primary_kpi_key: primaryKpiKey,
+      primary_kpi_label: primaryKpiKey
+        ? labelByKpi.get(primaryKpiKey) ?? primaryKpiKey
+        : null,
+    };
+  }
+
+  const topPerformers = sortedByRiskThenComposite.slice(0, 3).map(toPerformer);
+  const bottomPerformers = [...sortedByRiskThenComposite]
+    .reverse()
+    .slice(0, 5)
+    .map(toPerformer);
+
+  const strip: MetricsRiskStripItem[] = [
+    {
+      key: "top_kpi",
+      title: "Top Risk KPI",
+      value: topKpi ? labelByKpi.get(topKpi) ?? topKpi : "—",
+      note: `${topKpiCount} techs`,
+    },
+    {
+      key: "participation",
+      title: "Participation",
+      value: `${meets3}/${args.teamRows.length}`,
+      note: "Meets all KPIs",
+    },
+    {
+      key: "top",
+      title: "Top Performers",
+      value: String(topPerformers.length),
+      note: "Lowest risk",
+    },
+    {
+      key: "bottom",
+      title: "Needs Attention",
+      value: String(bottomPerformers.length),
+      note: "Highest risk",
+    },
+  ];
+
+  const insights: MetricsRiskInsights = {
+    top_priority_kpi: {
+      kpi_key: topKpi,
+      label: topKpi ? labelByKpi.get(topKpi) ?? topKpi : null,
+      miss_count: topKpiCount,
+      tech_ids: topKpi ? kpiMissMap.get(topKpi) ?? [] : [],
+      new_tech_ids: [],
+      persistent_tech_ids: [],
+      recovered_tech_ids: [],
+    },
+    participation: {
+      meets_3: {
+        count: meets3,
+        tech_ids: meets3TechIds,
+      },
+      meets_2: {
+        count: meets2,
+        tech_ids: meets2TechIds,
+      },
+      meets_1: {
+        count: meets1,
+        tech_ids: meets1TechIds,
+      },
+      meets_0: {
+        count: meets0,
+        tech_ids: meets0TechIds,
+      },
+    },
+    top_performers: topPerformers,
+    bottom_performers: bottomPerformers,
+  };
+
+  return {
+    riskCountByTech,
+    strip,
+    insights,
+  };
+}
+
 export async function buildMetricsSurfacePayload(
   args: BuildMetricsSurfacePayloadArgs
 ): Promise<MetricsSurfacePayload> {
@@ -213,7 +462,7 @@ export async function buildMetricsSurfacePayload(
     sb
       .from("metric_profile_kpis_v")
       .select(
-        "profile_key, metric_key, metric_label, display_label, report_order, direction, customer_label, raw_label_identifier, rubric_json"
+        "profile_key, metric_key, metric_label, display_label, report_order, direction, customer_label, raw_label_identifier, rubric_json, weight"
       )
       .eq("profile_key", args.profile_key)
       .eq("profile_is_active", true)
@@ -274,9 +523,9 @@ export async function buildMetricsSurfacePayload(
       label: String(row.metric_label ?? row.display_label ?? row.metric_key),
       customer_label: String(
         row.customer_label ??
-          row.display_label ??
-          row.metric_label ??
-          row.metric_key
+        row.display_label ??
+        row.metric_label ??
+        row.metric_key
       ),
       raw_label_identifier: String(
         row.raw_label_identifier ?? row.metric_label ?? row.metric_key
@@ -284,6 +533,7 @@ export async function buildMetricsSurfacePayload(
       direction: toNullableString(row.direction),
       sort_order: toNullableNumber(row.report_order) ?? 999,
       report_order: toNullableNumber(row.report_order),
+      weight: toNullableNumber(row.weight),
     })
   );
 
@@ -360,6 +610,18 @@ export async function buildMetricsSurfacePayload(
     compositeRowsRaw.filter((row) => Boolean(String(row.tech_id ?? "").trim()))
   );
 
+  const riskState = buildRiskState({
+    teamRows: latestCompositeRows.map((row) => ({
+      tech_id: row.tech_id,
+      full_name: row.full_name,
+      rank: row.rank_in_profile,
+      composite_score: row.composite_score,
+    })),
+    definitions,
+    scoreMap,
+    workMixMap,
+  });
+
   const teamRows: MetricsSurfaceTeamRow[] = latestCompositeRows.map(
     (row, index) => {
       const workMix = workMixMap.get(row.tech_id) ?? null;
@@ -374,7 +636,7 @@ export async function buildMetricsSurfacePayload(
         work_mix: workMix,
         jobs_display:
           workMix && workMix.total > 0 ? String(workMix.total) : null,
-        risk_count: null,
+        risk_count: riskState.riskCountByTech.get(row.tech_id) ?? 0,
       };
     }
   );
@@ -386,13 +648,13 @@ export async function buildMetricsSurfacePayload(
   const executiveKpis =
     args.scoped_tech_ids.length > 0
       ? buildExecutiveKpis({
-          definitions,
-          supervisorScores: scopedScores,
-          orgScores: allScoreRows,
-          rubricByKpi,
-          support: null,
-          comparison_scope_code: regionContext.comparison_scope_code,
-        })
+        definitions,
+        supervisorScores: scopedScores,
+        orgScores: allScoreRows,
+        rubricByKpi,
+        support: null,
+        comparison_scope_code: regionContext.comparison_scope_code,
+      })
       : [];
 
   const totalJobs = latestWorkMixRows.reduce((sum, row) => sum + row.total, 0);
@@ -437,14 +699,16 @@ export async function buildMetricsSurfacePayload(
       show_parity: args.visibility?.show_parity ?? false,
     },
     executive_kpis: executiveKpis,
-    risk_strip: [],
+    risk_strip: riskState.strip,
+    risk_insights: riskState.insights,
     team_table: {
       columns,
       rows: teamRows,
     },
     overlays: {
-      work_mix: totalJobs > 0
-        ? {
+      work_mix:
+        totalJobs > 0
+          ? {
             total: totalJobs,
             installs: totalInstalls,
             tcs: totalTcs,
@@ -453,24 +717,26 @@ export async function buildMetricsSurfacePayload(
             tc_pct: totalJobs > 0 ? totalTcs / totalJobs : null,
             sro_pct: totalJobs > 0 ? totalSros / totalJobs : null,
           }
-        : null,
+          : null,
       parity_summary: [],
       parity_detail: [],
-      jobs_summary: totalJobs > 0
-        ? {
+      jobs_summary:
+        totalJobs > 0
+          ? {
             total_jobs: totalJobs,
             installs: totalInstalls,
             tcs: totalTcs,
             sros: totalSros,
           }
-        : null,
-      jobs_detail: totalJobs > 0
-        ? [
+          : null,
+      jobs_detail:
+        totalJobs > 0
+          ? [
             { label: "Installs", value: totalInstalls },
             { label: "TCs", value: totalTcs },
             { label: "SROs", value: totalSros },
           ]
-        : [],
+          : [],
     },
   };
 }
