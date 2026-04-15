@@ -82,14 +82,12 @@ type Props = {
 
   onOpenJobs?: (row: MetricsTeamRow) => void;
 
-  loadInspectionPayload?: (
-    args: {
-      row: MetricsTeamRow;
-      column: MetricsTeamColumn;
-      metric: MetricsTeamCell;
-      range?: MetricsRangeKey;
-    }
-  ) => Promise<MetricsInspectionPayload | null>;
+  loadInspectionPayload?: (args: {
+    row: MetricsTeamRow;
+    column: MetricsTeamColumn;
+    metric: MetricsTeamCell;
+    range?: MetricsRangeKey;
+  }) => Promise<MetricsInspectionPayload | null>;
 
   renderInspectionDrawer?: (args: {
     open: boolean;
@@ -194,6 +192,14 @@ function metricMap(row: MetricsTeamRow) {
   return new Map(row.metrics.map((m) => [m.metric_key, m]));
 }
 
+function displayFirstName(fullName?: string | null) {
+  const trimmed = String(fullName ?? "").trim();
+  if (!trimmed) return "Unknown";
+
+  const first = trimmed.split(/\s+/)[0]?.trim();
+  return first || "Unknown";
+}
+
 /* -------------------------------- UI -------------------------------- */
 
 function HeaderTrigger(props: {
@@ -224,7 +230,6 @@ function MetricPill({
   metricKey: string;
   onClick?: () => void;
 }) {
-  const value = metric?.metric_value ?? null;
   const band = metric?.render_band_key ?? "NO_DATA";
 
   return (
@@ -233,7 +238,7 @@ function MetricPill({
       onClick={onClick}
       disabled={!onClick}
       className={[
-        "relative min-w-[76px] rounded-xl border bg-white px-2 py-2 text-center shadow-[var(--to-shadow-xs)]",
+        "relative min-w-[72px] rounded-xl border bg-white px-2 py-1.5 text-center shadow-[var(--to-shadow-xs)]",
         metricTone(band),
         onClick ? "transition hover:-translate-y-[1px]" : "cursor-default",
       ].join(" ")}
@@ -244,12 +249,12 @@ function MetricPill({
           metricAccent(band),
         ].join(" ")}
       />
-      <div className="pt-1 text-sm font-medium text-[var(--to-ink)]">
+      <div className="pt-0.5 text-[13px] font-medium leading-none text-[var(--to-ink)]">
         {resolveMetricDisplayValue(
           metric ?? { metric_key: metricKey, metric_value: null }
         )}
       </div>
-      <div className="mt-0.5 text-[10px] text-[var(--to-ink-muted)]">
+      <div className="mt-0.5 text-[9px] leading-none text-[var(--to-ink-muted)]">
         {metric?.weighted_points != null
           ? `+${formatComposite(metric.weighted_points)}`
           : "—"}
@@ -310,7 +315,7 @@ export default function MetricsTeamPerformanceTable({
   return (
     <>
       <Card className="p-4">
-        <div className="mb-4 flex items-center justify-between rounded-2xl border bg-[color-mix(in_oklab,var(--to-primary)_8%,white)] px-4 py-3">
+        <div className="mb-3 flex items-center justify-between rounded-2xl border bg-[color-mix(in_oklab,var(--to-primary)_8%,white)] px-4 py-2.5">
           <div className="flex items-center gap-3">
             <div className="text-[11px] font-semibold uppercase tracking-wide">
               {title}
@@ -351,20 +356,20 @@ export default function MetricsTeamPerformanceTable({
         <div className="overflow-x-auto rounded-2xl border">
           <table className="min-w-full border-collapse">
             <thead>
-              <tr className="border-b text-[11px]">
-                <th className="w-[260px] px-4 py-3 text-left">Tech</th>
-                <th className="w-[110px] px-4 py-3 text-center">Composite</th>
+              <tr className="border-b text-[10px]">
+                <th className="w-[190px] px-3 py-2.5 text-left">Tech</th>
+                <th className="w-[92px] px-3 py-2.5 text-center">Composite</th>
 
                 {columns.map((col) => (
                   <th
                     key={col.kpi_key}
-                    className="px-3 py-3 text-center whitespace-nowrap"
+                    className="px-2.5 py-2.5 text-center whitespace-nowrap"
                   >
                     {col.label}
                   </th>
                 ))}
 
-                <th className="w-[84px] px-3 py-3 text-center">
+                <th className="w-[80px] px-2.5 py-2.5 text-center">
                   {workMixContent ? (
                     <HeaderTrigger
                       compact
@@ -376,7 +381,7 @@ export default function MetricsTeamPerformanceTable({
                   )}
                 </th>
 
-                <th className="w-[64px] px-3 py-3 text-center">Risk</th>
+                <th className="w-[60px] px-2.5 py-2.5 text-center">Risk</th>
               </tr>
             </thead>
 
@@ -385,21 +390,21 @@ export default function MetricsTeamPerformanceTable({
                 const map = metricMap(row);
 
                 return (
-                  <tr key={row.subject_key} className="border-b">
-                    <td className="px-4 py-4">
-                      <div className="font-medium text-[var(--to-ink)]">
-                        {row.full_name ?? "Unknown"}
+                  <tr key={row.subject_key} className="border-b last:border-b-0">
+                    <td className="px-2.5 py-2.5">
+                      <div className="font-medium leading-tight text-[var(--to-ink)]">
+                        {displayFirstName(row.full_name)}
                       </div>
-                      <div className="mt-1 text-xs text-[var(--to-ink-muted)]">
+                      <div className="mt-0.5 text-[10px] leading-none text-[var(--to-ink-muted)]">
                         {row.tech_id ?? "—"}
                       </div>
                     </td>
 
-                    <td className="px-4 py-4 text-center">
-                      <div className="text-[28px] font-semibold leading-none text-[var(--to-ink)]">
+                    <td className="px-3 py-3 text-center">
+                      <div className="text-[18px] font-semibold leading-none text-[var(--to-ink)]">
                         {formatComposite(row.composite_score)}
                       </div>
-                      <div className="mt-1 text-xs text-[var(--to-ink-muted)]">
+                      <div className="mt-0.5 text-[10px] leading-none text-[var(--to-ink-muted)]">
                         Rank {row.rank ?? "—"}
                       </div>
                     </td>
@@ -410,7 +415,7 @@ export default function MetricsTeamPerformanceTable({
                       return (
                         <td
                           key={`${row.subject_key}-${col.kpi_key}`}
-                          className="px-2 py-3 text-center"
+                          className="px-2 py-2.5 text-center"
                         >
                           <MetricPill
                             metric={metric}
@@ -425,13 +430,13 @@ export default function MetricsTeamPerformanceTable({
                       );
                     })}
 
-                    <td className="px-3 py-4 text-center align-middle">
+                    <td className="px-2.5 py-3 text-center align-middle">
                       <button
                         type="button"
                         onClick={() => onOpenJobs?.(row)}
                         disabled={!onOpenJobs}
                         className={[
-                          "min-w-[56px] rounded-full border px-2 py-1 text-xs font-medium",
+                          "min-w-[52px] rounded-full border px-2 py-1 text-[11px] font-medium",
                           onOpenJobs
                             ? "transition hover:bg-muted/30"
                             : "cursor-default",
@@ -441,7 +446,7 @@ export default function MetricsTeamPerformanceTable({
                       </button>
                     </td>
 
-                    <td className="px-3 py-4 text-center text-sm font-medium align-middle">
+                    <td className="px-2.5 py-3 text-center align-middle text-sm font-medium">
                       {row.risk_count ?? "—"}
                     </td>
                   </tr>

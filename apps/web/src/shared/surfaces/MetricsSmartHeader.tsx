@@ -121,11 +121,11 @@ export default function MetricsSmartHeader(props: Props) {
                 <div className="flex items-start gap-3">
                     <div className="grid grid-cols-3 gap-2">
                         <StatTile
-                            label="PC HC"
+                            label="TOTAL HC"
                             value={header.scope_headcount ?? 0}
                         />
                         <StatTile
-                            label="SUP HC"
+                            label="SCOPE HC"
                             value={header.total_headcount ?? 0}
                         />
                         <StatTile
