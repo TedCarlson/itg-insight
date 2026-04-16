@@ -56,25 +56,21 @@ function isFirstWeekOfFiscalMonth(value: Date): boolean {
   return diffDays <= 6;
 }
 
-function dedupeLatestPerMetricDate(
-  rows: MetricReadyBatchRow[]
-): MetricsRangeResolvedBatch[] {
-  const map = new Map<string, MetricsRangeResolvedBatch>();
+function toResolvedBatch(row: MetricReadyBatchRow | null): MetricsRangeResolvedBatch[] {
+  if (!row) return [];
 
-  for (const row of rows) {
-    const metricDate = String(row.metric_date ?? "").trim();
-    const metricBatchId = String(row.metric_batch_id ?? "").trim();
-    if (!metricDate || !metricBatchId) continue;
-    if (map.has(metricDate)) continue;
+  const metricBatchId = String(row.metric_batch_id ?? "").trim();
+  const metricDate = String(row.metric_date ?? "").trim();
 
-    map.set(metricDate, {
+  if (!metricBatchId || !metricDate) return [];
+
+  return [
+    {
       metric_batch_id: metricBatchId,
       metric_date: metricDate,
       fiscal_end_date: row.fiscal_end_date ?? null,
-    });
-  }
-
-  return [...map.values()].sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+    },
+  ];
 }
 
 function dedupeLatestPerFiscalMonthEnd(
@@ -145,6 +141,31 @@ async function loadLatestReadyBatch(
   return (data as MetricReadyBatchRow | null) ?? null;
 }
 
+async function loadLatestReadyBatchForDateWindow(args: {
+  pc_org_id: string;
+  start_date: string;
+  end_date: string;
+}): Promise<MetricReadyBatchRow | null> {
+  const sb = await supabaseServer();
+
+  const { data, error } = await sb
+    .from("metric_ready_batches_v")
+    .select("metric_batch_id, metric_date, fiscal_end_date")
+    .eq("pc_org_id", args.pc_org_id)
+    .gte("metric_date", args.start_date)
+    .lte("metric_date", args.end_date)
+    .order("metric_date", { ascending: false })
+    .order("metric_batch_id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as MetricReadyBatchRow | null) ?? null;
+}
+
 export async function resolveMetricsRangeBatchIds(args: {
   pc_org_id: string;
   range: MetricsRangeKey;
@@ -167,25 +188,25 @@ export async function resolveMetricsRangeBatchIds(args: {
   let batches: MetricsRangeResolvedBatch[] = [];
 
   if (args.range === "FM") {
-    const rows = await loadReadyBatchesForDateWindow({
+    const latestCurrentBatch = await loadLatestReadyBatchForDateWindow({
       pc_org_id: args.pc_org_id,
       start_date: toIsoDate(currentStart),
       end_date: toIsoDate(currentEnd),
     });
 
-    batches = dedupeLatestPerMetricDate(rows);
+    batches = toResolvedBatch(latestCurrentBatch);
   } else if (args.range === "PREVIOUS") {
     const previousAnchor = addDays(currentStart, -1);
     const previousStart = fiscalMonthStart(previousAnchor);
     const previousEnd = fiscalMonthEnd(previousAnchor);
 
-    const rows = await loadReadyBatchesForDateWindow({
+    const latestPreviousBatch = await loadLatestReadyBatchForDateWindow({
       pc_org_id: args.pc_org_id,
       start_date: toIsoDate(previousStart),
       end_date: toIsoDate(previousEnd),
     });
 
-    batches = dedupeLatestPerMetricDate(rows);
+    batches = toResolvedBatch(latestPreviousBatch);
   } else if (args.range === "3FM") {
     const firstWeek = isFirstWeekOfFiscalMonth(anchorDate);
 
@@ -201,7 +222,7 @@ export async function resolveMetricsRangeBatchIds(args: {
       end_date: toIsoDate(rangeEnd),
     });
 
-    batches = dedupeLatestPerMetricDate(rows);
+    batches = dedupeLatestPerFiscalMonthEnd(rows);
   } else {
     const rangeStart = fiscalMonthStart(addMonths(currentStart, -12));
     const rangeEnd = addDays(currentStart, -1);

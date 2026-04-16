@@ -1,5 +1,3 @@
-// path: apps/web/src/features/role-company-manager/pages/CompanyManagerMetricsPageShell.tsx
-
 import Link from "next/link";
 
 import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
@@ -36,14 +34,14 @@ function toRangeLabel(rangeKey: MetricsRangeKey): string {
   return "Previous 12FM";
 }
 
-function buildHref(args: {
+function buildMetricsHref(args: {
   class_type: ReportClassType;
   range: MetricsRangeKey;
 }) {
   const params = new URLSearchParams();
   params.set("class_type", args.class_type);
   params.set("range", args.range);
-  return `/company-manager?${params.toString()}`;
+  return `/company-manager/metrics?${params.toString()}`;
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -65,7 +63,7 @@ function ClassSelector(props: {
   return (
     <div className="flex items-center gap-2">
       <Link
-        href={buildHref({ class_type: "NSR", range: props.range })}
+        href={buildMetricsHref({ class_type: "NSR", range: props.range })}
         className={[
           baseClass,
           props.class_type === "NSR" ? activeClass : idleClass,
@@ -75,7 +73,7 @@ function ClassSelector(props: {
       </Link>
 
       <Link
-        href={buildHref({ class_type: "SMART", range: props.range })}
+        href={buildMetricsHref({ class_type: "SMART", range: props.range })}
         className={[
           baseClass,
           props.class_type === "SMART" ? activeClass : idleClass,
@@ -87,7 +85,40 @@ function ClassSelector(props: {
   );
 }
 
-export default async function CompanyManagerPageShell(props: Props) {
+function RangeSelector(props: {
+  class_type: ReportClassType;
+  active_range: MetricsRangeKey;
+  available_ranges: MetricsRangeKey[];
+}) {
+  const baseClass =
+    "inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm font-medium transition";
+  const activeClass =
+    "border-[var(--to-accent)] bg-[color-mix(in_oklab,var(--to-accent)_10%,white)] text-foreground";
+  const idleClass =
+    "border-[var(--to-border)] bg-background text-muted-foreground hover:bg-muted/30 hover:text-foreground";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {props.available_ranges.map((rangeKey) => (
+        <Link
+          key={rangeKey}
+          href={buildMetricsHref({
+            class_type: props.class_type,
+            range: rangeKey,
+          })}
+          className={[
+            baseClass,
+            props.active_range === rangeKey ? activeClass : idleClass,
+          ].join(" ")}
+        >
+          {toRangeLabel(rangeKey)}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+export default async function CompanyManagerMetricsPageShell(props: Props) {
   const range = normalizeRangeKey(props.range);
 
   const payload = await getCompanyManagerSurfacePayload({
@@ -152,21 +183,19 @@ export default async function CompanyManagerPageShell(props: Props) {
     <div className="space-y-4 p-4">
       <MetricsSmartHeader
         header={payload.header}
-        rangeOptions={
-          payload.permissions.can_filter_range
-            ? payload.filters.available_ranges.map((rangeKey) => ({
-                key: rangeKey,
-                label: toRangeLabel(rangeKey),
-                active: payload.filters.active_range === rangeKey,
-                onClick: undefined,
-              }))
-            : []
-        }
+        rangeOptions={[]}
         rightActions={
-          <ClassSelector
-            class_type={props.class_type}
-            range={payload.filters.active_range}
-          />
+          <div className="flex flex-col items-end gap-2">
+            <RangeSelector
+              class_type={props.class_type}
+              active_range={payload.filters.active_range}
+              available_ranges={payload.filters.available_ranges}
+            />
+            <ClassSelector
+              class_type={props.class_type}
+              range={payload.filters.active_range}
+            />
+          </div>
         }
       />
 
