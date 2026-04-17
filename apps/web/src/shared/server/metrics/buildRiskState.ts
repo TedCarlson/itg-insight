@@ -55,6 +55,39 @@ function hasPositiveFtrContactJobs(args: {
     : false;
 }
 
+function compareByRankThenComposite(
+  a: {
+    rank: number | null;
+    composite_score: number | null;
+    full_name: string | null;
+  },
+  b: {
+    rank: number | null;
+    composite_score: number | null;
+    full_name: string | null;
+  }
+) {
+  const rankA =
+    typeof a.rank === "number" && Number.isFinite(a.rank) ? a.rank : 999999;
+  const rankB =
+    typeof b.rank === "number" && Number.isFinite(b.rank) ? b.rank : 999999;
+
+  if (rankA !== rankB) return rankA - rankB;
+
+  const compA =
+    typeof a.composite_score === "number" && Number.isFinite(a.composite_score)
+      ? a.composite_score
+      : -1;
+  const compB =
+    typeof b.composite_score === "number" && Number.isFinite(b.composite_score)
+      ? b.composite_score
+      : -1;
+
+  if (compA !== compB) return compB - compA;
+
+  return String(a.full_name ?? "").localeCompare(String(b.full_name ?? ""));
+}
+
 export function buildRiskState(args: {
   teamRows: Array<{
     tech_id: string;
@@ -195,21 +228,7 @@ export function buildRiskState(args: {
     }
   }
 
-  const sortedByRiskThenComposite = [...eligibleTeamRows].sort((a, b) => {
-    const riskA = riskCountByTech.get(a.tech_id) ?? 0;
-    const riskB = riskCountByTech.get(b.tech_id) ?? 0;
-    if (riskA !== riskB) return riskA - riskB;
-
-    const compA =
-      typeof a.composite_score === "number" && Number.isFinite(a.composite_score)
-        ? a.composite_score
-        : -1;
-    const compB =
-      typeof b.composite_score === "number" && Number.isFinite(b.composite_score)
-        ? b.composite_score
-        : -1;
-    return compB - compA;
-  });
+  const sortedByRank = [...args.teamRows].sort(compareByRankThenComposite);
 
   function toPerformer(row: {
     tech_id: string;
@@ -234,11 +253,8 @@ export function buildRiskState(args: {
     };
   }
 
-  const topPerformers = sortedByRiskThenComposite.slice(0, 5).map(toPerformer);
-  const bottomPerformers = [...sortedByRiskThenComposite]
-    .reverse()
-    .slice(0, 5)
-    .map(toPerformer);
+  const topPerformers = sortedByRank.slice(0, 5).map(toPerformer);
+  const bottomPerformers = [...sortedByRank].reverse().slice(0, 5).map(toPerformer);
 
   const strip: MetricsRiskStripItem[] = [
     {
@@ -257,13 +273,13 @@ export function buildRiskState(args: {
       key: "top",
       title: "Top Performers",
       value: String(topPerformers.length),
-      note: "Lowest risk",
+      note: "Highest rank",
     },
     {
       key: "bottom",
       title: "Needs Attention",
       value: String(bottomPerformers.length),
-      note: "Highest risk",
+      note: "Lowest rank",
     },
   ];
 

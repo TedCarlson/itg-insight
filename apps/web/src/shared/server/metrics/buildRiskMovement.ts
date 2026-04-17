@@ -58,7 +58,11 @@ function buildEligibleTechIdSet(args: {
     if (row.metric_key !== args.ftrKpiKey) continue;
 
     const denominator = row.denominator;
-    if (typeof denominator === "number" && Number.isFinite(denominator) && denominator > 0) {
+    if (
+      typeof denominator === "number" &&
+      Number.isFinite(denominator) &&
+      denominator > 0
+    ) {
       eligible.add(row.tech_id);
     }
   }
@@ -114,14 +118,23 @@ export function buildRiskMovement(args: {
     ftrKpiKey,
   });
 
-  const filteredCurrentTechIds = args.currentTechIds.filter((techId) =>
-    currentEligibleTechIds.has(techId)
-  );
+  const currentMissSetByTech = buildMissSetByTech({
+    scoreRows: args.currentScoreRows,
+    eligibleTechIds: currentEligibleTechIds,
+  });
 
   const previousMissSetByTech = buildMissSetByTech({
     scoreRows: args.previousScoreRows,
     eligibleTechIds: previousEligibleTechIds,
   });
+
+  const currentTechIds: string[] = [];
+  for (const [techId, kpis] of currentMissSetByTech.entries()) {
+    if (kpis.has(args.topKpiKey)) {
+      currentTechIds.push(techId);
+    }
+  }
+  currentTechIds.sort((a, b) => a.localeCompare(b));
 
   const previousTechIds = new Set<string>();
   for (const [techId, kpis] of previousMissSetByTech.entries()) {
@@ -130,13 +143,13 @@ export function buildRiskMovement(args: {
     }
   }
 
-  const currentTechIdSet = new Set(filteredCurrentTechIds);
+  const currentTechIdSet = new Set(currentTechIds);
 
-  const persistent_tech_ids = filteredCurrentTechIds.filter((techId) =>
+  const persistent_tech_ids = currentTechIds.filter((techId) =>
     previousTechIds.has(techId)
   );
 
-  const new_tech_ids = filteredCurrentTechIds.filter(
+  const new_tech_ids = currentTechIds.filter(
     (techId) => !previousTechIds.has(techId)
   );
 

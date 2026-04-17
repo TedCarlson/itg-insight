@@ -165,6 +165,26 @@ export type MetricsRiskInsightParticipation = {
   meets_0: MetricsRiskInsightParticipationBucket;
 };
 
+export type MetricsParticipationSignalKpi = {
+  kpi_key: string;
+  label: string;
+  score: number;
+  band_key: string;
+  trend_delta: number | null;
+  trend_direction: MetricsRiskTrendDirection;
+  participating_count: number;
+  eligible_count: number;
+};
+
+export type MetricsParticipationSignal = {
+  by_kpi: MetricsParticipationSignalKpi[];
+  overall_score: number;
+  overall_band_key: string;
+  trend_delta: number | null;
+  trend_direction: MetricsRiskTrendDirection;
+  eligible_count: number;
+};
+
 export type MetricsRiskInsightPerformer = {
   tech_id: string;
   full_name: string | null;
@@ -183,6 +203,7 @@ export type MetricsRiskInsights = {
   priority_kpi_overlays?: MetricsPriorityKpiOverlay[] | null;
   participation_overlay?: MetricsParticipationOverlay | null;
   participation: MetricsRiskInsightParticipation;
+  participation_signal?: MetricsParticipationSignal | null;
   top_performers: MetricsRiskInsightPerformer[];
   bottom_performers: MetricsRiskInsightPerformer[];
 };

@@ -29,7 +29,7 @@ export default function NeedsAttentionCard(props: { rows: Row[] }) {
   return (
     <div className="rounded-xl border bg-card p-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        Needs Attention
+        Coaching Queue
       </div>
 
       <div className="mt-2 space-y-1.5">

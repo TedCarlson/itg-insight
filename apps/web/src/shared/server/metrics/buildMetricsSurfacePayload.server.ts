@@ -3,6 +3,7 @@
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { buildExecutiveKpis } from "@/shared/domain/metrics/buildExecutiveKpis";
 import { buildFocusOverlayPayload } from "@/shared/server/metrics/buildFocusOverlayPayload";
+import { buildParticipationSignal } from "@/shared/server/metrics/buildParticipationSignal";
 import { buildRiskState } from "@/shared/server/metrics/buildRiskState";
 import {
   buildPriorityKpiMovements,
@@ -50,8 +51,6 @@ export type BuildMetricsSurfacePayloadArgs = {
     show_parity?: boolean;
   };
 };
-
-
 
 function buildEmptyPayload(args: {
   range: MetricsRangeKey;
@@ -221,6 +220,8 @@ export async function buildMetricsSurfacePayload(
       })
     : [];
 
+  const previousLatestScoreRows = dedupeLatestScoreRows(previousScoreRowsRaw);
+
   const movement = buildRiskMovement({
     definitions,
     currentScoreRows: latestScoreRows,
@@ -243,6 +244,12 @@ export async function buildMetricsSurfacePayload(
     })),
   });
 
+  const participationSignal = buildParticipationSignal({
+    definitions,
+    currentScoreRows: latestScoreRows,
+    previousScoreRows: previousLatestScoreRows,
+  });
+
   const focusOverlayPayload = buildFocusOverlayPayload({
     definitions,
     teamRows: latestCompositeRows.map((row) => ({
@@ -256,7 +263,7 @@ export async function buildMetricsSurfacePayload(
       metric_value: row.metric_value,
       band_key: row.band_key ?? null,
     })),
-    previousScoreRows: dedupeLatestScoreRows(previousScoreRowsRaw).map((row) => ({
+    previousScoreRows: previousLatestScoreRows.map((row) => ({
       tech_id: row.tech_id,
       metric_key: row.metric_key,
       metric_value: row.metric_value,
@@ -303,6 +310,7 @@ export async function buildMetricsSurfacePayload(
     top_priority_kpi_overlay: focusOverlayPayload.top_priority_kpi_overlay,
     priority_kpi_overlays: focusOverlayPayload.priority_kpi_overlays,
     participation_overlay: focusOverlayPayload.participation_overlay,
+    participation_signal: participationSignal,
   };
 
   const teamRows = buildTeamRows({

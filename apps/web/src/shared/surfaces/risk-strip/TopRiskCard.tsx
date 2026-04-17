@@ -18,6 +18,10 @@ function movementCount(
   return kpi.recovered_tech_ids.length;
 }
 
+function netCount(kpi: MetricsRiskInsightKpiMovement) {
+  return kpi.recovered_tech_ids.length - kpi.new_tech_ids.length;
+}
+
 function tone(mode: MovementGridMode) {
   if (mode === "new") return "text-rose-600";
   if (mode === "recovered") return "text-emerald-600";
@@ -27,6 +31,18 @@ function tone(mode: MovementGridMode) {
 function prefix(mode: MovementGridMode) {
   if (mode === "new") return "↓";
   if (mode === "recovered") return "↑";
+  return "—";
+}
+
+function netTone(value: number) {
+  if (value > 0) return "text-emerald-600";
+  if (value < 0) return "text-rose-600";
+  return "text-muted-foreground";
+}
+
+function netPrefix(value: number) {
+  if (value > 0) return "↑";
+  if (value < 0) return "↓";
   return "—";
 }
 
@@ -48,7 +64,7 @@ export default function TopRiskCard(props: {
         Top Priority Risk
       </div>
 
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 space-y-1.5">
         <div className="grid grid-cols-[92px_repeat(3,minmax(0,1fr))] items-center gap-x-2 text-[10px] uppercase tracking-wide text-muted-foreground">
           <div />
           {priorityKpis.map((kpi) => (
@@ -64,7 +80,14 @@ export default function TopRiskCard(props: {
               key={mode}
               className="grid grid-cols-[92px_repeat(3,minmax(0,1fr))] items-center gap-x-2"
             >
-              <div className="text-xs text-muted-foreground">
+              <div
+                className={[
+                  "text-xs",
+                  mode === "persistent"
+                    ? "text-muted-foreground/70"
+                    : "text-muted-foreground",
+                ].join(" ")}
+              >
                 {mode === "new"
                   ? "New"
                   : mode === "persistent"
@@ -81,7 +104,7 @@ export default function TopRiskCard(props: {
                     key={`${kpi.kpi_key}-${mode}`}
                     disabled={!clickable}
                     onClick={() => clickable && onCellClick(kpi, mode)}
-                    className="flex h-7 items-center justify-center rounded-md border text-xs font-medium transition hover:bg-muted/50"
+                    className="flex h-6 items-center justify-center rounded-md border px-1 text-xs font-medium transition hover:bg-muted/50"
                   >
                     <span className={tone(mode)}>
                       {count > 0 ? `${prefix(mode)} ${count}` : "—"}
@@ -93,11 +116,29 @@ export default function TopRiskCard(props: {
           )
         )}
 
+        <div className="grid grid-cols-[92px_repeat(3,minmax(0,1fr))] items-center gap-x-2 pt-1 border-t border-border/50">
+          <div className="text-xs font-semibold text-foreground/90">Net</div>
+
+          {priorityKpis.map((kpi) => {
+            const value = netCount(kpi);
+            const display =
+              value === 0 ? "—" : `${netPrefix(value)} ${Math.abs(value)}`;
+
+            return (
+              <div
+                key={`${kpi.kpi_key}-net`}
+                className="flex h-6 items-center justify-center rounded-md border px-1 text-xs font-semibold"
+              >
+                <span className={netTone(value)}>{display}</span>
+              </div>
+            );
+          })}
+        </div>
+
         <div className="pt-1">
           <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-1.5">
             <span className="h-5 w-1.5 rounded-full bg-amber-500" />
             <div className="min-w-0">
-              
               <div className="truncate text-[11px]">
                 <span className="font-medium text-foreground">
                   {topPriority.label ?? "—"}
