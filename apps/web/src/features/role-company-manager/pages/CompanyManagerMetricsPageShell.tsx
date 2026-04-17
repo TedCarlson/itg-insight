@@ -1,3 +1,5 @@
+// path: apps/web/src/features/role-company-manager/pages/CompanyManagerMetricsPageShell.tsx
+
 import Link from "next/link";
 
 import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
@@ -232,6 +234,10 @@ export default async function CompanyManagerMetricsPageShell(props: Props) {
             jobs_display: row.jobs_display ?? null,
             risk_count: row.risk_count ?? null,
             work_mix: row.work_mix ?? null,
+            office_label: row.office_label ?? null,
+            affiliation_type: row.affiliation_type ?? null,
+            reports_to_person_id: row.reports_to_person_id ?? null,
+            co_code: row.co_code ?? null,
             metrics: row.metrics.map((metric) => ({
               metric_key: metric.metric_key,
               label:

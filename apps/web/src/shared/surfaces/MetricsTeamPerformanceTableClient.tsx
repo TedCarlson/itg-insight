@@ -23,6 +23,10 @@ type RowWorkMix = {
 
 type RowWithWorkMix = MetricsTeamRow & {
   work_mix?: RowWorkMix | null;
+  office_label?: string | null;
+  affiliation_type?: string | null;
+  reports_to_person_id?: string | null;
+  co_code?: string | null;
 };
 
 type Props = {

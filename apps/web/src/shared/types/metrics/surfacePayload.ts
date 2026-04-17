@@ -72,6 +72,10 @@ export type MetricsSurfaceTeamRow = {
   work_mix: MetricsRowWorkMix | null;
   jobs_display: string | null;
   risk_count?: number | null;
+  office_label?: string | null;
+  affiliation_type?: string | null;
+  reports_to_person_id?: string | null;
+  co_code?: string | null;
 };
 
 export type MetricsSurfaceTeamTable = {

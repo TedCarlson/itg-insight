@@ -1,3 +1,5 @@
+// path: apps/web/src/shared/server/metrics/loadMetricCompositeRows.server.ts
+
 import { supabaseServer } from "@/shared/data/supabase/server";
 
 export type MetricCompositeRow = {
@@ -7,6 +9,10 @@ export type MetricCompositeRow = {
   rank_in_profile: number | null;
   metric_date: string | null;
   metric_batch_id: string;
+  office_label: string | null;
+  affiliation_type: string | null;
+  reports_to_person_id: string | null;
+  co_code: string | null;
 };
 
 function toNullableString(value: unknown): string | null {
@@ -28,7 +34,7 @@ export async function loadMetricCompositeRows(args: {
 
   const sb = await supabaseServer();
 
-  const [compositeRes, rankRes, nameRes] = await Promise.all([
+  const [compositeRes, rankRes, subjectRes] = await Promise.all([
     sb
       .from("metric_profile_composites_v")
       .select(
@@ -60,7 +66,11 @@ export async function loadMetricCompositeRows(args: {
         `
           metric_batch_id,
           tech_id,
-          full_name
+          full_name,
+          office_label,
+          affiliation_type,
+          reports_to_person_id,
+          co_code
         `
       )
       .eq("profile_key", args.profile_key)
@@ -75,13 +85,13 @@ export async function loadMetricCompositeRows(args: {
     throw new Error(rankRes.error.message);
   }
 
-  if (nameRes.error) {
-    throw new Error(nameRes.error.message);
+  if (subjectRes.error) {
+    throw new Error(subjectRes.error.message);
   }
 
   const composites = (compositeRes.data ?? []) as any[];
   const ranks = (rankRes.data ?? []) as any[];
-  const names = (nameRes.data ?? []) as any[];
+  const subjects = (subjectRes.data ?? []) as any[];
 
   const rankByKey = new Map<string, number | null>();
   for (const row of ranks) {
@@ -89,28 +99,50 @@ export async function loadMetricCompositeRows(args: {
     rankByKey.set(key, toNullableNumber(row.rank_in_profile));
   }
 
-  const fullNameByKey = new Map<string, string | null>();
-  for (const row of names) {
+  const subjectByKey = new Map<
+    string,
+    {
+      full_name: string | null;
+      office_label: string | null;
+      affiliation_type: string | null;
+      reports_to_person_id: string | null;
+      co_code: string | null;
+    }
+  >();
+
+  for (const row of subjects) {
     const techId = String(row.tech_id ?? "").trim();
     if (!techId) continue;
+
     const key = `${String(row.metric_batch_id)}::${techId}`;
-    if (!fullNameByKey.has(key)) {
-      fullNameByKey.set(key, toNullableString(row.full_name));
-    }
+    if (subjectByKey.has(key)) continue;
+
+    subjectByKey.set(key, {
+      full_name: toNullableString(row.full_name),
+      office_label: toNullableString(row.office_label),
+      affiliation_type: toNullableString(row.affiliation_type),
+      reports_to_person_id: toNullableString(row.reports_to_person_id),
+      co_code: toNullableString(row.co_code),
+    });
   }
 
   return composites
     .map((row) => {
       const techId = String(row.tech_id ?? "").trim();
       const key = `${String(row.metric_batch_id)}::${techId}`;
+      const subject = subjectByKey.get(key);
 
       return {
         metric_batch_id: String(row.metric_batch_id),
         metric_date: toNullableString(row.metric_date),
         tech_id: techId,
-        full_name: fullNameByKey.get(key) ?? null,
+        full_name: subject?.full_name ?? null,
         composite_score: toNullableNumber(row.composite_score),
         rank_in_profile: rankByKey.get(key) ?? null,
+        office_label: subject?.office_label ?? null,
+        affiliation_type: subject?.affiliation_type ?? null,
+        reports_to_person_id: subject?.reports_to_person_id ?? null,
+        co_code: subject?.co_code ?? null,
       };
     })
     .filter((row) => Boolean(row.tech_id))

@@ -1,4 +1,3 @@
-
 // path: apps/web/src/shared/server/metrics/buildMetricsSurfaceAssemblers.ts
 
 import { loadMetricCompositeRows } from "@/shared/server/metrics/loadMetricCompositeRows.server";
@@ -191,6 +190,10 @@ export function buildTeamRows(args: {
       work_mix: workMix,
       jobs_display: workMix && workMix.total > 0 ? String(workMix.total) : null,
       risk_count: args.riskCountByTech.get(row.tech_id) ?? 0,
+      office_label: row.office_label,
+      affiliation_type: row.affiliation_type,
+      reports_to_person_id: row.reports_to_person_id,
+      co_code: row.co_code,
     };
   });
 }

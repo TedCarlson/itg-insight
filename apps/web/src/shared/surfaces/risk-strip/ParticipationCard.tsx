@@ -120,7 +120,7 @@ export default function ParticipationCard(props: {
         Participation
       </div>
 
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 space-y-1.5">
         <div className="flex items-end justify-between gap-3">
           <div>
             <div className="text-[11px] text-muted-foreground">Eligible Techs</div>
@@ -137,8 +137,8 @@ export default function ParticipationCard(props: {
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <div className="flex h-6 overflow-hidden rounded-full border bg-muted/60">
+        <div className="space-y-1">
+          <div className="flex h-5 overflow-hidden rounded-full border bg-muted/60">
             {segments.map((segment) => {
               const width = total > 0 ? (segment.count / total) * 100 : 0;
               const pct = percent(segment.count, total);
@@ -180,7 +180,7 @@ export default function ParticipationCard(props: {
                   title={`${segment.label} · ${segment.count} techs · ${pct}%`}
                 >
                   <span
-                    className={["h-2 w-2 rounded-full", segment.colorClass].join(" ")}
+                    className={["h-1.5 w-1.5 rounded-full", segment.colorClass].join(" ")}
                   />
                   <span className="text-muted-foreground">{segment.shortLabel}</span>
                   <span className="font-semibold">{segment.count}</span>
@@ -192,21 +192,21 @@ export default function ParticipationCard(props: {
         </div>
 
         {signal ? (
-          <div className="space-y-2 border-t border-border/50 pt-2">
-            <div className="grid grid-cols-3 gap-1.5">
+          <div className="space-y-1.5 border-t border-border/50 pt-1.5">
+            <div className="grid grid-cols-3 gap-1">
               {signal.by_kpi.map((item) => (
                 <div
                   key={item.kpi_key}
-                  className="rounded-xl border bg-card px-2 py-1.5"
+                  className="rounded-lg border bg-card px-2 py-1"
                 >
-                  <div className="flex items-start justify-between gap-1.5">
-                    <div className="min-w-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="min-w-0 text-[9px] uppercase tracking-wide text-muted-foreground">
                       <span className="block truncate">{item.label}</span>
                     </div>
 
                     <span
                       className={[
-                        "inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[9px] font-medium",
+                        "inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[8px] font-medium",
                         scoreBandTone(item.band_key),
                       ].join(" ")}
                     >
@@ -214,14 +214,14 @@ export default function ParticipationCard(props: {
                     </span>
                   </div>
 
-                  <div className="mt-1 flex items-end justify-between gap-2">
-                    <div className="text-[14px] font-semibold leading-none">
+                  <div className="mt-1 flex items-end justify-between gap-1.5">
+                    <div className="text-[12px] font-semibold leading-none">
                       {item.score.toFixed(1)}%
                     </div>
 
                     <div
                       className={[
-                        "text-[10px] font-medium leading-none",
+                        "text-[9px] font-medium leading-none",
                         trendTone(item.trend_direction),
                       ].join(" ")}
                     >
@@ -236,19 +236,19 @@ export default function ParticipationCard(props: {
               ))}
             </div>
 
-            <div className="rounded-xl border bg-[color-mix(in_oklab,var(--to-primary)_6%,white)] px-2.5 py-1.5">
+            <div className="rounded-lg border bg-[color-mix(in_oklab,var(--to-primary)_6%,white)] px-2.5 py-1.5">
               <div className="flex items-end justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
                     Participation Score
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <div className="text-[16px] font-semibold leading-none">
+                    <div className="text-[15px] font-semibold leading-none">
                       {signal.overall_score.toFixed(1)}%
                     </div>
                     <span
                       className={[
-                        "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-medium",
+                        "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[8px] font-medium",
                         scoreBandTone(signal.overall_band_key),
                       ].join(" ")}
                     >
@@ -258,12 +258,12 @@ export default function ParticipationCard(props: {
                 </div>
 
                 <div className="text-right">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
                     Trend
                   </div>
                   <div
                     className={[
-                      "mt-1 text-[12px] font-semibold leading-none",
+                      "mt-1 text-[11px] font-semibold leading-none",
                       trendTone(signal.trend_direction),
                     ].join(" ")}
                   >
