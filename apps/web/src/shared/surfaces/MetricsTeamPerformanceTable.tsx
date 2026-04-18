@@ -284,7 +284,7 @@ function MetricPill({
       onClick={onClick}
       disabled={!onClick}
       className={[
-        "relative min-w-[72px] rounded-xl border bg-white px-2 py-1.5 text-center shadow-[var(--to-shadow-xs)]",
+        "relative min-w-[72px] overflow-hidden rounded-xl border bg-white px-2 py-1.5 text-center shadow-[var(--to-shadow-xs)]",
         metricTone(band),
         onClick ? "transition hover:-translate-y-[1px]" : "cursor-default",
       ].join(" ")}
@@ -619,22 +619,22 @@ export default function MetricsTeamPerformanceTable({
 
       {selectedMetric && renderInspectionDrawer
         ? renderInspectionDrawer({
-            open: !!selectedMetric,
-            onClose: () => setSelectedMetric(null),
-            row: selectedMetric.row,
-            column: selectedMetric.column,
-            metric: selectedMetric.metric,
-            metrics: activeDrillMetrics,
-            loadPayload: loadInspectionPayload
-              ? () =>
-                  loadInspectionPayload({
-                    row: selectedMetric.row,
-                    column: selectedMetric.column,
-                    metric: selectedMetric.metric,
-                    range,
-                  })
-              : undefined,
-          })
+          open: !!selectedMetric,
+          onClose: () => setSelectedMetric(null),
+          row: selectedMetric.row,
+          column: selectedMetric.column,
+          metric: selectedMetric.metric,
+          metrics: activeDrillMetrics,
+          loadPayload: loadInspectionPayload
+            ? () =>
+              loadInspectionPayload({
+                row: selectedMetric.row,
+                column: selectedMetric.column,
+                metric: selectedMetric.metric,
+                range,
+              })
+            : undefined,
+        })
         : null}
     </>
   );

@@ -10,12 +10,12 @@ import type {
 import {
   resolveCompanyManagerScope,
   type CompanyManagerScopeAssignmentRow,
-  type CompanyManagerScopePersonRow,
 } from "./resolveCompanyManagerScope.server";
 
 type CompanyManagerProfileKey = "NSR" | "SMART";
 
 type ManagerScopeMeta = {
+  person_id: string | null;
   office_label: string | null;
   reports_to_person_id: string | null;
   leader_name: string | null;
@@ -28,6 +28,7 @@ type ManagerScopeMeta = {
 };
 
 type EnrichedMetricsSurfaceTeamRow = MetricsSurfaceTeamRow & {
+  person_id?: string | null;
   leader_name?: string | null;
   leader_title?: string | null;
   team_class?: "ITG" | "BP" | null;
@@ -51,16 +52,10 @@ function normalizeRangeKey(value: string | null | undefined): MetricsRangeKey {
   return "FM";
 }
 
-function toNullableString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
 function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
   return {
     header: {
-      role_label: "Company Manager",
+      role_label: "Company Supervisor",
       rep_full_name: null,
       org_display: null,
       pc_label: null,
@@ -91,7 +86,16 @@ function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
       show_work_mix: false,
       show_parity: false,
     },
+
+    executive_strip: {
+      base: { items: [] },
+      scope: null,
+      runtime: null,
+    },
+
     executive_kpis: [],
+    executive_kpis_scoped: [],
+
     risk_strip: [],
     team_table: {
       columns: [],
@@ -147,45 +151,31 @@ export async function getCompanyManagerSurfacePayload(args?: {
     },
   });
 
-  const peopleById = resolvedScope.people_by_id;
-
   const scopeByTechId = new Map<string, ManagerScopeMeta>(
     resolvedScope.scoped_assignments
       .filter((row: CompanyManagerScopeAssignmentRow) =>
         Boolean(String(row.tech_id ?? "").trim())
       )
-      .map((row: CompanyManagerScopeAssignmentRow) => {
-        const leaderPersonId = toNullableString(row.leader_person_id);
-        const leaderPerson: CompanyManagerScopePersonRow | undefined =
-          leaderPersonId ? peopleById.get(leaderPersonId) : undefined;
-
-        const leaderName =
-          toNullableString(row.leader_name) ??
-          toNullableString(leaderPerson?.full_name) ??
-          null;
-
-        const leaderTitle = toNullableString(row.leader_title);
-
-        return [
-          String(row.tech_id ?? "").trim(),
-          {
-            office_label: toNullableString(row.office_name),
-            reports_to_person_id: leaderPersonId,
-            leader_name: leaderName,
-            leader_title: leaderTitle,
-            team_class: row.team_class ?? null,
-            contractor_name: toNullableString(row.contractor_name),
-            office_id: toNullableString(row.office_id),
-            affiliation_type:
-              row.team_class === "ITG"
-                ? "COMPANY"
-                : row.team_class === "BP"
-                  ? "CONTRACTOR"
-                  : null,
-            co_code: toNullableString(row.contractor_name),
-          },
-        ];
-      })
+      .map((row: CompanyManagerScopeAssignmentRow) => [
+        String(row.tech_id ?? "").trim(),
+        {
+          person_id: row.person_id ?? null,
+          office_label: row.office_name ?? null,
+          reports_to_person_id: row.leader_person_id ?? null,
+          leader_name: row.leader_name ?? null,
+          leader_title: row.leader_title ?? null,
+          team_class: row.team_class ?? null,
+          contractor_name: row.contractor_name ?? null,
+          office_id: row.office_id ?? null,
+          affiliation_type:
+            row.team_class === "ITG"
+              ? "COMPANY"
+              : row.team_class === "BP"
+              ? "CONTRACTOR"
+              : null,
+          co_code: row.contractor_name ?? null,
+        },
+      ])
   );
 
   const enrichedRows: EnrichedMetricsSurfaceTeamRow[] =
@@ -195,6 +185,7 @@ export async function getCompanyManagerSurfacePayload(args?: {
 
       return {
         ...row,
+        person_id: scopeMeta?.person_id ?? null,
         office_label: scopeMeta?.office_label ?? row.office_label ?? null,
         affiliation_type:
           scopeMeta?.affiliation_type ?? row.affiliation_type ?? null,
@@ -211,6 +202,14 @@ export async function getCompanyManagerSurfacePayload(args?: {
 
   return {
     ...basePayload,
+
+    // ✅ HARD GUARANTEE (prevents future break)
+    executive_strip: basePayload.executive_strip ?? {
+      base: { items: [] },
+      scope: null,
+      runtime: null,
+    },
+
     header: {
       ...basePayload.header,
       total_headcount: scopedTechIds.length,
@@ -220,5 +219,5 @@ export async function getCompanyManagerSurfacePayload(args?: {
       ...basePayload.team_table,
       rows: enrichedRows,
     },
-  } as MetricsSurfacePayload;
+  };
 }

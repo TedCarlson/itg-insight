@@ -172,7 +172,7 @@ export default async function CompanySupervisorPageShell(props: Props) {
 
       {payload.permissions.can_view_exec_strip ? (
         <MetricsExecutiveKpiStrip
-          items={payload.executive_kpis}
+          items={payload.executive_strip.base.items}
           subtitle="Supervisor scope compared against total region fact set."
         />
       ) : null}

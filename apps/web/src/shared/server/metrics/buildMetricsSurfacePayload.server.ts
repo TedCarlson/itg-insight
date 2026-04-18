@@ -1,5 +1,3 @@
-// path: apps/web/src/shared/server/metrics/buildMetricsSurfacePayload.server.ts
-
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { buildExecutiveKpis } from "@/shared/domain/metrics/buildExecutiveKpis";
 import { buildFocusOverlayPayload } from "@/shared/server/metrics/buildFocusOverlayPayload";
@@ -30,11 +28,21 @@ import {
   dedupeLatestWorkMixRows,
 } from "@/shared/server/metrics/lib/metricRowDedupers";
 import { resolveComparisonBatchIds } from "@/shared/server/metrics/lib/readyBatchResolver";
+
 import type {
   MetricsRangeKey,
   MetricsRiskInsights,
   MetricsSurfacePayload,
 } from "@/shared/types/metrics/surfacePayload";
+
+import type {
+  MetricsSurfaceBasePayload,
+  MetricsSurfaceScopePayload,
+  MetricsScopedExecutiveKpiItem,
+  MetricsExecutiveRuntimeDefinition,
+  MetricsExecutiveRuntimeRubricRow,
+  MetricsExecutiveRuntimeScoreRow,
+} from "@/shared/types/metrics/executiveStrip";
 
 export type BuildMetricsSurfacePayloadArgs = {
   role_key: string;
@@ -52,59 +60,50 @@ export type BuildMetricsSurfacePayloadArgs = {
   };
 };
 
-function buildEmptyPayload(args: {
-  range: MetricsRangeKey;
-  role_label: string | null;
-  rep_full_name: string | null;
-  org_display?: string | null;
-}): MetricsSurfacePayload {
-  return {
-    header: {
-      role_label: args.role_label,
-      rep_full_name: args.rep_full_name,
-      org_display: args.org_display ?? null,
-      pc_label: null,
-      scope_headcount: 0,
-      total_headcount: 0,
-      as_of_date: null,
-    },
-    permissions: {
-      can_view_exec_strip: true,
-      can_view_risk_strip: true,
-      can_view_team_table: true,
-      can_view_work_mix: true,
-      can_view_parity: true,
-      can_view_kpi_rubric: true,
-      can_view_tech_drill: true,
-      can_view_org_drill: true,
-      can_filter_range: true,
-      can_filter_scope: false,
-      can_sort_table: true,
-    },
-    filters: {
-      active_range: args.range,
-      available_ranges: ["FM", "PREVIOUS", "3FM", "12FM"],
-    },
-    visibility: {
-      show_jobs: false,
-      show_risk: true,
-      show_work_mix: false,
-      show_parity: false,
-    },
-    executive_kpis: [],
-    risk_strip: [],
-    team_table: {
-      columns: [],
-      rows: [],
-    },
-    overlays: {
-      work_mix: null,
-      parity_summary: [],
-      parity_detail: [],
-      jobs_summary: null,
-      jobs_detail: [],
-    },
-  };
+function toRuntimeDefinitions(definitions: DefinitionRow[]): MetricsExecutiveRuntimeDefinition[] {
+  return definitions.map((def) => ({
+    kpi_key: def.kpi_key,
+    label: def.label,
+    customer_label: (def as any).customer_label ?? null,
+    direction: (def as any).direction ?? null,
+  }));
+}
+
+function toRuntimeRubricRows(
+  rubricByKpi: Map<string, any[]>
+): MetricsExecutiveRuntimeRubricRow[] {
+  const rows: MetricsExecutiveRuntimeRubricRow[] = [];
+
+  for (const [kpiKey, rubricRows] of rubricByKpi.entries()) {
+    for (const row of rubricRows ?? []) {
+      rows.push({
+        kpi_key: kpiKey,
+        band_key: String((row as any).band_key ?? "NO_DATA"),
+        min_value:
+          typeof (row as any).min_value === "number" ? (row as any).min_value : null,
+        max_value:
+          typeof (row as any).max_value === "number" ? (row as any).max_value : null,
+      });
+    }
+  }
+
+  return rows;
+}
+
+function toRuntimeScoreRows(rows: any[]): MetricsExecutiveRuntimeScoreRow[] {
+  return rows
+    .filter((row) => Boolean(String(row.tech_id ?? "").trim()))
+    .map((row) => ({
+      tech_id: String(row.tech_id),
+      metric_key: String(row.metric_key),
+      metric_value:
+        typeof row.metric_value === "number" ? row.metric_value : null,
+      band_key: row.band_key ?? null,
+      weighted_points:
+        typeof row.weighted_points === "number" ? row.weighted_points : null,
+      numerator: typeof row.numerator === "number" ? row.numerator : null,
+      denominator: typeof row.denominator === "number" ? row.denominator : null,
+    }));
 }
 
 export async function buildMetricsSurfacePayload(
@@ -135,97 +134,150 @@ export async function buildMetricsSurfacePayload(
     throw new Error(profileKpiRes.error.message);
   }
 
-  if (!rangeResolution.batch_ids.length) {
-    const empty = buildEmptyPayload({
-      range: args.range,
-      role_label: args.role_label,
-      rep_full_name: args.rep_full_name,
-      org_display: regionContext.org_display,
-    });
+  const comparisonBatchIds = await resolveComparisonBatchIds({
+    pc_org_id: args.pc_org_id,
+    range: args.range,
+  });
 
-    return {
-      ...empty,
-      header: {
-        ...empty.header,
-        as_of_date: rangeResolution.as_of_date,
-      },
-      visibility: {
-        show_jobs: args.visibility?.show_jobs ?? false,
-        show_risk: args.visibility?.show_risk ?? true,
-        show_work_mix: args.visibility?.show_work_mix ?? false,
-        show_parity: args.visibility?.show_parity ?? false,
-      },
-    };
-  }
-
-  const [scoreRowsRaw, compositeRowsRaw, workMixRowsRaw] = await Promise.all([
-    loadMetricScoreRows({
-      pc_org_id: args.pc_org_id,
-      profile_key: args.profile_key,
-      metric_batch_ids: rangeResolution.batch_ids,
-    }),
-    loadMetricCompositeRows({
-      pc_org_id: args.pc_org_id,
-      profile_key: args.profile_key,
-      metric_batch_ids: rangeResolution.batch_ids,
-    }),
-    loadMetricWorkMixRows({
-      pc_org_id: args.pc_org_id,
-      metric_batch_ids: rangeResolution.batch_ids,
-    }),
-  ]);
-
-  const profileKpiRows = (profileKpiRes.data ?? []) as any[];
+  const [scoreRowsRaw, prevScoreRowsRaw, compositeRowsRaw, workMixRowsRaw] =
+    await Promise.all([
+      loadMetricScoreRows({
+        pc_org_id: args.pc_org_id,
+        profile_key: args.profile_key,
+        metric_batch_ids: rangeResolution.batch_ids,
+      }),
+      comparisonBatchIds.length
+        ? loadMetricScoreRows({
+            pc_org_id: args.pc_org_id,
+            profile_key: args.profile_key,
+            metric_batch_ids: comparisonBatchIds,
+          })
+        : [],
+      loadMetricCompositeRows({
+        pc_org_id: args.pc_org_id,
+        profile_key: args.profile_key,
+        metric_batch_ids: rangeResolution.batch_ids,
+      }),
+      loadMetricWorkMixRows({
+        pc_org_id: args.pc_org_id,
+        metric_batch_ids: rangeResolution.batch_ids,
+      }),
+    ]);
 
   const definitions: DefinitionRow[] = buildMetricDefinitions({
-    profileKpiRows,
+    profileKpiRows: profileKpiRes.data ?? [],
     profile_key: args.profile_key,
   });
 
-  const rubricByKpi = buildRubricByKpi(profileKpiRows);
-  const columns = buildMetricColumns(definitions);
-  const allScoreRows = buildAllScoreRows(scoreRowsRaw);
+  const rubricByKpi = buildRubricByKpi(profileKpiRes.data ?? []);
 
-  const latestScoreRows = dedupeLatestScoreRows(scoreRowsRaw);
-  const latestWorkMixRows = dedupeLatestWorkMixRows(workMixRowsRaw);
-  const workMixMap = buildWorkMixMap(latestWorkMixRows);
-  const scoreMap = buildScoreMap(latestScoreRows);
+  const currentRows = dedupeLatestScoreRows(scoreRowsRaw);
+  const previousRows = dedupeLatestScoreRows(prevScoreRowsRaw);
+
+  const allCurrent = buildAllScoreRows(currentRows);
+  const allPrevious = buildAllScoreRows(previousRows);
+
+  const scopedCurrent = allCurrent.filter((r) =>
+    args.scoped_tech_ids.includes(r.tech_id)
+  );
+  const scopedPrevious = allPrevious.filter((r) =>
+    args.scoped_tech_ids.includes(r.tech_id)
+  );
+
+  const baseItems = buildExecutiveKpis({
+    definitions,
+    supervisorScores: allCurrent,
+    orgScores: allPrevious,
+    rubricByKpi,
+    support: null,
+    comparison_scope_code: regionContext.comparison_scope_code,
+  });
+
+  const basePayload: MetricsSurfaceBasePayload = {
+    items: baseItems,
+  };
+
+  let scopePayload: MetricsSurfaceScopePayload | null = null;
+
+  if (args.scoped_tech_ids.length > 0) {
+    const scopedTrend = buildExecutiveKpis({
+      definitions,
+      supervisorScores: scopedCurrent,
+      orgScores: scopedPrevious,
+      rubricByKpi,
+      support: null,
+      comparison_scope_code: "SCOPE_TREND",
+    });
+
+    const scopedContrast = buildExecutiveKpis({
+      definitions,
+      supervisorScores: scopedCurrent,
+      orgScores: allCurrent,
+      rubricByKpi,
+      support: null,
+      comparison_scope_code: regionContext.comparison_scope_code,
+    });
+
+    const scopedItems: MetricsScopedExecutiveKpiItem[] = scopedTrend.map(
+      (trendItem) => {
+        const contrastItem = scopedContrast.find(
+          (c) => c.kpi_key === trendItem.kpi_key
+        );
+
+        return {
+          kpi_key: trendItem.kpi_key,
+          label: trendItem.label,
+          value_display: trendItem.value_display,
+          band_key: trendItem.band_key,
+          band_label: trendItem.band_label,
+          support: trendItem.support ?? null,
+
+          trend_scope_code: trendItem.comparison_scope_code,
+          trend_comparison_value_display:
+            trendItem.comparison_value_display,
+          trend_variance_display: trendItem.variance_display,
+          trend_state: trendItem.comparison_state,
+
+          contrast_scope_code: regionContext.comparison_scope_code,
+          contrast_comparison_value_display:
+            contrastItem?.comparison_value_display ?? "—",
+          contrast_variance_display:
+            contrastItem?.variance_display ?? null,
+          contrast_state:
+            contrastItem?.comparison_state ?? "neutral",
+        };
+      }
+    );
+
+    scopePayload = {
+      items: scopedItems,
+    };
+  }
 
   const latestCompositeRows = dedupeLatestCompositeRows(
     compositeRowsRaw.filter((row) => Boolean(String(row.tech_id ?? "").trim()))
   );
+  const latestWorkMixRows = dedupeLatestWorkMixRows(workMixRowsRaw);
+
+  const workMixMap = buildWorkMixMap(latestWorkMixRows);
+  const scoreMap = buildScoreMap(currentRows);
 
   const riskState = buildRiskState({
-    teamRows: latestCompositeRows.map((row) => ({
-      tech_id: row.tech_id,
-      full_name: row.full_name,
-      rank: row.rank_in_profile,
-      composite_score: row.composite_score,
+    teamRows: latestCompositeRows.map((r) => ({
+      tech_id: r.tech_id,
+      full_name: r.full_name,
+      rank: r.rank_in_profile,
+      composite_score: r.composite_score,
     })),
     definitions,
     scoreMap,
     workMixMap,
   });
 
-  const comparisonBatchIds = await resolveComparisonBatchIds({
-    pc_org_id: args.pc_org_id,
-    range: args.range,
-  });
-
-  const previousScoreRowsRaw = comparisonBatchIds.length
-    ? await loadMetricScoreRows({
-        pc_org_id: args.pc_org_id,
-        profile_key: args.profile_key,
-        metric_batch_ids: comparisonBatchIds,
-      })
-    : [];
-
-  const previousLatestScoreRows = dedupeLatestScoreRows(previousScoreRowsRaw);
-
   const movement = buildRiskMovement({
     definitions,
-    currentScoreRows: latestScoreRows,
-    previousScoreRows: previousScoreRowsRaw,
+    currentScoreRows: currentRows,
+    previousScoreRows: prevScoreRowsRaw,
     topKpiKey: riskState.insights.top_priority_kpi.kpi_key,
     currentTechIds: riskState.insights.top_priority_kpi.tech_ids,
   });
@@ -234,8 +286,8 @@ export async function buildMetricsSurfacePayload(
 
   const priorityKpiMovements = buildPriorityKpiMovements({
     definitions,
-    currentScoreRows: latestScoreRows,
-    previousScoreRows: previousScoreRowsRaw,
+    currentScoreRows: currentRows,
+    previousScoreRows: prevScoreRowsRaw,
     priorityKpis: priorityKpis.map((kpi) => ({
       kpi_key: kpi.kpi_key,
       label: kpi.label,
@@ -246,24 +298,24 @@ export async function buildMetricsSurfacePayload(
 
   const participationSignal = buildParticipationSignal({
     definitions,
-    currentScoreRows: latestScoreRows,
-    previousScoreRows: previousLatestScoreRows,
+    currentScoreRows: currentRows,
+    previousScoreRows: previousRows,
   });
 
   const focusOverlayPayload = buildFocusOverlayPayload({
     definitions,
-    teamRows: latestCompositeRows.map((row) => ({
-      tech_id: row.tech_id,
-      full_name: row.full_name,
-      rank: row.rank_in_profile,
+    teamRows: latestCompositeRows.map((r) => ({
+      tech_id: r.tech_id,
+      full_name: r.full_name,
+      rank: r.rank_in_profile,
     })),
-    currentScoreRows: latestScoreRows.map((row) => ({
+    currentScoreRows: currentRows.map((row) => ({
       tech_id: row.tech_id,
       metric_key: row.metric_key,
       metric_value: row.metric_value,
       band_key: row.band_key ?? null,
     })),
-    previousScoreRows: previousLatestScoreRows.map((row) => ({
+    previousScoreRows: previousRows.map((row) => ({
       tech_id: row.tech_id,
       metric_key: row.metric_key,
       metric_value: row.metric_value,
@@ -320,29 +372,7 @@ export async function buildMetricsSurfacePayload(
     riskCountByTech: riskState.riskCountByTech,
   });
 
-  const scopedScores = allScoreRows.filter((row) =>
-    args.scoped_tech_ids.includes(row.tech_id)
-  );
-
-  const executiveKpis =
-    args.scoped_tech_ids.length > 0
-      ? buildExecutiveKpis({
-          definitions,
-          supervisorScores: scopedScores,
-          orgScores: allScoreRows,
-          rubricByKpi,
-          support: null,
-          comparison_scope_code: regionContext.comparison_scope_code,
-        })
-      : [];
-
-  const totalJobs = latestWorkMixRows.reduce((sum, row) => sum + row.total, 0);
-  const totalInstalls = latestWorkMixRows.reduce(
-    (sum, row) => sum + row.installs,
-    0
-  );
-  const totalTcs = latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0);
-  const totalSros = latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0);
+  const columns = buildMetricColumns(definitions);
 
   return {
     header: {
@@ -377,45 +407,44 @@ export async function buildMetricsSurfacePayload(
       show_work_mix: args.visibility?.show_work_mix ?? false,
       show_parity: args.visibility?.show_parity ?? false,
     },
-    executive_kpis: executiveKpis,
+
+    executive_strip: {
+      base: basePayload,
+      scope: scopePayload,
+      runtime: {
+        definitions: toRuntimeDefinitions(definitions),
+        rubric_rows: toRuntimeRubricRows(rubricByKpi),
+        current_rows: toRuntimeScoreRows(allCurrent),
+        previous_rows: toRuntimeScoreRows(allPrevious),
+        comparison_scope_code: regionContext.comparison_scope_code,
+      },
+    },
+
     risk_strip: riskState.strip,
     risk_insights: riskInsights,
+
     team_table: {
       columns,
       rows: teamRows,
     },
+
     overlays: {
       work_mix:
-        totalJobs > 0
+        latestWorkMixRows.length > 0
           ? {
-              total: totalJobs,
-              installs: totalInstalls,
-              tcs: totalTcs,
-              sros: totalSros,
-              install_pct: totalJobs > 0 ? totalInstalls / totalJobs : null,
-              tc_pct: totalJobs > 0 ? totalTcs / totalJobs : null,
-              sro_pct: totalJobs > 0 ? totalSros / totalJobs : null,
+              total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
+              installs: latestWorkMixRows.reduce((sum, row) => sum + row.installs, 0),
+              tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
+              sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
+              install_pct: null,
+              tc_pct: null,
+              sro_pct: null,
             }
           : null,
       parity_summary: [],
       parity_detail: [],
-      jobs_summary:
-        totalJobs > 0
-          ? {
-              total_jobs: totalJobs,
-              installs: totalInstalls,
-              tcs: totalTcs,
-              sros: totalSros,
-            }
-          : null,
-      jobs_detail:
-        totalJobs > 0
-          ? [
-              { label: "Installs", value: totalInstalls },
-              { label: "TCs", value: totalTcs },
-              { label: "SROs", value: totalSros },
-            ]
-          : [],
+      jobs_summary: null,
+      jobs_detail: [],
     },
   };
 }

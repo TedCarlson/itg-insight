@@ -62,7 +62,16 @@ function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
       show_work_mix: false,
       show_parity: false,
     },
+
+    executive_strip: {
+      base: { items: [] },
+      scope: null,
+      runtime: null,
+    },
+
     executive_kpis: [],
+    executive_kpis_scoped: [],
+
     risk_strip: [],
     team_table: {
       columns: [],
@@ -101,7 +110,7 @@ export async function getCompanySupervisorSurfacePayload(args?: {
     )
   );
 
-  return buildMetricsSurfacePayload({
+  const payload = await buildMetricsSurfacePayload({
     role_key: "COMPANY_SUPERVISOR",
     profile_key: profileKey,
     pc_org_id: scope.selected_pc_org_id,
@@ -116,4 +125,13 @@ export async function getCompanySupervisorSurfacePayload(args?: {
       show_parity: false,
     },
   });
+
+  return {
+    ...payload,
+    executive_strip: payload.executive_strip ?? {
+      base: { items: [] },
+      scope: null,
+      runtime: null,
+    },
+  };
 }

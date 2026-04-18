@@ -12,6 +12,7 @@ export type MetricsControlsValue = {
 
 export type TeamRowClient = {
   subject_key: string;
+  person_id?: string | null;
   full_name?: string | null;
   tech_id?: string | null;
   composite_score?: number | null;
@@ -81,30 +82,65 @@ function filterDirectRows(
   );
 }
 
-function resolveDominantAffiliation(rows: TeamRowClient[]): string | null {
-  const counts = new Map<string, number>();
+function isAffiliateLane(row: TeamRowClient): boolean {
+  return String(row.affiliation_type ?? "").trim().toUpperCase() !== "COMPANY";
+}
+
+function getSubordinateAffiliateLeadRows(
+  rows: TeamRowClient[],
+  reportsToPersonId: string
+): TeamRowClient[] {
+  return rows.filter(
+    (row) =>
+      String(row.reports_to_person_id ?? "").trim() === reportsToPersonId &&
+      isAffiliateLane(row)
+  );
+}
+
+function getAffiliateDirectRows(
+  rows: TeamRowClient[],
+  reportsToPersonId: string
+): TeamRowClient[] {
+  const subordinateLeadIds = new Set(
+    getSubordinateAffiliateLeadRows(rows, reportsToPersonId)
+      .map((row) => String(row.person_id ?? "").trim())
+      .filter(Boolean)
+  );
+
+  if (!subordinateLeadIds.size) return [];
+
+  return rows.filter((row) =>
+    subordinateLeadIds.has(String(row.reports_to_person_id ?? "").trim())
+  );
+}
+
+function dedupeRows(rows: TeamRowClient[]): TeamRowClient[] {
+  const out: TeamRowClient[] = [];
+  const seen = new Set<string>();
 
   for (const row of rows) {
-    const key = String(row.affiliation_type ?? "").trim();
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const key =
+      String(row.person_id ?? "").trim() ||
+      String(row.tech_id ?? "").trim() ||
+      row.subject_key;
+
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
   }
 
-  const sorted = [...counts.entries()].sort((a, b) => {
-    if (b[1] !== a[1]) return b[1] - a[1];
-    return a[0].localeCompare(b[0]);
-  });
-
-  return sorted[0]?.[0] ?? null;
+  return out;
 }
 
 export function mapTeamRows(payload: MetricsSurfacePayload): TeamRowClient[] {
   return payload.team_table.rows.map((row, index) => {
-    const unsafeRow = row as MetricsSurfacePayload["team_table"]["rows"][number] & {
-      contractor_name?: string | null;
-      leader_name?: string | null;
-      leader_title?: string | null;
-    };
+    const unsafeRow =
+      row as MetricsSurfacePayload["team_table"]["rows"][number] & {
+        person_id?: string | null;
+        contractor_name?: string | null;
+        leader_name?: string | null;
+        leader_title?: string | null;
+      };
 
     const leaderName = toNullableString(unsafeRow.leader_name);
     const leaderTitle = toNullableString(unsafeRow.leader_title);
@@ -119,6 +155,7 @@ export function mapTeamRows(payload: MetricsSurfacePayload): TeamRowClient[] {
         row.row_key ??
         row.tech_id?.trim() ??
         `${row.full_name?.trim() || "unknown"}-${row.rank ?? "na"}-${index}`,
+      person_id: toNullableString(unsafeRow.person_id),
       full_name: row.full_name,
       tech_id: row.tech_id,
       composite_score: row.composite_score,
@@ -155,30 +192,20 @@ export function buildScopedRows(
   }
 
   const directRows = filterDirectRows(firstClassRows, reportsToPersonId);
-  const teamScopeMode = controls.team_scope_mode ?? "DIRECT";
+  const affiliateDirectRows = getAffiliateDirectRows(
+    firstClassRows,
+    reportsToPersonId
+  );
 
-  if (teamScopeMode === "ROLLUP") {
-    // Temporary bridge behavior:
-    // with the current flat row model, no descendant tree is available here.
-    // Until core cutover provides deeper hierarchy context, rollup resolves to
-    // the full direct team slice under the selected reports-to node.
-    return directRows;
+  const teamScopeMode = controls.team_scope_mode ?? "ROLLUP";
+
+  if (teamScopeMode === "DIRECT") {
+    return dedupeRows(directRows);
   }
 
   if (teamScopeMode === "AFFILIATION_DIRECT") {
-    if (controls.affiliation_type) {
-      return directRows;
-    }
-
-    const dominantAffiliation = resolveDominantAffiliation(directRows);
-    if (!dominantAffiliation) {
-      return directRows;
-    }
-
-    return directRows.filter(
-      (row) => String(row.affiliation_type ?? "").trim() === dominantAffiliation
-    );
+    return dedupeRows(affiliateDirectRows);
   }
 
-  return directRows;
+  return dedupeRows([...directRows, ...affiliateDirectRows]);
 }

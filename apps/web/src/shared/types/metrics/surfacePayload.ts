@@ -1,6 +1,9 @@
-// path: apps/web/src/shared/types/metrics/surfacePayload.ts
-
-import type { MetricsExecutiveKpiItem } from "@/shared/types/metrics/executiveStrip";
+import type {
+  MetricsExecutiveKpiItem,
+  MetricsExecutiveStripRuntimePayload,
+  MetricsSurfaceBasePayload,
+  MetricsSurfaceScopePayload,
+} from "@/shared/types/metrics/executiveStrip";
 
 export type MetricsRangeKey = "FM" | "PREVIOUS" | "3FM" | "12FM";
 
@@ -263,9 +266,19 @@ export type MetricsSurfacePayload = {
   permissions: MetricsSurfacePermissions;
   filters: MetricsSurfaceFilters;
   visibility: MetricsSurfaceVisibility;
-  executive_kpis: MetricsExecutiveKpiItem[];
+
+  executive_strip: {
+    base: MetricsSurfaceBasePayload;
+    scope?: MetricsSurfaceScopePayload | null;
+    runtime?: MetricsExecutiveStripRuntimePayload | null;
+  };
+
+  executive_kpis?: MetricsExecutiveKpiItem[];
+  executive_kpis_scoped?: MetricsExecutiveKpiItem[];
+
   risk_strip: MetricsRiskStripItem[];
   risk_insights?: MetricsRiskInsights | null;
+
   team_table: MetricsSurfaceTeamTable;
   overlays: MetricsSurfaceOverlays;
 };
