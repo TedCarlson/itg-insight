@@ -3,7 +3,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
+import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
 import MetricsControlsStrip from "@/shared/surfaces/MetricsControlsStrip";
 import MetricsExecutiveKpiStrip from "@/shared/surfaces/MetricsExecutiveKpiStrip";
 import MetricsRiskStrip from "@/shared/surfaces/MetricsRiskStrip";
@@ -32,6 +34,7 @@ import type {
 } from "@/shared/types/metrics/executiveStrip";
 
 import { useScopedTeamControls } from "../hooks/useScopedTeamControls";
+import { useManagerHeaderScope } from "../hooks/useManagerHeaderScope";
 
 type Props = {
   payload: MetricsSurfacePayload;
@@ -41,6 +44,9 @@ type SupervisorOption = {
   value: string;
   label: string;
 };
+
+type ReportClassType = "NSR" | "SMART";
+type MetricsRangeKey = "FM" | "PREVIOUS" | "3FM" | "12FM";
 
 function formatPercent(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
@@ -159,7 +165,32 @@ function orderInspectionMetrics(
     }));
 }
 
+function normalizeClassType(value: string | null): ReportClassType {
+  return value === "SMART" ? "SMART" : "NSR";
+}
+
+function normalizeRangeType(
+  value: string | null | undefined,
+  fallback: MetricsRangeKey
+): MetricsRangeKey {
+  if (value === "PREVIOUS") return "PREVIOUS";
+  if (value === "3FM") return "3FM";
+  if (value === "12FM") return "12FM";
+  if (value === "FM") return "FM";
+  return fallback;
+}
+
+function toRangeLabel(rangeKey: MetricsRangeKey): string {
+  if (rangeKey === "FM") return "Current";
+  if (rangeKey === "PREVIOUS") return "Previous";
+  if (rangeKey === "3FM") return "Previous 3FM";
+  return "Previous 12FM";
+}
+
 export default function CompanyManagerScopedViewClient({ payload }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [controls, setControls] = useState<MetricsControlsValue>({
     office_label: null,
     affiliation_type: null,
@@ -167,6 +198,12 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
     reports_to_person_id: null,
     team_scope_mode: "ROLLUP",
   });
+
+  const currentClass = normalizeClassType(searchParams.get("class_type"));
+  const currentRange = normalizeRangeType(
+    searchParams.get("range"),
+    payload.filters.active_range
+  );
 
   const allRows = useMemo(() => mapTeamRows(payload), [payload]);
 
@@ -223,6 +260,12 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
   const scopedRows = useMemo(() => {
     return buildScopedRows(allRows, controls);
   }, [allRows, controls]);
+
+  const { scopeLabel, headerModel } = useManagerHeaderScope({
+    controls,
+    scopedRows,
+    header: payload.header,
+  });
 
   const hasExecutiveSlice = useMemo(() => {
     return hasActiveExecutiveSlice(controls);
@@ -365,6 +408,13 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
     <div className="text-sm text-muted-foreground">No work mix available.</div>
   );
 
+  function updateUrl(nextClass: ReportClassType, nextRange: MetricsRangeKey) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("class_type", nextClass);
+    params.set("range", nextRange);
+    router.push(`/company-manager/metrics?${params.toString()}`);
+  }
+
   async function loadInspectionPayload(args: {
     row: any;
     column: { kpi_key: string; label: string };
@@ -391,6 +441,7 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
       "range",
       String(args.range ?? payload.filters.active_range ?? "FM")
     );
+    params.set("class_type", currentClass);
 
     if (args.row?.contractor_name) {
       params.set("contractor_name", String(args.row.contractor_name));
@@ -409,7 +460,31 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
 
   return (
     <div className="space-y-4">
+      <MetricsSmartHeader
+        header={headerModel}
+        scopeLabel={scopeLabel}
+      />
+
       <MetricsControlsStrip
+        classOptions={[
+          { value: "NSR", label: "NSR" },
+          { value: "SMART", label: "SMART" },
+        ]}
+        selectedClass={currentClass}
+        onClassChange={(next) =>
+          updateUrl(normalizeClassType(next), currentRange)
+        }
+        rangeOptions={payload.filters.available_ranges.map((rangeKey) => ({
+          value: rangeKey,
+          label: toRangeLabel(rangeKey),
+        }))}
+        selectedRange={currentRange}
+        onRangeChange={(next) =>
+          updateUrl(
+            currentClass,
+            normalizeRangeType(next, payload.filters.active_range)
+          )
+        }
         officeOptions={officeOptions}
         affiliationOptions={affiliationOptions}
         contractorOptions={contractorOptions}

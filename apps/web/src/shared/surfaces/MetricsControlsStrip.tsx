@@ -15,6 +15,11 @@ type SelectOption = {
   label: string;
 };
 
+type ToggleOption = {
+  value: string;
+  label: string;
+};
+
 type Props = {
   officeOptions: string[];
   affiliationOptions: string[];
@@ -23,12 +28,48 @@ type Props = {
   value: MetricsControlsValue;
   onChange: (next: MetricsControlsValue) => void;
   onReset: () => void;
+
+  classOptions?: ToggleOption[];
+  selectedClass?: string;
+  onClassChange?: (next: string) => void;
+
+  rangeOptions?: ToggleOption[];
+  selectedRange?: string;
+  onRangeChange?: (next: string) => void;
+
   showOffice?: boolean;
   showAffiliation?: boolean;
   showContractor?: boolean;
   showSupervisor?: boolean;
   showTeamScope?: boolean;
 };
+
+function ControlSelect(props: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: Array<{ value: string; label: string }>;
+  minWidthClass?: string;
+}) {
+  return (
+    <div className={props.minWidthClass ?? "min-w-[140px]"}>
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {props.label}
+      </div>
+      <select
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        className="h-9 w-full rounded-lg border bg-background px-2 text-sm"
+      >
+        {props.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 export default function MetricsControlsStrip(props: Props) {
   const {
@@ -39,6 +80,15 @@ export default function MetricsControlsStrip(props: Props) {
     value,
     onChange,
     onReset,
+
+    classOptions = [],
+    selectedClass,
+    onClassChange,
+
+    rangeOptions = [],
+    selectedRange,
+    onRangeChange,
+
     showOffice = true,
     showAffiliation = true,
     showContractor = contractorOptions.length > 0,
@@ -46,7 +96,19 @@ export default function MetricsControlsStrip(props: Props) {
     showTeamScope = false,
   } = props;
 
+  const showClass =
+    classOptions.length > 0 &&
+    typeof selectedClass === "string" &&
+    !!onClassChange;
+
+  const showRange =
+    rangeOptions.length > 0 &&
+    typeof selectedRange === "string" &&
+    !!onRangeChange;
+
   const visibleControlCount = [
+    showClass,
+    showRange,
     showOffice,
     showAffiliation,
     showContractor,
@@ -61,8 +123,28 @@ export default function MetricsControlsStrip(props: Props) {
   return (
     <div className="rounded-2xl border bg-card px-3 py-2.5">
       <div className="flex flex-wrap items-end gap-2">
+        {showClass ? (
+          <ControlSelect
+            label="Class"
+            value={selectedClass}
+            onChange={onClassChange}
+            options={classOptions}
+            minWidthClass="min-w-[112px]"
+          />
+        ) : null}
+
+        {showRange ? (
+          <ControlSelect
+            label="Range"
+            value={selectedRange}
+            onChange={onRangeChange}
+            options={rangeOptions}
+            minWidthClass="min-w-[150px]"
+          />
+        ) : null}
+
         {showOffice ? (
-          <div className="min-w-[180px]">
+          <div className="min-w-[140px]">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Office
             </div>
@@ -87,7 +169,7 @@ export default function MetricsControlsStrip(props: Props) {
         ) : null}
 
         {showAffiliation ? (
-          <div className="min-w-[180px]">
+          <div className="min-w-[140px]">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Affiliation
             </div>
@@ -116,7 +198,7 @@ export default function MetricsControlsStrip(props: Props) {
         ) : null}
 
         {showContractor ? (
-          <div className="min-w-[180px]">
+          <div className="min-w-[140px]">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Contractor
             </div>
@@ -169,7 +251,7 @@ export default function MetricsControlsStrip(props: Props) {
         ) : null}
 
         {showTeamScope ? (
-          <div className="min-w-[180px]">
+          <div className="min-w-[140px]">
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Team Scope
             </div>

@@ -1,3 +1,5 @@
+// path: apps/web/src/shared/ui/workforce/MetricInspectionDrawer.tsx
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -130,6 +132,7 @@ type Props = {
   name: string;
   context?: string | null;
   metrics?: InspectionMetricCell[];
+  initialSelectedKpi?: string | null;
   loadPayload?: (kpiKey: string) => Promise<any>;
   buildModel?: (args: {
     metric: InspectionMetricCell;
@@ -145,6 +148,7 @@ export default function MetricInspectionDrawer(props: Props) {
     name,
     context,
     metrics: rawMetrics,
+    initialSelectedKpi,
     loadPayload,
     buildModel,
     onClose,
@@ -164,8 +168,29 @@ export default function MetricInspectionDrawer(props: Props) {
       return;
     }
 
-    setSelectedKpi((prev) => prev ?? metrics[0]?.kpi_key ?? null);
-  }, [open, metrics]);
+    const requestedKpi =
+      initialSelectedKpi &&
+      metrics.some((metric) => metric.kpi_key === initialSelectedKpi)
+        ? initialSelectedKpi
+        : null;
+
+    setSelectedKpi((prev) => prev ?? requestedKpi ?? metrics[0]?.kpi_key ?? null);
+  }, [open, metrics, initialSelectedKpi]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const requestedKpi =
+      initialSelectedKpi &&
+      metrics.some((metric) => metric.kpi_key === initialSelectedKpi)
+        ? initialSelectedKpi
+        : null;
+
+    if (requestedKpi && selectedKpi !== requestedKpi) {
+      setSelectedKpi(requestedKpi);
+      setPayload(null);
+    }
+  }, [open, initialSelectedKpi, metrics, selectedKpi]);
 
   const activeMetric = useMemo(() => {
     if (metrics.length === 0 || !selectedKpi) return null;

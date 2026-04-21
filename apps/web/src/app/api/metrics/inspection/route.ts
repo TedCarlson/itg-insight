@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
 
     const band_key_raw = searchParams.get("band_key");
     const range_raw = searchParams.get("range");
+    const class_type = searchParams.get("class_type");
 
     if (!person_id || !tech_id || !kpi_key) {
       return NextResponse.json(
@@ -76,6 +77,20 @@ export async function GET(request: NextRequest) {
         ? [{ label: "Contractor", value: contractor_name }]
         : [],
       payload: null,
+    });
+
+    console.log("inspection payload deep debug", {
+      kpi_key,
+      active_range,
+      class_type,
+      has_payload: !!payload,
+      has_render_model: !!payload?.render_model,
+      metric_family: payload?.metric_family ?? null,
+      has_source_payload: !!(payload as any)?.payload,
+      source_payload_keys:
+        (payload as any)?.payload && typeof (payload as any).payload === "object"
+          ? Object.keys((payload as any).payload)
+          : null,
     });
 
     return NextResponse.json({

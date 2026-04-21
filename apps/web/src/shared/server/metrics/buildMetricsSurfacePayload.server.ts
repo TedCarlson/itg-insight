@@ -148,10 +148,10 @@ export async function buildMetricsSurfacePayload(
       }),
       comparisonBatchIds.length
         ? loadMetricScoreRows({
-            pc_org_id: args.pc_org_id,
-            profile_key: args.profile_key,
-            metric_batch_ids: comparisonBatchIds,
-          })
+          pc_org_id: args.pc_org_id,
+          profile_key: args.profile_key,
+          metric_batch_ids: comparisonBatchIds,
+        })
         : [],
       loadMetricCompositeRows({
         pc_org_id: args.pc_org_id,
@@ -380,8 +380,8 @@ export async function buildMetricsSurfacePayload(
       rep_full_name: args.rep_full_name,
       org_display: regionContext.org_display,
       pc_label: null,
-      scope_headcount: teamRows.length,
-      total_headcount: args.scoped_tech_ids.length,
+      scope_headcount: args.scoped_tech_ids.length,   // <-- FIXED
+      total_headcount: teamRows.length,               // <-- FIXED
       as_of_date: rangeResolution.as_of_date,
     },
     permissions: {
@@ -432,14 +432,14 @@ export async function buildMetricsSurfacePayload(
       work_mix:
         latestWorkMixRows.length > 0
           ? {
-              total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
-              installs: latestWorkMixRows.reduce((sum, row) => sum + row.installs, 0),
-              tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
-              sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
-              install_pct: null,
-              tc_pct: null,
-              sro_pct: null,
-            }
+            total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
+            installs: latestWorkMixRows.reduce((sum, row) => sum + row.installs, 0),
+            tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
+            sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
+            install_pct: null,
+            tc_pct: null,
+            sro_pct: null,
+          }
           : null,
       parity_summary: [],
       parity_detail: [],
