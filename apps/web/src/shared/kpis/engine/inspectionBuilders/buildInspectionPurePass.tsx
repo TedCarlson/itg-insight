@@ -1,55 +1,16 @@
+// path: apps/web/src/shared/kpis/engine/inspectionBuilders/buildInspectionPurePass.ts
+
 import type { InspectionRenderModel } from "@/shared/kpis/contracts/inspectionTypes";
 import type { MetricsRangeKey } from "@/shared/kpis/core/types";
 
-type PurePassTrendRow = {
-  kpi_value?: number | null;
-  is_month_final?: boolean | null;
-};
-
-type PurePassSelectedRow = {
-  fiscal_end_date?: string | null;
-  metric_date?: string | null;
-  batch_id?: string | null;
-  pht_jobs?: number | null;
-  pure_pass?: number | null;
-  pure_pass_rate?: number | null;
-  pure_pass_jobs?: number | null;
-  pure_pass_pass_jobs?: number | null;
-};
-
-type PurePassDebug = {
-  distinct_fiscal_month_count?: number | null;
-  selected_month_count?: number | null;
-  selected_final_rows?: PurePassSelectedRow[] | null;
-  trend?: PurePassTrendRow[] | null;
-} | null;
-
-function formatPct(n: number | null): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  return `${n.toFixed(1)}%`;
+function formatPct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(1)}%`;
 }
 
-function asNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function resolveJobs(row: PurePassSelectedRow): number {
-  return asNumber(row.pht_jobs) || asNumber(row.pure_pass_jobs);
-}
-
-function resolvePurePass(row: PurePassSelectedRow): number {
-  return asNumber(row.pure_pass) || asNumber(row.pure_pass_pass_jobs);
-}
-
-function computePct(jobs: number, purePass: number, fallback?: number | null): number | null {
-  if (jobs > 0) return (100 * purePass) / jobs;
-  return fallback ?? null;
-}
-
-function computeRangeValue(rows: PurePassSelectedRow[]): string {
-  const jobs = rows.reduce((sum, row) => sum + resolveJobs(row), 0);
-  const purePass = rows.reduce((sum, row) => sum + resolvePurePass(row), 0);
-  return formatPct(computePct(jobs, purePass, null));
+function formatInt(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return String(Math.round(value));
 }
 
 function mapRangeLabel(activeRange: MetricsRangeKey): string {
@@ -61,76 +22,99 @@ function mapRangeLabel(activeRange: MetricsRangeKey): string {
 }
 
 export function buildInspectionPurePass(args: {
-  payload: unknown;
+  payload: any;
   activeRange: MetricsRangeKey;
 }): InspectionRenderModel {
-  const debug =
-    (args.payload as { debug?: PurePassDebug } | null)?.debug ?? null;
-  const selectedRows = debug?.selected_final_rows ?? [];
-  const trend = debug?.trend ?? [];
+  const summary = args.payload?.summary ?? {};
+  const trend = Array.isArray(args.payload?.trend) ? args.payload.trend : [];
 
-  const currentRows = selectedRows.slice(0, 1);
-  const previousRows = selectedRows.slice(0, 1);
-  const last3Rows = selectedRows.slice(0, 3);
-  const last12Rows = selectedRows.slice(0, 12);
+  const currentRate =
+    typeof summary.pure_pass_rate === "number" ? summary.pure_pass_rate : null;
+  const totalJobs =
+    typeof summary.pht_jobs === "number" ? summary.pht_jobs : null;
+  const totalPurePass =
+    typeof summary.pure_pass === "number" ? summary.pure_pass : null;
 
-  let headlineValue = "—";
-  if (args.activeRange === "FM") headlineValue = computeRangeValue(currentRows);
-  else if (args.activeRange === "PREVIOUS") headlineValue = computeRangeValue(previousRows);
-  else if (args.activeRange === "3FM") headlineValue = computeRangeValue(last3Rows);
-  else if (args.activeRange === "12FM") headlineValue = computeRangeValue(last12Rows);
+  const trendPoints = trend.map((row: any) => ({
+    kpi_value:
+      typeof row.pure_pass_rate === "number" &&
+      Number.isFinite(row.pure_pass_rate)
+        ? row.pure_pass_rate
+        : typeof row.kpi_value === "number" && Number.isFinite(row.kpi_value)
+          ? row.kpi_value
+          : null,
+    is_month_final: !!row.is_month_final,
+    band_color:
+      typeof row.pure_pass_rate === "number" && row.pure_pass_rate >= 95
+        ? "#22c55e"
+        : typeof row.pure_pass_rate === "number" && row.pure_pass_rate >= 90
+          ? "#eab308"
+          : typeof row.pure_pass_rate === "number"
+            ? "#ef4444"
+            : null,
+  }));
 
-  const totalJobs = selectedRows.reduce((sum, row) => sum + resolveJobs(row), 0);
-  const totalPurePass = selectedRows.reduce((sum, row) => sum + resolvePurePass(row), 0);
-  const totalRate = computeRangeValue(selectedRows);
-
-  const periodRows = selectedRows.map((row) => {
-    const jobs = resolveJobs(row);
-    const purePass = resolvePurePass(row);
-    const pct = formatPct(computePct(jobs, purePass, row.pure_pass_rate ?? null));
-
-    return {
-      key: `${row.fiscal_end_date ?? "na"}-${row.metric_date ?? "na"}-${row.batch_id ?? "na"}`,
-      cells: [row.metric_date ?? "—", pct, jobs || "—", purePass || "—"],
-    };
-  });
+  const periodRows = trend.map((row: any) => ({
+    key: `${row.metric_date ?? "na"}-${row.batch_id ?? "no-batch"}`,
+    cells: [
+      row.metric_date ?? "—",
+      formatPct(row.pure_pass_rate ?? row.kpi_value),
+      formatInt(row.pht_jobs),
+      formatInt(row.pure_pass),
+    ],
+  }));
 
   return {
     header: {
       title: "Pure Pass %",
-      valueDisplay: headlineValue,
+      valueDisplay: formatPct(currentRate),
       rangeLabel: mapRangeLabel(args.activeRange),
     },
     trend: {
       title: "Trend",
-      badgeValue: totalRate,
-      currentValue: totalRate,
+      subtitle: "Checkpoint progression in selected window",
+      badgeValue: formatPct(currentRate),
+      currentValue: formatPct(currentRate),
       updatesCount: trend.length,
-      monthsCount: debug?.selected_month_count ?? debug?.distinct_fiscal_month_count ?? null,
+      monthsCount:
+        args.payload?.debug?.selected_month_count ??
+        args.payload?.debug?.distinct_fiscal_month_count ??
+        null,
       rangeLabel: mapRangeLabel(args.activeRange),
-      points: trend.map((t) => ({
-        kpi_value: t.kpi_value ?? null,
-        is_month_final: !!t.is_month_final,
-        band_color:
-          t.kpi_value != null && t.kpi_value >= 95
-            ? "#22c55e"
-            : t.kpi_value != null && t.kpi_value >= 90
-              ? "#eab308"
-              : "#ef4444",
-      })),
+      points: trendPoints,
     },
     periodDetail: {
       title: "Period Detail",
       columns: [
         { key: "metric_date", label: "Metric Date" },
-        { key: "pure_pass_pct", label: "Pure Pass %", align: "right", widthClass: "90px" },
-        { key: "jobs", label: "PHT Jobs", align: "right", widthClass: "90px" },
-        { key: "pure_pass", label: "Pure Pass", align: "right", widthClass: "90px" },
+        {
+          key: "pure_pass_pct",
+          label: "Pure Pass %",
+          align: "right",
+          widthClass: "w-[100px]",
+        },
+        {
+          key: "jobs",
+          label: "PHT Jobs",
+          align: "right",
+          widthClass: "w-[80px]",
+        },
+        {
+          key: "pure_pass",
+          label: "Pure Pass",
+          align: "right",
+          widthClass: "w-[80px]",
+        },
       ],
       rows: periodRows,
       footer: {
         key: "footer",
-        cells: ["TOTAL", totalRate, totalJobs || "—", totalPurePass || "—"],
+        cells: [
+          "TOTAL",
+          formatPct(currentRate),
+          formatInt(totalJobs),
+          formatInt(totalPurePass),
+        ],
       },
     },
   };
