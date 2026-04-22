@@ -178,22 +178,27 @@ export default function MetricInspectionDrawer(props: Props) {
     }
 
     const nextSelectedKpi = requestedKpi ?? firstMetricKey ?? null;
-
     setSelectedKpi((prev) => (prev === nextSelectedKpi ? prev : nextSelectedKpi));
   }, [open, requestedKpi, firstMetricKey]);
 
   useEffect(() => {
-    if (!open || !selectedKpi || !loadPayload) return;
+    if (!open || !selectedKpi) return;
 
+    if (!loadPayload) {
+      setPayload(null);
+      setLoading(false);
+      return;
+    }
+
+    const safeLoadPayload = loadPayload;
     const currentKpi = selectedKpi;
-    const currentLoadPayload: (kpiKey: string) => Promise<any> = loadPayload;
     let cancelled = false;
 
     async function run() {
       setLoading(true);
 
       try {
-        const data = await currentLoadPayload(currentKpi);
+        const data = await safeLoadPayload(currentKpi);
         if (!cancelled) setPayload(data);
       } catch {
         if (!cancelled) setPayload(null);
@@ -218,15 +223,20 @@ export default function MetricInspectionDrawer(props: Props) {
     return activeMetric ? toScorecardTile(activeMetric) : null;
   }, [activeMetric]);
 
+  const effectivePayload = useMemo(() => {
+    if (payload != null) return payload;
+    return activeMetric ? (activeMetric as any).inspection_payload ?? null : null;
+  }, [payload, activeMetric]);
+
   const model = useMemo(() => {
-    if (!activeMetric || !activeTile || !payload || !buildModel) return null;
+    if (!activeMetric || !activeTile || !buildModel) return null;
 
     return buildModel({
       metric: activeMetric,
       tile: activeTile,
-      payload,
+      payload: effectivePayload,
     });
-  }, [activeMetric, activeTile, payload, buildModel]);
+  }, [activeMetric, activeTile, effectivePayload, buildModel]);
 
   if (!open) return null;
 
