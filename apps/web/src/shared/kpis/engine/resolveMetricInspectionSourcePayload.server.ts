@@ -24,7 +24,13 @@ export type ResolveMetricInspectionSourcePayloadArgs = {
 export async function resolveMetricInspectionSourcePayload(
   args: ResolveMetricInspectionSourcePayloadArgs
 ): Promise<unknown> {
-  if (args.payload != null) return args.payload;
+  if (
+    args.payload &&
+    typeof args.payload === "object" &&
+    "trend_points" in (args.payload as any)
+  ) {
+    return args.payload;
+  }
 
   const metricFamily = resolveInspectionMetricFamily(args.kpi_key);
   const baseArgs = {

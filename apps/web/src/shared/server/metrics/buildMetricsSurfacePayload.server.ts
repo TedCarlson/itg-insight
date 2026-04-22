@@ -1,5 +1,9 @@
+// path: apps/web/src/shared/server/metrics/buildMetricsSurfacePayload.server.ts
+
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { buildExecutiveKpis } from "@/shared/domain/metrics/buildExecutiveKpis";
+import { getWorkforceMetricInspectionPayload } from "@/shared/kpis/engine/getWorkforceMetricInspectionPayload.server";
+import type { KpiBandKey } from "@/shared/kpis/core/types";
 import { buildFocusOverlayPayload } from "@/shared/server/metrics/buildFocusOverlayPayload";
 import { buildParticipationSignal } from "@/shared/server/metrics/buildParticipationSignal";
 import { buildRiskState } from "@/shared/server/metrics/buildRiskState";
@@ -60,7 +64,9 @@ export type BuildMetricsSurfacePayloadArgs = {
   };
 };
 
-function toRuntimeDefinitions(definitions: DefinitionRow[]): MetricsExecutiveRuntimeDefinition[] {
+function toRuntimeDefinitions(
+  definitions: DefinitionRow[]
+): MetricsExecutiveRuntimeDefinition[] {
   return definitions.map((def) => ({
     kpi_key: def.kpi_key,
     label: def.label,
@@ -80,9 +86,13 @@ function toRuntimeRubricRows(
         kpi_key: kpiKey,
         band_key: String((row as any).band_key ?? "NO_DATA"),
         min_value:
-          typeof (row as any).min_value === "number" ? (row as any).min_value : null,
+          typeof (row as any).min_value === "number"
+            ? (row as any).min_value
+            : null,
         max_value:
-          typeof (row as any).max_value === "number" ? (row as any).max_value : null,
+          typeof (row as any).max_value === "number"
+            ? (row as any).max_value
+            : null,
       });
     }
   }
@@ -104,6 +114,92 @@ function toRuntimeScoreRows(rows: any[]): MetricsExecutiveRuntimeScoreRow[] {
       numerator: typeof row.numerator === "number" ? row.numerator : null,
       denominator: typeof row.denominator === "number" ? row.denominator : null,
     }));
+}
+
+function normalizeInspectionBandKey(value: unknown): KpiBandKey {
+  if (value === "EXCEEDS") return "EXCEEDS";
+  if (value === "MEETS") return "MEETS";
+  if (value === "NEEDS_IMPROVEMENT") return "NEEDS_IMPROVEMENT";
+  if (value === "MISSES") return "MISSES";
+  return "NO_DATA";
+}
+
+function buildInspectionContext(row: {
+  tech_id?: string | null;
+  office_label?: string | null;
+  contractor_name?: string | null;
+  affiliation_type?: string | null;
+}) {
+  const parts = [
+    String(row.tech_id ?? "").trim(),
+    String(row.office_label ?? "").trim(),
+    String(row.contractor_name ?? "").trim(),
+    String(row.affiliation_type ?? "").trim(),
+  ].filter(Boolean);
+
+  return parts.join(" • ") || "Technician Detail";
+}
+
+async function enrichTeamRowsWithInspectionPayloads(args: {
+  role_key: string;
+  active_range: MetricsRangeKey;
+  teamRows: any[];
+}) {
+  return Promise.all(
+    args.teamRows.map(async (row) => {
+      const personId = String((row as any).person_id ?? "").trim();
+      const techId = String((row as any).tech_id ?? "").trim();
+
+      if (!personId || !techId) {
+        return row;
+      }
+
+      const metricsWithInspection = await Promise.all(
+        ((row as any).metrics ?? []).map(async (metric: any) => {
+          const kpiKey = String(metric.metric_key ?? "").trim();
+          if (!kpiKey) return metric;
+
+          const inspectionPayload = await getWorkforceMetricInspectionPayload({
+            surface: (args.role_key as any) ?? "role_company_manager",
+            active_range: args.active_range,
+            kpi_key: kpiKey,
+            target: {
+              person_id: personId,
+              tech_id: techId,
+              full_name: String((row as any).full_name ?? "Unknown Tech"),
+              context: buildInspectionContext(row as any),
+              contractor_name: (row as any).contractor_name ?? null,
+            },
+            title: String(metric.label ?? kpiKey),
+            value:
+              typeof metric.metric_value === "number" ? metric.metric_value : null,
+            value_display:
+              typeof metric.value_display === "string"
+                ? metric.value_display
+                : null,
+            band_key: normalizeInspectionBandKey(metric.render_band_key),
+            summary_rows: [],
+            trend_points: [],
+            period_detail: null,
+            fact_rows: (row as any).contractor_name
+              ? [{ label: "Contractor", value: String((row as any).contractor_name) }]
+              : [],
+            payload: null,
+          });
+
+          return {
+            ...metric,
+            inspection_payload: inspectionPayload,
+          };
+        })
+      );
+
+      return {
+        ...row,
+        metrics: metricsWithInspection,
+      };
+    })
+  );
 }
 
 export async function buildMetricsSurfacePayload(
@@ -148,10 +244,10 @@ export async function buildMetricsSurfacePayload(
       }),
       comparisonBatchIds.length
         ? loadMetricScoreRows({
-          pc_org_id: args.pc_org_id,
-          profile_key: args.profile_key,
-          metric_batch_ids: comparisonBatchIds,
-        })
+            pc_org_id: args.pc_org_id,
+            profile_key: args.profile_key,
+            metric_batch_ids: comparisonBatchIds,
+          })
         : [],
       loadMetricCompositeRows({
         pc_org_id: args.pc_org_id,
@@ -241,10 +337,8 @@ export async function buildMetricsSurfacePayload(
           contrast_scope_code: regionContext.comparison_scope_code,
           contrast_comparison_value_display:
             contrastItem?.comparison_value_display ?? "—",
-          contrast_variance_display:
-            contrastItem?.variance_display ?? null,
-          contrast_state:
-            contrastItem?.comparison_state ?? "neutral",
+          contrast_variance_display: contrastItem?.variance_display ?? null,
+          contrast_state: contrastItem?.comparison_state ?? "neutral",
         };
       }
     );
@@ -372,6 +466,12 @@ export async function buildMetricsSurfacePayload(
     riskCountByTech: riskState.riskCountByTech,
   });
 
+  const teamRowsWithInspection = await enrichTeamRowsWithInspectionPayloads({
+    role_key: args.role_key,
+    active_range: rangeResolution.active_range,
+    teamRows,
+  });
+
   const columns = buildMetricColumns(definitions);
 
   return {
@@ -380,8 +480,8 @@ export async function buildMetricsSurfacePayload(
       rep_full_name: args.rep_full_name,
       org_display: regionContext.org_display,
       pc_label: null,
-      scope_headcount: args.scoped_tech_ids.length,   // <-- FIXED
-      total_headcount: teamRows.length,               // <-- FIXED
+      scope_headcount: args.scoped_tech_ids.length,
+      total_headcount: teamRowsWithInspection.length,
       as_of_date: rangeResolution.as_of_date,
     },
     permissions: {
@@ -425,21 +525,24 @@ export async function buildMetricsSurfacePayload(
 
     team_table: {
       columns,
-      rows: teamRows,
+      rows: teamRowsWithInspection as any,
     },
 
     overlays: {
       work_mix:
         latestWorkMixRows.length > 0
           ? {
-            total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
-            installs: latestWorkMixRows.reduce((sum, row) => sum + row.installs, 0),
-            tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
-            sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
-            install_pct: null,
-            tc_pct: null,
-            sro_pct: null,
-          }
+              total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
+              installs: latestWorkMixRows.reduce(
+                (sum, row) => sum + row.installs,
+                0
+              ),
+              tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
+              sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
+              install_pct: null,
+              tc_pct: null,
+              sro_pct: null,
+            }
           : null,
       parity_summary: [],
       parity_detail: [],

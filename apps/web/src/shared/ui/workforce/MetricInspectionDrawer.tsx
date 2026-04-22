@@ -160,6 +160,15 @@ export default function MetricInspectionDrawer(props: Props) {
   const [payload, setPayload] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
+  const firstMetricKey = metrics[0]?.kpi_key ?? null;
+
+  const requestedKpi = useMemo(() => {
+    if (!initialSelectedKpi) return null;
+    return metrics.some((metric) => metric.kpi_key === initialSelectedKpi)
+      ? initialSelectedKpi
+      : null;
+  }, [initialSelectedKpi, metrics]);
+
   useEffect(() => {
     if (!open) {
       setSelectedKpi(null);
@@ -168,44 +177,16 @@ export default function MetricInspectionDrawer(props: Props) {
       return;
     }
 
-    const requestedKpi =
-      initialSelectedKpi &&
-      metrics.some((metric) => metric.kpi_key === initialSelectedKpi)
-        ? initialSelectedKpi
-        : null;
+    const nextSelectedKpi = requestedKpi ?? firstMetricKey ?? null;
 
-    setSelectedKpi((prev) => prev ?? requestedKpi ?? metrics[0]?.kpi_key ?? null);
-  }, [open, metrics, initialSelectedKpi]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const requestedKpi =
-      initialSelectedKpi &&
-      metrics.some((metric) => metric.kpi_key === initialSelectedKpi)
-        ? initialSelectedKpi
-        : null;
-
-    if (requestedKpi && selectedKpi !== requestedKpi) {
-      setSelectedKpi(requestedKpi);
-      setPayload(null);
-    }
-  }, [open, initialSelectedKpi, metrics, selectedKpi]);
-
-  const activeMetric = useMemo(() => {
-    if (metrics.length === 0 || !selectedKpi) return null;
-    return metrics.find((m) => m.kpi_key === selectedKpi) ?? null;
-  }, [metrics, selectedKpi]);
-
-  const activeTile = useMemo(() => {
-    return activeMetric ? toScorecardTile(activeMetric) : null;
-  }, [activeMetric]);
+    setSelectedKpi((prev) => (prev === nextSelectedKpi ? prev : nextSelectedKpi));
+  }, [open, requestedKpi, firstMetricKey]);
 
   useEffect(() => {
     if (!open || !selectedKpi || !loadPayload) return;
 
     const currentKpi = selectedKpi;
-    const currentLoadPayload = loadPayload;
+    const currentLoadPayload: (kpiKey: string) => Promise<any> = loadPayload;
     let cancelled = false;
 
     async function run() {
@@ -227,6 +208,15 @@ export default function MetricInspectionDrawer(props: Props) {
       cancelled = true;
     };
   }, [open, selectedKpi, loadPayload]);
+
+  const activeMetric = useMemo(() => {
+    if (metrics.length === 0 || !selectedKpi) return null;
+    return metrics.find((m) => m.kpi_key === selectedKpi) ?? null;
+  }, [metrics, selectedKpi]);
+
+  const activeTile = useMemo(() => {
+    return activeMetric ? toScorecardTile(activeMetric) : null;
+  }, [activeMetric]);
 
   const model = useMemo(() => {
     if (!activeMetric || !activeTile || !payload || !buildModel) return null;
@@ -252,9 +242,7 @@ export default function MetricInspectionDrawer(props: Props) {
               <div>
                 <div className="text-lg font-semibold">{name}</div>
                 {context ? (
-                  <div className="text-sm text-muted-foreground">
-                    {context}
-                  </div>
+                  <div className="text-sm text-muted-foreground">{context}</div>
                 ) : null}
               </div>
 
@@ -300,7 +288,7 @@ export default function MetricInspectionDrawer(props: Props) {
                     Metrics
                   </div>
 
-                  <div className="min-h-0 flex-1 overflow-y-auto pt-1 pb-1 pl-1 pr-1">
+                  <div className="min-h-0 flex-1 overflow-y-auto pb-1 pl-1 pr-1 pt-1">
                     <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
                       {metrics.map((m) => {
                         const isActive = selectedKpi === m.kpi_key;
@@ -309,7 +297,12 @@ export default function MetricInspectionDrawer(props: Props) {
                           <button
                             key={m.kpi_key}
                             type="button"
-                            onClick={() => setSelectedKpi(m.kpi_key)}
+                            onClick={() => {
+                              if (selectedKpi !== m.kpi_key) {
+                                setSelectedKpi(m.kpi_key);
+                                setPayload(null);
+                              }
+                            }}
                             className={[
                               "w-full overflow-hidden rounded-lg border text-left",
                               bandCardClass(m.band_key, isActive),

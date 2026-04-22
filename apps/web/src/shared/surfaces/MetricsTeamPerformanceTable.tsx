@@ -1,5 +1,3 @@
-// path: apps/web/src/shared/surfaces/MetricsTeamPerformanceTable.tsx
-
 "use client";
 
 import { useMemo, useState } from "react";
@@ -25,6 +23,7 @@ export type MetricsTeamCell = {
   weighted_points?: number | null;
   numerator?: number | null;
   denominator?: number | null;
+  inspection_payload?: any | null;
 };
 
 export type MetricsTeamRow = {
@@ -53,6 +52,7 @@ export type MetricsInspectionMetricCell = {
   value: number | null;
   value_display: string | null;
   band_key: string;
+  inspection_payload?: any | null;
 };
 
 export type MetricsInspectionPayload = Record<string, unknown>;
@@ -108,8 +108,6 @@ type Props = {
   }) => React.ReactNode;
 };
 
-/* -------------------------------- helpers -------------------------------- */
-
 function resolveFtrMetricKey(rows: MetricsTeamRow[]): string | null {
   const sample = rows.flatMap((r) => r.metrics);
 
@@ -129,7 +127,7 @@ function hasPositiveFtrJobs(
   row: MetricsTeamRow,
   ftrKey: string | null
 ) {
-  if (!ftrKey) return false; // safer: if we can't find FTR, don't include
+  if (!ftrKey) return false;
 
   const metric = row.metrics.find((m) => m.metric_key === ftrKey);
   if (!metric) return false;
@@ -177,6 +175,7 @@ function toInspectionMetricCell(metric: MetricsTeamCell): MetricsInspectionMetri
     value: metric.metric_value ?? null,
     value_display: resolveMetricDisplayValue(metric),
     band_key: resolveMetricBandKey(metric),
+    inspection_payload: metric.inspection_payload ?? null,
   };
 }
 
@@ -249,7 +248,7 @@ function sortRows(
     if (typeof aValue === "string" || typeof bValue === "string") {
       result = String(aValue).localeCompare(String(bValue));
     } else {
-      result = aValue - bValue;
+      result = (aValue as number) - (bValue as number);
     }
 
     return sortDirection === "asc" ? result : -result;
@@ -257,8 +256,6 @@ function sortRows(
 
   return copy;
 }
-
-/* -------------------------------- UI -------------------------------- */
 
 function HeaderTrigger(props: {
   label: string;
@@ -297,7 +294,9 @@ function SortableHeader(props: {
       ].join(" ")}
     >
       <span>{props.label}</span>
-      <span className="text-[9px]">{props.active ? (props.direction === "asc" ? "↑" : "↓") : "↕"}</span>
+      <span className="text-[9px]">
+        {props.active ? (props.direction === "asc" ? "↑" : "↓") : "↕"}
+      </span>
     </button>
   );
 }
@@ -344,27 +343,19 @@ function MetricPill({
   );
 }
 
-/* -------------------------------- main -------------------------------- */
-
 export default function MetricsTeamPerformanceTable({
   title = "Team Performance",
   columns,
   rows,
-
   range,
-
   workMixTitle = "Work Mix",
   workMixContent,
-
   parityTitle = "Parity",
   parityContent,
-
   helpTitle = "How to Use Team Performance",
   helpSubtitle = "This table is built to support fast scan today and richer drilldown as the surface matures.",
   helpSections = [],
-
   onOpenJobs,
-
   loadInspectionPayload,
   renderInspectionDrawer,
 }: Props) {
@@ -659,22 +650,22 @@ export default function MetricsTeamPerformanceTable({
 
       {selectedMetric && renderInspectionDrawer
         ? renderInspectionDrawer({
-          open: !!selectedMetric,
-          onClose: () => setSelectedMetric(null),
-          row: selectedMetric.row,
-          column: selectedMetric.column,
-          metric: selectedMetric.metric,
-          metrics: activeDrillMetrics,
-          loadPayload: loadInspectionPayload
-            ? () =>
-              loadInspectionPayload({
-                row: selectedMetric.row,
-                column: selectedMetric.column,
-                metric: selectedMetric.metric,
-                range,
-              })
-            : undefined,
-        })
+            open: !!selectedMetric,
+            onClose: () => setSelectedMetric(null),
+            row: selectedMetric.row,
+            column: selectedMetric.column,
+            metric: selectedMetric.metric,
+            metrics: activeDrillMetrics,
+            loadPayload: loadInspectionPayload
+              ? () =>
+                  loadInspectionPayload({
+                    row: selectedMetric.row,
+                    column: selectedMetric.column,
+                    metric: selectedMetric.metric,
+                    range,
+                  })
+              : undefined,
+          })
         : null}
     </>
   );
