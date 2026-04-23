@@ -18,6 +18,7 @@ type SupervisorScopeMeta = {
   person_id: string | null;
   office_label: string | null;
   reports_to_person_id: string | null;
+  reports_to_label: string | null;
   leader_name: string | null;
   leader_title: string | null;
   team_class: "ITG" | "BP" | null;
@@ -34,6 +35,7 @@ type EnrichedMetricsSurfaceTeamRow = MetricsSurfaceTeamRow & {
   team_class?: "ITG" | "BP" | null;
   contractor_name?: string | null;
   office_id?: string | null;
+  reports_to_label?: string | null;
 };
 
 function normalizeProfileKey(
@@ -86,16 +88,13 @@ function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
       show_work_mix: false,
       show_parity: false,
     },
-
     executive_strip: {
       base: { items: [] },
       scope: null,
       runtime: null,
     },
-
     executive_kpis: [],
     executive_kpis_scoped: [],
-
     risk_strip: [],
     team_table: {
       columns: [],
@@ -156,26 +155,37 @@ export async function getCompanySupervisorSurfacePayload(args?: {
       .filter((row: CompanySupervisorScopeAssignmentRow) =>
         Boolean(String(row.tech_id ?? "").trim())
       )
-      .map((row: CompanySupervisorScopeAssignmentRow) => [
-        String(row.tech_id ?? "").trim(),
-        {
-          person_id: row.person_id ?? null,
-          office_label: row.office_name ?? null,
-          reports_to_person_id: row.leader_person_id ?? null,
-          leader_name: row.leader_name ?? null,
-          leader_title: row.leader_title ?? null,
-          team_class: row.team_class ?? null,
-          contractor_name: row.contractor_name ?? null,
-          office_id: row.office_id ?? null,
-          affiliation_type:
-            row.team_class === "ITG"
-              ? "COMPANY"
-              : row.team_class === "BP"
-                ? "CONTRACTOR"
-                : null,
-          co_code: row.contractor_name ?? null,
-        },
-      ])
+      .map((row: CompanySupervisorScopeAssignmentRow) => {
+        const leaderName = String(row.leader_name ?? "").trim();
+        const leaderTitle = String(row.leader_title ?? "").trim();
+
+        const reportsToLabel =
+          leaderName && leaderTitle
+            ? `${leaderName} • ${leaderTitle}`
+            : leaderName || leaderTitle || null;
+
+        return [
+          String(row.tech_id ?? "").trim(),
+          {
+            person_id: row.person_id ?? null,
+            office_label: row.office_name ?? null,
+            reports_to_person_id: row.leader_person_id ?? null,
+            reports_to_label: reportsToLabel,
+            leader_name: row.leader_name ?? null,
+            leader_title: row.leader_title ?? null,
+            team_class: row.team_class ?? null,
+            contractor_name: row.contractor_name ?? null,
+            office_id: row.office_id ?? null,
+            affiliation_type:
+              row.team_class === "ITG"
+                ? "COMPANY"
+                : row.team_class === "BP"
+                  ? "CONTRACTOR"
+                  : null,
+            co_code: row.contractor_name ?? null,
+          },
+        ];
+      })
   );
 
   const enrichedRows: EnrichedMetricsSurfaceTeamRow[] =
@@ -191,6 +201,12 @@ export async function getCompanySupervisorSurfacePayload(args?: {
           scopeMeta?.affiliation_type ?? row.affiliation_type ?? null,
         reports_to_person_id:
           scopeMeta?.reports_to_person_id ?? row.reports_to_person_id ?? null,
+
+        reports_to_label:
+          scopeMeta?.leader_name && scopeMeta?.leader_title
+            ? `${scopeMeta.leader_name} • ${scopeMeta.leader_title}`
+            : scopeMeta?.leader_name ?? scopeMeta?.leader_title ?? null,
+
         co_code: scopeMeta?.co_code ?? row.co_code ?? null,
         leader_name: scopeMeta?.leader_name ?? null,
         leader_title: scopeMeta?.leader_title ?? null,
@@ -202,13 +218,11 @@ export async function getCompanySupervisorSurfacePayload(args?: {
 
   return {
     ...basePayload,
-
     executive_strip: basePayload.executive_strip ?? {
       base: { items: [] },
       scope: null,
       runtime: null,
     },
-
     header: {
       ...basePayload.header,
       total_headcount: scopedTechIds.length,
@@ -220,4 +234,3 @@ export async function getCompanySupervisorSurfacePayload(args?: {
     },
   };
 }
-

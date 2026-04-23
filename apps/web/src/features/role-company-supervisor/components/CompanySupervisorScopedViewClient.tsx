@@ -48,9 +48,9 @@ function formatPercent(value: number | null | undefined) {
 function hasActiveExecutiveSlice(controls: MetricsControlsValue): boolean {
   return Boolean(
     controls.office_label ||
-      controls.affiliation_type ||
-      controls.contractor_name ||
-      controls.reports_to_person_id
+    controls.affiliation_type ||
+    controls.contractor_name ||
+    controls.reports_to_person_id
   );
 }
 
@@ -163,12 +163,30 @@ export default function CompanySupervisorScopedViewClient({
   const supervisorOptions = useMemo<SupervisorOption[]>(() => {
     const byValue = new Map<string, string>();
 
+    // build lookup of person_id -> full_name
+    const nameByPersonId = new Map<string, string>();
+
+    for (const row of allRows) {
+      const personId = String(row.person_id ?? "").trim();
+      const name = String(row.full_name ?? "").trim();
+      if (personId && name) {
+        nameByPersonId.set(personId, name);
+      }
+    }
+
     for (const row of allRows) {
       const value = String(row.reports_to_person_id ?? "").trim();
       if (!value) continue;
 
-      const label = String(row.reports_to_label ?? "").trim() || value;
-      if (!byValue.has(value)) byValue.set(value, label);
+      const resolvedName = nameByPersonId.get(value);
+      const fallbackLabel =
+        String(row.reports_to_label ?? "").trim() || value;
+
+      const label = resolvedName || fallbackLabel;
+
+      if (!byValue.has(value)) {
+        byValue.set(value, label);
+      }
     }
 
     return [...byValue.entries()]

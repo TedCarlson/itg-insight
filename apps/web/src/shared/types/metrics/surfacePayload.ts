@@ -78,6 +78,7 @@ export type MetricsSurfaceTeamRow = {
   office_label?: string | null;
   affiliation_type?: string | null;
   reports_to_person_id?: string | null;
+  reports_to_label?: string | null;
   co_code?: string | null;
 };
 

@@ -233,9 +233,6 @@ export default function MetricsControlsStrip(props: Props) {
                 onChange({
                   ...value,
                   reports_to_person_id: e.target.value || null,
-                  team_scope_mode: e.target.value
-                    ? value.team_scope_mode ?? "DIRECT"
-                    : "DIRECT",
                 })
               }
               className="h-9 w-full rounded-lg border bg-background px-2 text-sm"

@@ -315,11 +315,13 @@ function resolveNearestLeader(args: {
   let cursor = parentByChild.get(assignmentId) ?? null;
 
   while (cursor) {
+    const candidate = assignmentsById.get(cursor);
+
+    // FIX: do NOT null this out — return supervisor
     if (managerAssignmentIds.has(cursor)) {
-      return null;
+      return candidate ?? null;
     }
 
-    const candidate = assignmentsById.get(cursor);
     if (candidate && isLeadershipDisplayAssignment(candidate)) {
       return candidate;
     }
@@ -434,10 +436,10 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
 
   const leadershipRes = orgAssignmentIds.length
     ? await admin
-        .from("assignment_leadership_admin_v")
-        .select("parent_assignment_id,child_assignment_id,active")
-        .in("parent_assignment_id", orgAssignmentIds)
-        .eq("active", true)
+      .from("assignment_leadership_admin_v")
+      .select("parent_assignment_id,child_assignment_id,active")
+      .in("parent_assignment_id", orgAssignmentIds)
+      .eq("active", true)
     : { data: [] as LeadershipEdgeRow[] };
 
   const leadershipRows = (leadershipRes.data ?? []) as LeadershipEdgeRow[];
@@ -445,33 +447,33 @@ export async function resolveCompanySupervisorScope(): Promise<CompanySupervisor
   const parentByChild = buildParentByChild(leadershipRows);
 
   // 🔑 DIRECT CHILDREN ONLY (no recursion, no graph walk)
-const directChildAssignmentIds = new Set<string>();
+  const directChildAssignmentIds = new Set<string>();
 
-for (const myAssignmentId of myAssignmentIds) {
-  const children = childrenByParent.get(myAssignmentId) ?? [];
-  for (const childId of children) {
-    directChildAssignmentIds.add(childId);
+  for (const myAssignmentId of myAssignmentIds) {
+    const children = childrenByParent.get(myAssignmentId) ?? [];
+    for (const childId of children) {
+      directChildAssignmentIds.add(childId);
+    }
   }
-}
 
-const descendantAssignments = Array.from(directChildAssignmentIds)
-  .map((id) => assignmentsById.get(id))
-  .filter((row): row is CompanySupervisorScopeAssignmentRow => !!row);
+  const descendantAssignments = Array.from(directChildAssignmentIds)
+    .map((id) => assignmentsById.get(id))
+    .filter((row): row is CompanySupervisorScopeAssignmentRow => !!row);
 
-// 🔑 ONLY people relevant to this supervisor slice
-const basePersonIds = new Set(
-  descendantAssignments
-    .map((r) => String(r.person_id ?? "").trim())
-    .filter(Boolean)
-);
+  // 🔑 ONLY people relevant to this supervisor slice
+  const basePersonIds = new Set(
+    descendantAssignments
+      .map((r) => String(r.person_id ?? "").trim())
+      .filter(Boolean)
+  );
 
   const personIds = Array.from(basePersonIds);
 
   const peopleRes = personIds.length
     ? await admin
-        .from("person")
-        .select("person_id,full_name,role,co_ref_id")
-        .in("person_id", personIds)
+      .from("person")
+      .select("person_id,full_name,role,co_ref_id")
+      .in("person_id", personIds)
     : { data: [] as CompanySupervisorScopePersonRow[] };
 
   const people_by_id = new Map<string, CompanySupervisorScopePersonRow>();
@@ -523,11 +525,11 @@ const basePersonIds = new Set(
       const assignmentId = String(assignment.assignment_id ?? "");
       const leaderAssignment = assignmentId
         ? resolveNearestLeader({
-            assignmentId,
-            parentByChild,
-            assignmentsById,
-            managerAssignmentIds: managerAssignmentIdSet,
-          })
+          assignmentId,
+          parentByChild,
+          assignmentsById,
+          managerAssignmentIds: managerAssignmentIdSet,
+        })
         : null;
 
       const leaderPerson = leaderAssignment

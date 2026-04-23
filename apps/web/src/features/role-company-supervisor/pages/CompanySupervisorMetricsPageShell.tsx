@@ -1,4 +1,4 @@
-// RUN THIS
+// Path: apps/web/src/features/role-copmany-supervisor/pages/CompanySupervisorMetricsPageShell.tsx
 
 import CompanySupervisorScopedViewClient from "../components/CompanySupervisorScopedViewClient";
 import { getCompanySupervisorSurfacePayload } from "../lib/getCompanySupervisorSurfacePayload.server";
