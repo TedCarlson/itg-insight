@@ -9,17 +9,28 @@ import type {
 } from "@/shared/types/workforce/workforce.types";
 
 export type WorkforceSourceRow = {
+  assignment_id: string;
   person_id: string;
+  workspace_id?: string | null;
+  pc_org_id?: string | null;
+
   tech_id?: string | null;
 
+  full_name?: string | null;
+  legal_name?: string | null;
   first_name?: string | null;
   preferred_name?: string | null;
   last_name?: string | null;
 
+  office_id?: string | null;
   office?: string | null;
+
+  reports_to_assignment_id?: string | null;
+  reports_to_person_id?: string | null;
   reports_to_name?: string | null;
 
   mobile?: string | null;
+  email?: string | null;
   nt_login?: string | null;
   csg?: string | null;
 
@@ -28,6 +39,10 @@ export type WorkforceSourceRow = {
 
   start_date?: string | null;
   end_date?: string | null;
+
+  assignment_status?: string | null;
+  person_status?: string | null;
+  is_primary?: boolean | null;
 
   is_active?: boolean | null;
   is_travel_tech?: boolean | null;
@@ -38,6 +53,11 @@ export type WorkforceSourceRow = {
 
   schedule?: WorkforceScheduleDay[] | null;
 };
+
+function clean(value: unknown): string | null {
+  const next = String(value ?? "").trim();
+  return next ? next : null;
+}
 
 function normalizeSchedule(
   value: WorkforceSourceRow["schedule"]
@@ -64,74 +84,175 @@ function normalizeSchedule(
 }
 
 function classifySeatType(row: WorkforceSourceRow): WorkforceSeatType {
+  const title = clean(row.position_title)?.toLowerCase() ?? "";
+
   if (row.is_travel_tech) return "TRAVEL";
-  if (row.is_field) return "FIELD";
-  if (row.is_leadership) return "LEADERSHIP";
-  return "INCOMPLETE";
+  if (row.is_field === true) return "FIELD";
+  if (row.is_leadership === true) return "LEADERSHIP";
+
+  if (
+    title.includes("supervisor") ||
+    title.includes("manager") ||
+    title.includes("owner") ||
+    title.includes("lead") ||
+    title.includes("director")
+  ) {
+    return "LEADERSHIP";
+  }
+
+  if (
+    title.includes("technician") ||
+    title.includes("drop bury") ||
+    title.includes("field")
+  ) {
+    return "FIELD";
+  }
+
+  return "SUPPORT";
+}
+
+function buildSearchableText(row: WorkforceRow): string {
+  return [
+    row.assignment_id,
+    row.person_id,
+    row.workspace_id,
+    row.pc_org_id,
+    row.tech_id,
+    row.full_name,
+    row.legal_name,
+    row.first_name,
+    row.preferred_name,
+    row.last_name,
+    row.display_name,
+    row.office_id,
+    row.office,
+    row.reports_to_assignment_id,
+    row.reports_to_person_id,
+    row.reports_to_name,
+    row.mobile,
+    row.nt_login,
+    row.csg,
+    row.position_title,
+    row.affiliation,
+    row.assignment_status,
+    row.person_status,
+    row.seat_type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function toWorkforceRow(row: WorkforceSourceRow): WorkforceRow {
-  return {
+  const first_name = clean(row.first_name);
+  const preferred_name = clean(row.preferred_name);
+  const last_name = clean(row.last_name);
+  const full_name = clean(row.full_name);
+  const legal_name = clean(row.legal_name);
+
+  const display_name =
+    full_name ??
+    buildDisplayName({
+      preferred_name,
+      first_name,
+      last_name,
+    });
+
+  const base: WorkforceRow = {
+    assignment_id: String(row.assignment_id ?? "").trim(),
     person_id: String(row.person_id ?? "").trim(),
-    tech_id: row.tech_id ? String(row.tech_id).trim() : null,
+    workspace_id: clean(row.workspace_id),
+    pc_org_id: clean(row.pc_org_id),
 
-    first_name: row.first_name ? String(row.first_name).trim() : null,
-    preferred_name: row.preferred_name
-      ? String(row.preferred_name).trim()
-      : null,
-    last_name: row.last_name ? String(row.last_name).trim() : null,
+    tech_id: clean(row.tech_id),
 
-    display_name: buildDisplayName({
-      preferred_name: row.preferred_name ?? null,
-      first_name: row.first_name ?? null,
-      last_name: row.last_name ?? null,
-    }),
+    full_name,
+    legal_name,
+    first_name,
+    preferred_name,
+    last_name,
+    display_name,
 
-    office: row.office ? String(row.office).trim() : null,
-    reports_to_name: row.reports_to_name
-      ? String(row.reports_to_name).trim()
-      : null,
+    office_id: clean(row.office_id),
+    office: clean(row.office),
+
+    reports_to_assignment_id: clean(row.reports_to_assignment_id),
+    reports_to_person_id: clean(row.reports_to_person_id),
+    reports_to_name: clean(row.reports_to_name),
 
     schedule: normalizeSchedule(row.schedule ?? null),
 
     seat_type: classifySeatType(row),
 
-    mobile: row.mobile ? String(row.mobile).trim() : null,
-    nt_login: row.nt_login ? String(row.nt_login).trim() : null,
-    csg: row.csg ? String(row.csg).trim() : null,
+    mobile: clean(row.mobile),
+    email: clean(row.email),
+    nt_login: clean(row.nt_login),
+    csg: clean(row.csg),
 
-    position_title: row.position_title
-      ? String(row.position_title).trim()
-      : null,
-    affiliation: row.affiliation ? String(row.affiliation).trim() : null,
+    position_title: clean(row.position_title),
+    affiliation: clean(row.affiliation),
 
-    start_date: row.start_date ? String(row.start_date).trim() : null,
-    end_date: row.end_date ? String(row.end_date).trim() : null,
+    start_date: clean(row.start_date),
+    end_date: clean(row.end_date),
+
+    assignment_status: clean(row.assignment_status),
+    person_status: clean(row.person_status),
+    is_primary: row.is_primary === true,
 
     is_active: row.is_active !== false,
     is_travel_tech: row.is_travel_tech === true,
     is_incomplete: row.is_incomplete === true,
+
+    searchable_text: "",
+  };
+
+  return {
+    ...base,
+    searchable_text: buildSearchableText(base),
   };
 }
 
 function buildTabs(rows: WorkforceRow[]): WorkforceSurfacePayload["tabs"] {
-  const total = rows.length;
-  const field = rows.filter((row) => row.seat_type === "FIELD").length;
-  const leadership = rows.filter(
-    (row) => row.seat_type === "LEADERSHIP"
-  ).length;
-  const incomplete = rows.filter(
-    (row) => row.seat_type === "INCOMPLETE"
-  ).length;
-  const travel = rows.filter((row) => row.seat_type === "TRAVEL").length;
-
   return [
-    { key: "ALL", label: "All", count: total },
-    { key: "FIELD", label: "Field", count: field },
-    { key: "LEADERSHIP", label: "Leadership", count: leadership },
-    { key: "INCOMPLETE", label: "Incomplete", count: incomplete },
-    { key: "TRAVEL", label: "Travel Techs", count: travel },
+    { key: "ALL", label: "All", count: rows.length },
+    {
+      key: "FIELD",
+      label: "Field",
+      count: rows.filter((row) => row.seat_type === "FIELD").length,
+    },
+    {
+      key: "LEADERSHIP",
+      label: "Leadership",
+      count: rows.filter((row) => row.seat_type === "LEADERSHIP").length,
+    },
+    {
+      key: "INCOMPLETE",
+      label: "Incomplete",
+      count: rows.filter((row) => row.is_incomplete).length,
+    },
+    {
+      key: "TRAVEL",
+      label: "Travel Techs",
+      count: rows.filter((row) => row.is_travel_tech).length,
+    },
   ];
+}
+
+function buildSliceOptions(
+  rows: WorkforceRow[],
+  getValue: (row: WorkforceRow) => string | null
+): { value: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+
+  for (const row of rows) {
+    const value = getValue(row);
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, label: value, count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export function buildWorkforceSurfacePayload(args: {
@@ -139,15 +260,31 @@ export function buildWorkforceSurfacePayload(args: {
 }): WorkforceSurfacePayload {
   const rows = (args.rows ?? []).map(toWorkforceRow);
 
+  const field = rows.filter((row) => row.seat_type === "FIELD").length;
+  const leadership = rows.filter(
+    (row) => row.seat_type === "LEADERSHIP"
+  ).length;
+  const support = rows.filter((row) => row.seat_type === "SUPPORT").length;
+  const incomplete = rows.filter((row) => row.is_incomplete).length;
+  const travel = rows.filter((row) => row.is_travel_tech).length;
+
   return {
     rows,
     tabs: buildTabs(rows),
     summary: {
       total: rows.length,
-      field: rows.filter((row) => row.seat_type === "FIELD").length,
-      leadership: rows.filter((row) => row.seat_type === "LEADERSHIP").length,
-      incomplete: rows.filter((row) => row.seat_type === "INCOMPLETE").length,
-      travel: rows.filter((row) => row.seat_type === "TRAVEL").length,
+      field,
+      leadership,
+      support,
+      incomplete,
+      travel,
+    },
+    slices: {
+      offices: buildSliceOptions(rows, (row) => row.office),
+      reportsTo: buildSliceOptions(rows, (row) => row.reports_to_name),
+      positions: buildSliceOptions(rows, (row) => row.position_title),
+      affiliations: buildSliceOptions(rows, (row) => row.affiliation),
+      seatTypes: buildSliceOptions(rows, (row) => row.seat_type),
     },
   };
 }

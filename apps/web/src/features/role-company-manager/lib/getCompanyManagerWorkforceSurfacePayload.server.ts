@@ -27,8 +27,16 @@ function buildEmptyPayload(): WorkforceSurfacePayload {
       total: 0,
       field: 0,
       leadership: 0,
+      support: 0,
       incomplete: 0,
       travel: 0,
+    },
+    slices: {
+      offices: [],
+      reportsTo: [],
+      positions: [],
+      affiliations: [],
+      seatTypes: [],
     },
   };
 }

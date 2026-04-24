@@ -1,9 +1,29 @@
-import type { WorkforceRow, WorkforceSeatType } from "./workforce.types";
+// path: apps/web/src/shared/types/workforce/surfacePayload.ts
+
+import type {
+  WorkforceRow,
+  WorkforceSeatType,
+  WorkforceTabKey,
+} from "./workforce.types";
 
 export type WorkforceTab = {
-  key: WorkforceSeatType | "ALL";
+  key: WorkforceTabKey;
   label: string;
   count: number;
+};
+
+export type WorkforceSliceOption = {
+  value: string;
+  label: string;
+  count: number;
+};
+
+export type WorkforceSliceModel = {
+  offices: WorkforceSliceOption[];
+  reportsTo: WorkforceSliceOption[];
+  positions: WorkforceSliceOption[];
+  affiliations: WorkforceSliceOption[];
+  seatTypes: WorkforceSliceOption[];
 };
 
 export type WorkforceSelectedPerson = {
@@ -16,10 +36,14 @@ export type WorkforceSelectedPerson = {
 };
 
 export type WorkforceSeatHistoryRow = {
+  assignment_id: string;
   person_id: string;
   tech_id: string | null;
   position_title: string | null;
+  reports_to_assignment_id: string | null;
+  reports_to_person_id: string | null;
   reports_to_name: string | null;
+  office_id: string | null;
   office: string | null;
   start_date: string | null;
   end_date: string | null;
@@ -37,9 +61,12 @@ export type WorkforceSurfacePayload = {
     total: number;
     field: number;
     leadership: number;
+    support: number;
     incomplete: number;
     travel: number;
   };
+
+  slices: WorkforceSliceModel;
 
   selected?: {
     row: WorkforceRow;
