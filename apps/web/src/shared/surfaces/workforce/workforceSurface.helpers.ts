@@ -7,16 +7,21 @@ import type {
 export type WorkforceDraft = {
   position_title: string | null;
   office_id: string | null;
+  affiliation_id: string | null;
   reports_to_assignment_id: string | null;
   seat_type: WorkforceSeatType;
   start_date: string | null;
 };
 
 export function badgeTone(seatType: WorkforceSeatType) {
-  if (seatType === "FIELD") return "border-[var(--to-success)] bg-[color-mix(in_oklab,var(--to-success)_10%,white)]";
-  if (seatType === "LEADERSHIP") return "border-[var(--to-primary)] bg-[color-mix(in_oklab,var(--to-primary)_10%,white)]";
-  if (seatType === "SUPPORT") return "border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_10%,white)]";
-  if (seatType === "FMLA") return "border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_10%,white)]";
+  if (seatType === "FIELD")
+    return "border-[var(--to-success)] bg-[color-mix(in_oklab,var(--to-success)_10%,white)]";
+  if (seatType === "LEADERSHIP")
+    return "border-[var(--to-primary)] bg-[color-mix(in_oklab,var(--to-primary)_10%,white)]";
+  if (seatType === "SUPPORT")
+    return "border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_10%,white)]";
+  if (seatType === "FMLA")
+    return "border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_10%,white)]";
   return "border-[var(--to-info)] bg-[color-mix(in_oklab,var(--to-info)_10%,white)]";
 }
 
@@ -34,10 +39,7 @@ export function identityLabel(row: WorkforceRow) {
   const lead = row.preferred_name ?? row.first_name ?? row.display_name;
 
   if (!row.tech_id) return lead;
-
-  if (row.tech_id.startsWith("UNASSIGNED-")) {
-    return lead;
-  }
+  if (row.tech_id.startsWith("UNASSIGNED-")) return lead;
 
   return `${lead} • ${row.tech_id}`;
 }
@@ -46,6 +48,7 @@ export function buildDraft(row: WorkforceRow): WorkforceDraft {
   return {
     position_title: row.position_title,
     office_id: row.office_id,
+    affiliation_id: row.affiliation_id,
     reports_to_assignment_id: row.reports_to_assignment_id,
     seat_type: row.seat_type,
     start_date: row.start_date,
@@ -56,11 +59,9 @@ export function buildChangeSet(selected: WorkforceRow, draft: WorkforceDraft) {
   const changes: Record<string, unknown> = {};
 
   if (selected.assignment_id === "NEW") {
-
     changes.person_id = selected.person_id;
-
     changes.pc_org_id = selected.pc_org_id;
-
+    changes.tech_id = selected.tech_id;
   }
 
   if (selected.position_title !== draft.position_title) {
@@ -69,6 +70,10 @@ export function buildChangeSet(selected: WorkforceRow, draft: WorkforceDraft) {
 
   if (selected.office_id !== draft.office_id) {
     changes.office_id = draft.office_id;
+  }
+
+  if (selected.affiliation_id !== draft.affiliation_id) {
+    changes.affiliation_id = draft.affiliation_id;
   }
 
   if (selected.reports_to_assignment_id !== draft.reports_to_assignment_id) {

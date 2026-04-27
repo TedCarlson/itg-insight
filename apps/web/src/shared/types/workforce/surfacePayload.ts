@@ -40,10 +40,18 @@ export type WorkforceReportsToOption = WorkforceEditOption & {
   seat_type: WorkforceSeatType;
 };
 
+export type WorkforceAffiliationOption = {
+  affiliation_id: string;
+  affiliation_type: string;
+  affiliation_code: string | null;
+  affiliation_label: string;
+};
+
 export type WorkforceEditOptions = {
   positions: WorkforceEditOption[];
   offices: WorkforceEditOption[];
   reportsTo: WorkforceReportsToOption[];
+  affiliations?: WorkforceAffiliationOption[];
 };
 
 export type WorkforceSelectedPerson = {

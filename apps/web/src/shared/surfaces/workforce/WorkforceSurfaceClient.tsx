@@ -84,6 +84,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
     const stagedRow: WorkforceRow = {
       assignment_id: "NEW",
       person_id: person.person_id,
+      affiliation_id: null,
       workspace_id: null,
       pc_org_id: pcOrgId,
 
@@ -114,6 +115,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
 
       position_title: person.position_title ?? "Technician",
       affiliation: null,
+      
 
       start_date: null,
       end_date: null,
@@ -132,6 +134,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
     setSelected(stagedRow);
     setDraft({
       position_title: person.position_title ?? "Technician",
+      affiliation_id: null,
       office_id: null,
       reports_to_assignment_id: null,
       seat_type: "FIELD",
@@ -385,6 +388,28 @@ export function WorkforceSurfaceClient({ payload }: Props) {
                     {(payload.editOptions?.positions ?? []).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="grid gap-1 text-sm">
+                  Affiliation
+                  <select
+                    value={draft.affiliation_id ?? ""}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        affiliation_id: e.target.value || null,
+                      })
+                    }
+                    className="h-10 rounded-xl border px-3"
+                  >
+                    <option value="">Select affiliation…</option>
+                    {(payload.editOptions?.affiliations ?? []).map((option) => (
+                      <option key={option.affiliation_id} value={option.affiliation_id}>
+                        {option.affiliation_label}
+                        {option.affiliation_code ? ` • ${option.affiliation_code}` : ""}
                       </option>
                     ))}
                   </select>

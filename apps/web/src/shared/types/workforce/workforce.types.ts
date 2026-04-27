@@ -41,6 +41,7 @@ export type WorkforceRow = {
   csg: string | null;
 
   position_title: string | null;
+  affiliation_id: string | null;
   affiliation: string | null;
 
   start_date: string | null;

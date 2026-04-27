@@ -2,8 +2,10 @@
 
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { buildDisplayName } from "./buildDisplayName";
-import type { WorkforceSurfacePayload } from "@/shared/types/workforce/surfacePayload";
 import type {
+  WorkforceAffiliationOption,
+  WorkforceSurfacePayload,
+} from "@/shared/types/workforce/surfacePayload"; import type {
   WorkforceRow,
   WorkforceScheduleDay,
   WorkforceSeatType,
@@ -37,6 +39,7 @@ export type WorkforceSourceRow = {
 
   position_title?: string | null;
   role_type?: string | null;
+  affiliation_id?: string | null;
   affiliation?: string | null;
 
   start_date?: string | null;
@@ -182,6 +185,7 @@ function toWorkforceRow(row: WorkforceSourceRow): WorkforceRow {
     csg: clean(row.csg),
 
     position_title: clean(row.position_title),
+    affiliation_id: clean(row.affiliation_id),
     affiliation: clean(row.affiliation),
 
     start_date: clean(row.start_date),
@@ -234,6 +238,23 @@ async function loadPositionOptions() {
       label: value,
     })
   );
+}
+
+async function loadAffiliationOptions() {
+  const sb = await supabaseServer();
+
+  const { data, error } = await sb.rpc("workforce_affiliation_options");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as WorkforceAffiliationOption[]).map((row) => ({
+    affiliation_id: row.affiliation_id,
+    affiliation_type: row.affiliation_type,
+    affiliation_code: row.affiliation_code,
+    affiliation_label: row.affiliation_label,
+  }));
 }
 
 function buildOfficeOptions(rows: WorkforceRow[]) {
@@ -297,6 +318,7 @@ export async function buildWorkforceSurfacePayload(args: {
   const fmla = rows.filter((row) => row.seat_type === "FMLA").length;
 
   const positions = await loadPositionOptions();
+  const affiliations = await loadAffiliationOptions();
 
   return {
     rows,
@@ -307,7 +329,6 @@ export async function buildWorkforceSurfacePayload(args: {
       { key: "INCOMPLETE", label: "Incomplete", count: incomplete },
       { key: "TRAVEL", label: "Travel Techs", count: travel },
       { key: "FMLA", label: "FMLA", count: fmla },
-
     ],
     summary: {
       total: rows.length,
@@ -329,6 +350,7 @@ export async function buildWorkforceSurfacePayload(args: {
       positions,
       offices: buildOfficeOptions(rows),
       reportsTo: buildReportsToOptions(rows),
+      affiliations,
     },
   };
 }

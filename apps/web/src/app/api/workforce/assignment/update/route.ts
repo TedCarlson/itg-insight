@@ -11,8 +11,10 @@ type RequestBody = {
   changes: {
     person_id?: string;
     pc_org_id?: string | null;
+    tech_id?: string | null;
     position_title?: string | null;
     office_id?: string | null;
+    affiliation_id?: string | null;
     reports_to_assignment_id?: string | null;
     start_date?: string | null;
     seat_type?: SeatType;
@@ -62,6 +64,13 @@ export async function POST(req: Request) {
     );
   }
 
+  if (isNew && !changes.tech_id) {
+    return NextResponse.json(
+      { error: "Missing tech_id for new workforce assignment" },
+      { status: 400 }
+    );
+  }
+
   if ("seat_type" in changes && !isSeatType(changes.seat_type)) {
     return NextResponse.json({ error: "Invalid seat_type" }, { status: 400 });
   }
@@ -70,9 +79,12 @@ export async function POST(req: Request) {
     p_assignment_id: isNew ? null : assignment_id,
     p_person_id: isNew ? changes.person_id ?? null : null,
     p_pc_org_id: isNew ? changes.pc_org_id ?? null : null,
+    p_tech_id: isNew ? changes.tech_id ?? null : null,
     p_position_title:
       "position_title" in changes ? changes.position_title : null,
     p_office_id: "office_id" in changes ? changes.office_id : null,
+    p_affiliation_id:
+      "affiliation_id" in changes ? changes.affiliation_id : null,
     p_reports_to_assignment_id:
       "reports_to_assignment_id" in changes
         ? changes.reports_to_assignment_id
