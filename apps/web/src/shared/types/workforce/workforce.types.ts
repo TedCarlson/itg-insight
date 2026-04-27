@@ -1,6 +1,6 @@
 // path: apps/web/src/shared/types/workforce/workforce.types.ts
 
-export type WorkforceSeatType = "FIELD" | "LEADERSHIP" | "SUPPORT" | "TRAVEL";
+export type WorkforceSeatType = "FIELD" | "LEADERSHIP" | "SUPPORT" | "TRAVEL" | "FMLA";
 
 export type WorkforceTabKey = WorkforceSeatType | "ALL" | "INCOMPLETE";
 

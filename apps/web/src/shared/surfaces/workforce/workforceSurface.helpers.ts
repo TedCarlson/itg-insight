@@ -16,6 +16,7 @@ export function badgeTone(seatType: WorkforceSeatType) {
   if (seatType === "FIELD") return "border-[var(--to-success)] bg-[color-mix(in_oklab,var(--to-success)_10%,white)]";
   if (seatType === "LEADERSHIP") return "border-[var(--to-primary)] bg-[color-mix(in_oklab,var(--to-primary)_10%,white)]";
   if (seatType === "SUPPORT") return "border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_10%,white)]";
+  if (seatType === "FMLA") return "border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_10%,white)]";
   return "border-[var(--to-info)] bg-[color-mix(in_oklab,var(--to-info)_10%,white)]";
 }
 
@@ -25,6 +26,7 @@ export function tabLabel(key: WorkforceTabKey) {
   if (key === "LEADERSHIP") return "Leadership";
   if (key === "INCOMPLETE") return "Incomplete";
   if (key === "SUPPORT") return "Support";
+  if (key === "FMLA") return "FMLA";
   return "Travel Techs";
 }
 
@@ -52,6 +54,14 @@ export function buildDraft(row: WorkforceRow): WorkforceDraft {
 
 export function buildChangeSet(selected: WorkforceRow, draft: WorkforceDraft) {
   const changes: Record<string, unknown> = {};
+
+  if (selected.assignment_id === "NEW") {
+
+    changes.person_id = selected.person_id;
+
+    changes.pc_org_id = selected.pc_org_id;
+
+  }
 
   if (selected.position_title !== draft.position_title) {
     changes.position_title = draft.position_title;

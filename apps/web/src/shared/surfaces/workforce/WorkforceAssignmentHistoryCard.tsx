@@ -57,6 +57,7 @@ function resolveValue(key: string, value: unknown, options?: EditOptions) {
     if (value === "LEADERSHIP") return "Leadership";
     if (value === "SUPPORT") return "Support";
     if (value === "TRAVEL") return "Travel Tech";
+    if (value === "FMLA") return "FMLA";
   }
 
   return String(value);

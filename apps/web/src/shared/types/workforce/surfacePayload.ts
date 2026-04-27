@@ -84,6 +84,7 @@ export type WorkforceSurfacePayload = {
     support: number;
     incomplete: number;
     travel: number;
+    fmla: number;
   };
 
   slices: WorkforceSliceModel;

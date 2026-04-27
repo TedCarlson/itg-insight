@@ -22,6 +22,11 @@ import {
   type WorkforceDraft,
 } from "./workforceSurface.helpers";
 import { WorkforceAssignmentHistoryCard } from "./WorkforceAssignmentHistoryCard";
+import {
+  WorkforceAddPersonDrawer,
+  type WorkforcePersonSearchRow,
+} from "./WorkforceAddPersonDrawer";
+import { WorkforceStagedPersonDrawer } from "./WorkforceStagedPersonDrawer";
 
 type Props = {
   payload: WorkforceSurfacePayload;
@@ -37,6 +42,11 @@ export function WorkforceSurfaceClient({ payload }: Props) {
   const [draft, setDraft] = useState<WorkforceDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [addDrawerOpen, setAddDrawerOpen] = useState(false);
+  const [stagedPerson, setStagedPerson] =
+    useState<WorkforcePersonSearchRow | null>(null);
+
+  const pcOrgId = payload.rows[0]?.pc_org_id ?? null;
 
   const filtered = useMemo(() => {
     let rows = payload.rows;
@@ -65,6 +75,68 @@ export function WorkforceSurfaceClient({ payload }: Props) {
     setDraft(null);
     setSaveError(null);
     setSaving(false);
+  }
+
+  function createFromStaged(person: WorkforcePersonSearchRow) {
+    setStagedPerson(null);
+    setSaveError(null);
+
+    const stagedRow: WorkforceRow = {
+      assignment_id: "NEW",
+      person_id: person.person_id,
+      workspace_id: null,
+      pc_org_id: pcOrgId,
+
+      tech_id: person.tech_id,
+
+      full_name: person.full_name,
+      legal_name: null,
+      first_name: null,
+      preferred_name: null,
+      last_name: null,
+      display_name: person.full_name ?? "Unknown Person",
+
+      office_id: null,
+      office: null,
+
+      reports_to_assignment_id: null,
+      reports_to_person_id: null,
+      reports_to_name: null,
+
+      schedule: [],
+
+      seat_type: "FIELD",
+
+      mobile: null,
+      email: null,
+      nt_login: null,
+      csg: null,
+
+      position_title: person.position_title ?? "Technician",
+      affiliation: null,
+
+      start_date: null,
+      end_date: null,
+
+      assignment_status: "active",
+      person_status: null,
+      is_primary: true,
+
+      is_active: true,
+      is_travel_tech: false,
+      is_incomplete: true,
+
+      searchable_text: "",
+    };
+
+    setSelected(stagedRow);
+    setDraft({
+      position_title: person.position_title ?? "Technician",
+      office_id: null,
+      reports_to_assignment_id: null,
+      seat_type: "FIELD",
+      start_date: null,
+    });
   }
 
   async function commitDraft() {
@@ -120,12 +192,22 @@ export function WorkforceSurfaceClient({ payload }: Props) {
             ))}
           </div>
 
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search workforce…"
-            className="h-10 w-full rounded-xl border px-3 text-sm lg:w-72"
-          />
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search workforce…"
+              className="h-10 w-full rounded-xl border px-3 text-sm lg:w-72"
+            />
+
+            <button
+              type="button"
+              onClick={() => setAddDrawerOpen(true)}
+              className="h-10 rounded-xl border border-[var(--to-accent)] bg-[color-mix(in_oklab,var(--to-accent)_10%,white)] px-3 text-sm"
+            >
+              Add Person
+            </button>
+          </div>
         </div>
       </Card>
 
@@ -272,6 +354,9 @@ export function WorkforceSurfaceClient({ payload }: Props) {
                     <option value="LEADERSHIP">Leadership</option>
                     <option value="SUPPORT">Support</option>
                     <option value="TRAVEL">Travel Tech</option>
+                    {selected.assignment_id !== "NEW" ? (
+                      <option value="FMLA">FMLA</option>
+                    ) : null}
                   </select>
                 </label>
 
@@ -405,16 +490,34 @@ export function WorkforceSurfaceClient({ payload }: Props) {
                   <dt className="text-muted-foreground">End</dt>
                   <dd>{selected.end_date ?? "Active"}</dd>
                 </div>
-
               </dl>
             </div>
-            <WorkforceAssignmentHistoryCard
-              assignmentId={selected.assignment_id}
-              editOptions={payload.editOptions}
-            />
+
+            {selected.assignment_id !== "NEW" ? (
+              <WorkforceAssignmentHistoryCard
+                assignmentId={selected.assignment_id}
+                editOptions={payload.editOptions}
+              />
+            ) : null}
           </aside>
         </div>
       ) : null}
+
+      <WorkforceAddPersonDrawer
+        pcOrgId={pcOrgId}
+        open={addDrawerOpen}
+        onClose={() => setAddDrawerOpen(false)}
+        onStageAdd={(row) => {
+          setAddDrawerOpen(false);
+          setStagedPerson(row);
+        }}
+      />
+
+      <WorkforceStagedPersonDrawer
+        person={stagedPerson}
+        onClose={() => setStagedPerson(null)}
+        onCreate={createFromStaged}
+      />
     </div>
   );
 }

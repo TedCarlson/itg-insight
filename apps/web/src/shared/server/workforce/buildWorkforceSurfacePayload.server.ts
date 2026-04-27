@@ -92,6 +92,7 @@ function classifySeatType(row: WorkforceSourceRow): WorkforceSeatType {
   if (roleType === "FIELD") return "FIELD";
   if (roleType === "LEADERSHIP") return "LEADERSHIP";
   if (roleType === "SUPPORT") return "SUPPORT";
+  if (roleType === "FMLA") return "FMLA";
 
   const title = clean(row.position_title)?.toLowerCase() ?? "";
 
@@ -292,7 +293,8 @@ export async function buildWorkforceSurfacePayload(args: {
   ).length;
   const support = rows.filter((row) => row.seat_type === "SUPPORT").length;
   const incomplete = rows.filter((row) => row.is_incomplete).length;
-  const travel = rows.filter((row) => row.is_travel_tech).length;
+  const travel = rows.filter((row) => row.seat_type === "TRAVEL").length;
+  const fmla = rows.filter((row) => row.seat_type === "FMLA").length;
 
   const positions = await loadPositionOptions();
 
@@ -304,6 +306,8 @@ export async function buildWorkforceSurfacePayload(args: {
       { key: "LEADERSHIP", label: "Leadership", count: leadership },
       { key: "INCOMPLETE", label: "Incomplete", count: incomplete },
       { key: "TRAVEL", label: "Travel Techs", count: travel },
+      { key: "FMLA", label: "FMLA", count: fmla },
+
     ],
     summary: {
       total: rows.length,
@@ -312,6 +316,7 @@ export async function buildWorkforceSurfacePayload(args: {
       support,
       incomplete,
       travel,
+      fmla,
     },
     slices: {
       offices: buildSliceOptions(rows, (row) => row.office),

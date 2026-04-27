@@ -30,6 +30,7 @@ function buildEmptyPayload(): WorkforceSurfacePayload {
       support: 0,
       incomplete: 0,
       travel: 0,
+      fmla: 0,
     },
     slices: {
       offices: [],
