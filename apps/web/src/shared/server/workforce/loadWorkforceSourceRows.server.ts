@@ -21,6 +21,7 @@ type WorkforceCurrentViewRow = {
   csg: string | null;
 
   affiliation_code: string | null;
+  affiliation_id: string | null;
   affiliation: string | null;
 
   position_title: string | null;
@@ -101,6 +102,7 @@ export async function loadWorkforceSourceRows(args: {
       csg,
       affiliation_code,
       affiliation,
+      affiliation_id,
       position_title,
       role_type,
       office_id,
@@ -160,6 +162,7 @@ export async function loadWorkforceSourceRows(args: {
 
         position_title: row.position_title ?? null,
         role_type: row.role_type ?? null,
+        affiliation_id: row.affiliation_id ?? null,
         affiliation: row.affiliation ?? null,
 
         start_date: row.start_date ?? null,

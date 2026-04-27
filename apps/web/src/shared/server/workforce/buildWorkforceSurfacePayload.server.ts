@@ -5,7 +5,8 @@ import { buildDisplayName } from "./buildDisplayName";
 import type {
   WorkforceAffiliationOption,
   WorkforceSurfacePayload,
-} from "@/shared/types/workforce/surfacePayload"; import type {
+} from "@/shared/types/workforce/surfacePayload";
+import type {
   WorkforceRow,
   WorkforceScheduleDay,
   WorkforceSeatType,
