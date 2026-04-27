@@ -19,6 +19,11 @@ type EditOptions = {
     assignment_id: string;
     label: string;
   }[];
+  affiliations?: {
+    affiliation_id: string;
+    affiliation_code: string | null;
+    affiliation_label: string;
+  }[];
 };
 
 type Props = {
@@ -33,9 +38,13 @@ function formatDate(value: string) {
 function labelForKey(key: string) {
   if (key === "position_title") return "Position";
   if (key === "office_id") return "Office";
+  if (key === "affiliation_id") return "Affiliation";
   if (key === "reports_to_assignment_id") return "Reports To";
   if (key === "start_date") return "Start Date";
   if (key === "role_type") return "Seat";
+  if (key === "tech_id") return "Tech ID";
+  if (key === "pc_org_id") return "Market";
+  if (key === "person_id") return "Person";
   return key;
 }
 
@@ -50,6 +59,20 @@ function resolveValue(key: string, value: unknown, options?: EditOptions) {
   if (key === "reports_to_assignment_id") {
     const match = options?.reportsTo?.find((r) => r.assignment_id === value);
     return match?.label ?? String(value);
+  }
+
+  if (key === "affiliation_id") {
+    const match = options?.affiliations?.find(
+      (a) => a.affiliation_id === value
+    );
+
+    if (match) {
+      return match.affiliation_code
+        ? `${match.affiliation_label} • ${match.affiliation_code}`
+        : match.affiliation_label;
+    }
+
+    return String(value);
   }
 
   if (key === "role_type") {
