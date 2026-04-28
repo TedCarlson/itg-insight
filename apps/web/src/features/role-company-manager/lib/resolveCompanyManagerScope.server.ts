@@ -23,6 +23,7 @@ export type CompanyManagerScopeAssignmentRow = {
   leader_title?: string | null;
   team_class?: TeamClass;
   contractor_name?: string | null;
+  supervisor_chain_person_ids?: string[];
 };
 
 export type CompanyManagerScopePersonRow = {
@@ -115,7 +116,9 @@ function choosePreferredAssignment(
     const startCmp = compareNullableDatesDesc(a.start_date, b.start_date);
     if (startCmp !== 0) return startCmp;
 
-    return String(b.assignment_id ?? "").localeCompare(String(a.assignment_id ?? ""));
+    return String(b.assignment_id ?? "").localeCompare(
+      String(a.assignment_id ?? "")
+    );
   });
 
   return sorted[0] ?? null;
@@ -214,7 +217,9 @@ function isItgAssignment(args: {
   person: CompanyManagerScopePersonRow | undefined;
 }) {
   const role = String(args.person?.role ?? "").toLowerCase();
-  const positionTitle = String(args.assignment.position_title ?? "").toLowerCase();
+  const positionTitle = String(
+    args.assignment.position_title ?? ""
+  ).toLowerCase();
 
   return (
     role === "hires" ||
@@ -328,6 +333,30 @@ function resolveNearestLeader(args: {
   return null;
 }
 
+function buildSupervisorChain(args: {
+  assignmentId: string;
+  parentByChild: Map<string, string>;
+  assignmentsById: Map<string, CompanyManagerScopeAssignmentRow>;
+}) {
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let cursor = args.parentByChild.get(args.assignmentId) ?? null;
+
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+
+    const assignment = args.assignmentsById.get(cursor);
+    if (!assignment) break;
+
+    const personId = String(assignment.person_id ?? "").trim();
+    if (personId) chain.push(personId);
+
+    cursor = args.parentByChild.get(cursor) ?? null;
+  }
+
+  return chain;
+}
+
 async function loadContractorLabels(
   admin: ReturnType<typeof supabaseAdmin>,
   contractorIds: string[]
@@ -396,9 +425,9 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
     return startOk && endOk;
   });
 
-  const allOrgAssignments = dedupeAssignmentsByPerson(allOrgAssignmentsRaw).filter((a) =>
-    isActiveWindow(a, today)
-  );
+  const allOrgAssignments = dedupeAssignmentsByPerson(
+    allOrgAssignmentsRaw
+  ).filter((a) => isActiveWindow(a, today));
 
   const assignmentsById = new Map<string, CompanyManagerScopeAssignmentRow>();
   for (const row of allOrgAssignments) {
@@ -544,6 +573,14 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
         ? people_by_id.get(String(leaderAssignment.person_id ?? ""))
         : null;
 
+      const supervisor_chain_person_ids = assignmentId
+        ? buildSupervisorChain({
+            assignmentId,
+            parentByChild,
+            assignmentsById,
+          })
+        : [];
+
       return {
         ...assignment,
         office_id: officeId || null,
@@ -554,6 +591,7 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
         leader_title: leaderAssignment?.position_title ?? null,
         team_class: isItg ? ("ITG" as TeamClass) : ("BP" as TeamClass),
         contractor_name: isItg ? null : contractor_name,
+        supervisor_chain_person_ids,
       };
     })
   );

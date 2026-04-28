@@ -2,8 +2,6 @@
 
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { buildExecutiveKpis } from "@/shared/domain/metrics/buildExecutiveKpis";
-import { getWorkforceMetricInspectionPayload } from "@/shared/kpis/engine/getWorkforceMetricInspectionPayload.server";
-import type { KpiBandKey } from "@/shared/kpis/core/types";
 import { buildFocusOverlayPayload } from "@/shared/server/metrics/buildFocusOverlayPayload";
 import { buildParticipationSignal } from "@/shared/server/metrics/buildParticipationSignal";
 import { buildRiskState } from "@/shared/server/metrics/buildRiskState";
@@ -19,12 +17,11 @@ import {
   buildScoreMap,
   buildTeamRows,
   buildWorkMixMap,
+  buildWorkforceIdentityMap,
   type DefinitionRow,
 } from "@/shared/server/metrics/buildMetricsSurfaceAssemblers";
 import { loadMetricCompositeRows } from "@/shared/server/metrics/loadMetricCompositeRows.server";
 import { loadMetricScoreRows } from "@/shared/server/metrics/loadMetricScoreRows.server";
-import { resolveMetricsRangeBatchIds } from "@/shared/server/metrics/resolveMetricsRangeBatchIds.server";
-import { resolveMetricsRegionContext } from "@/shared/server/metrics/resolveMetricsRegionContext.server";
 import { loadMetricWorkMixRows } from "@/shared/server/metrics/loadMetricWorkMixRows.server";
 import {
   dedupeLatestCompositeRows,
@@ -32,20 +29,21 @@ import {
   dedupeLatestWorkMixRows,
 } from "@/shared/server/metrics/lib/metricRowDedupers";
 import { resolveComparisonBatchIds } from "@/shared/server/metrics/lib/readyBatchResolver";
-
+import { resolveMetricsRangeBatchIds } from "@/shared/server/metrics/resolveMetricsRangeBatchIds.server";
+import { resolveMetricsRegionContext } from "@/shared/server/metrics/resolveMetricsRegionContext.server";
+import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforceSourceRows.server";
 import type {
   MetricsRangeKey,
   MetricsRiskInsights,
   MetricsSurfacePayload,
 } from "@/shared/types/metrics/surfacePayload";
-
 import type {
-  MetricsSurfaceBasePayload,
-  MetricsSurfaceScopePayload,
-  MetricsScopedExecutiveKpiItem,
   MetricsExecutiveRuntimeDefinition,
   MetricsExecutiveRuntimeRubricRow,
   MetricsExecutiveRuntimeScoreRow,
+  MetricsScopedExecutiveKpiItem,
+  MetricsSurfaceBasePayload,
+  MetricsSurfaceScopePayload,
 } from "@/shared/types/metrics/executiveStrip";
 
 export type BuildMetricsSurfacePayloadArgs = {
@@ -63,6 +61,10 @@ export type BuildMetricsSurfacePayloadArgs = {
     show_parity?: boolean;
   };
 };
+
+function fallbackAsOfDate() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function toRuntimeDefinitions(
   definitions: DefinitionRow[]
@@ -116,92 +118,6 @@ function toRuntimeScoreRows(rows: any[]): MetricsExecutiveRuntimeScoreRow[] {
     }));
 }
 
-function normalizeInspectionBandKey(value: unknown): KpiBandKey {
-  if (value === "EXCEEDS") return "EXCEEDS";
-  if (value === "MEETS") return "MEETS";
-  if (value === "NEEDS_IMPROVEMENT") return "NEEDS_IMPROVEMENT";
-  if (value === "MISSES") return "MISSES";
-  return "NO_DATA";
-}
-
-function buildInspectionContext(row: {
-  tech_id?: string | null;
-  office_label?: string | null;
-  contractor_name?: string | null;
-  affiliation_type?: string | null;
-}) {
-  const parts = [
-    String(row.tech_id ?? "").trim(),
-    String(row.office_label ?? "").trim(),
-    String(row.contractor_name ?? "").trim(),
-    String(row.affiliation_type ?? "").trim(),
-  ].filter(Boolean);
-
-  return parts.join(" • ") || "Technician Detail";
-}
-
-async function enrichTeamRowsWithInspectionPayloads(args: {
-  role_key: string;
-  active_range: MetricsRangeKey;
-  teamRows: any[];
-}) {
-  return Promise.all(
-    args.teamRows.map(async (row) => {
-      const personId = String((row as any).person_id ?? "").trim();
-      const techId = String((row as any).tech_id ?? "").trim();
-
-      if (!personId || !techId) {
-        return row;
-      }
-
-      const metricsWithInspection = await Promise.all(
-        ((row as any).metrics ?? []).map(async (metric: any) => {
-          const kpiKey = String(metric.metric_key ?? "").trim();
-          if (!kpiKey) return metric;
-
-          const inspectionPayload = await getWorkforceMetricInspectionPayload({
-            surface: (args.role_key as any) ?? "role_company_manager",
-            active_range: args.active_range,
-            kpi_key: kpiKey,
-            target: {
-              person_id: personId,
-              tech_id: techId,
-              full_name: String((row as any).full_name ?? "Unknown Tech"),
-              context: buildInspectionContext(row as any),
-              contractor_name: (row as any).contractor_name ?? null,
-            },
-            title: String(metric.label ?? kpiKey),
-            value:
-              typeof metric.metric_value === "number" ? metric.metric_value : null,
-            value_display:
-              typeof metric.value_display === "string"
-                ? metric.value_display
-                : null,
-            band_key: normalizeInspectionBandKey(metric.render_band_key),
-            summary_rows: [],
-            trend_points: [],
-            period_detail: null,
-            fact_rows: (row as any).contractor_name
-              ? [{ label: "Contractor", value: String((row as any).contractor_name) }]
-              : [],
-            payload: null,
-          });
-
-          return {
-            ...metric,
-            inspection_payload: inspectionPayload,
-          };
-        })
-      );
-
-      return {
-        ...row,
-        metrics: metricsWithInspection,
-      };
-    })
-  );
-}
-
 export async function buildMetricsSurfacePayload(
   args: BuildMetricsSurfacePayloadArgs
 ): Promise<MetricsSurfacePayload> {
@@ -235,30 +151,41 @@ export async function buildMetricsSurfacePayload(
     range: args.range,
   });
 
-  const [scoreRowsRaw, prevScoreRowsRaw, compositeRowsRaw, workMixRowsRaw] =
-    await Promise.all([
-      loadMetricScoreRows({
-        pc_org_id: args.pc_org_id,
-        profile_key: args.profile_key,
-        metric_batch_ids: rangeResolution.batch_ids,
-      }),
-      comparisonBatchIds.length
-        ? loadMetricScoreRows({
-            pc_org_id: args.pc_org_id,
-            profile_key: args.profile_key,
-            metric_batch_ids: comparisonBatchIds,
-          })
-        : [],
-      loadMetricCompositeRows({
-        pc_org_id: args.pc_org_id,
-        profile_key: args.profile_key,
-        metric_batch_ids: rangeResolution.batch_ids,
-      }),
-      loadMetricWorkMixRows({
-        pc_org_id: args.pc_org_id,
-        metric_batch_ids: rangeResolution.batch_ids,
-      }),
-    ]);
+  const [
+    scoreRowsRaw,
+    prevScoreRowsRaw,
+    compositeRowsRaw,
+    workMixRowsRaw,
+    workforceRowsRaw,
+  ] = await Promise.all([
+    loadMetricScoreRows({
+      pc_org_id: args.pc_org_id,
+      profile_key: args.profile_key,
+      metric_batch_ids: rangeResolution.batch_ids,
+    }),
+    comparisonBatchIds.length
+      ? loadMetricScoreRows({
+          pc_org_id: args.pc_org_id,
+          profile_key: args.profile_key,
+          metric_batch_ids: comparisonBatchIds,
+        })
+      : [],
+    loadMetricCompositeRows({
+      pc_org_id: args.pc_org_id,
+      profile_key: args.profile_key,
+      metric_batch_ids: rangeResolution.batch_ids,
+    }),
+    loadMetricWorkMixRows({
+      pc_org_id: args.pc_org_id,
+      metric_batch_ids: rangeResolution.batch_ids,
+    }),
+    loadWorkforceSourceRows({
+      pc_org_id: args.pc_org_id,
+      as_of_date: rangeResolution.as_of_date ?? fallbackAsOfDate(),
+    }),
+  ]);
+
+  const workforceByTechId = buildWorkforceIdentityMap(workforceRowsRaw);
 
   const definitions: DefinitionRow[] = buildMetricDefinitions({
     profileKpiRows: profileKpiRes.data ?? [],
@@ -464,12 +391,7 @@ export async function buildMetricsSurfacePayload(
     workMixMap,
     scoreMap,
     riskCountByTech: riskState.riskCountByTech,
-  });
-
-  const teamRowsWithInspection = await enrichTeamRowsWithInspectionPayloads({
-    role_key: args.role_key,
-    active_range: rangeResolution.active_range,
-    teamRows,
+    workforceByTechId,
   });
 
   const columns = buildMetricColumns(definitions);
@@ -481,7 +403,7 @@ export async function buildMetricsSurfacePayload(
       org_display: regionContext.org_display,
       pc_label: null,
       scope_headcount: args.scoped_tech_ids.length,
-      total_headcount: teamRowsWithInspection.length,
+      total_headcount: teamRows.length,
       as_of_date: rangeResolution.as_of_date,
     },
     permissions: {
@@ -525,7 +447,7 @@ export async function buildMetricsSurfacePayload(
 
     team_table: {
       columns,
-      rows: teamRowsWithInspection as any,
+      rows: teamRows as any,
     },
 
     overlays: {

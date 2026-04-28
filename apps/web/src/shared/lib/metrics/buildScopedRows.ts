@@ -31,6 +31,7 @@ export type TeamRowClient = {
   reports_to_person_id?: string | null;
   reports_to_label?: string | null;
   co_code?: string | null;
+  supervisor_chain_person_ids?: string[];
   metrics: Array<{
     metric_key: string;
     label?: string | null;
@@ -48,72 +49,9 @@ function toNullableString(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
-function filterFirstClassRows(
-  rows: TeamRowClient[],
-  controls: MetricsControlsValue
-): TeamRowClient[] {
-  return rows.filter((row) => {
-    if (controls.office_label && row.office_label !== controls.office_label) {
-      return false;
-    }
-
-    if (
-      controls.affiliation_type &&
-      row.affiliation_type !== controls.affiliation_type
-    ) {
-      return false;
-    }
-
-    if (
-      controls.contractor_name &&
-      row.contractor_name !== controls.contractor_name
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-function filterDirectRows(
-  rows: TeamRowClient[],
-  reportsToPersonId: string
-): TeamRowClient[] {
-  return rows.filter(
-    (row) => String(row.reports_to_person_id ?? "").trim() === reportsToPersonId
-  );
-}
-
-function isAffiliateLane(row: TeamRowClient): boolean {
-  return String(row.affiliation_type ?? "").trim().toUpperCase() !== "COMPANY";
-}
-
-function getSubordinateAffiliateLeadRows(
-  rows: TeamRowClient[],
-  reportsToPersonId: string
-): TeamRowClient[] {
-  return rows.filter(
-    (row) =>
-      String(row.reports_to_person_id ?? "").trim() === reportsToPersonId &&
-      isAffiliateLane(row)
-  );
-}
-
-function getAffiliateDirectRows(
-  rows: TeamRowClient[],
-  reportsToPersonId: string
-): TeamRowClient[] {
-  const subordinateLeadIds = new Set(
-    getSubordinateAffiliateLeadRows(rows, reportsToPersonId)
-      .map((row) => String(row.person_id ?? "").trim())
-      .filter(Boolean)
-  );
-
-  if (!subordinateLeadIds.size) return [];
-
-  return rows.filter((row) =>
-    subordinateLeadIds.has(String(row.reports_to_person_id ?? "").trim())
-  );
+function normalizeChain(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => String(v ?? "").trim()).filter(Boolean);
 }
 
 function dedupeRows(rows: TeamRowClient[]): TeamRowClient[] {
@@ -136,27 +74,13 @@ function dedupeRows(rows: TeamRowClient[]): TeamRowClient[] {
 
 export function mapTeamRows(payload: MetricsSurfacePayload): TeamRowClient[] {
   return payload.team_table.rows.map((row, index) => {
-    const unsafeRow =
-      row as MetricsSurfacePayload["team_table"]["rows"][number] & {
-        person_id?: string | null;
-        contractor_name?: string | null;
-        leader_name?: string | null;
-        leader_title?: string | null;
-      };
-
-    const leaderName = toNullableString(unsafeRow.leader_name);
-    const leaderTitle = toNullableString(unsafeRow.leader_title);
-
-    const reportsToLabel =
-      leaderName && leaderTitle
-        ? `${leaderName} • ${leaderTitle}`
-        : leaderName ?? leaderTitle ?? null;
+    const unsafeRow = row as any;
 
     return {
       subject_key:
         row.row_key ??
         row.tech_id?.trim() ??
-        `${row.full_name?.trim() || "unknown"}-${row.rank ?? "na"}-${index}`,
+        `${row.full_name?.trim() || "unknown"}-${index}`,
       person_id: toNullableString(unsafeRow.person_id),
       full_name: row.full_name,
       tech_id: row.tech_id,
@@ -167,10 +91,13 @@ export function mapTeamRows(payload: MetricsSurfacePayload): TeamRowClient[] {
       work_mix: row.work_mix ?? null,
       office_label: row.office_label ?? null,
       affiliation_type: row.affiliation_type ?? null,
-      contractor_name: toNullableString(unsafeRow.contractor_name),
+      contractor_name: unsafeRow.contractor_name ?? null,
       reports_to_person_id: row.reports_to_person_id ?? null,
-      reports_to_label: reportsToLabel,
+      reports_to_label: row.reports_to_label ?? null,
       co_code: row.co_code ?? null,
+      supervisor_chain_person_ids: normalizeChain(
+        unsafeRow.supervisor_chain_person_ids
+      ),
       metrics: row.metrics.map((metric) => ({
         metric_key: metric.metric_key,
         label: metric.metric_key,
@@ -188,28 +115,48 @@ export function buildScopedRows(
   rows: TeamRowClient[],
   controls: MetricsControlsValue
 ): TeamRowClient[] {
-  const firstClassRows = filterFirstClassRows(rows, controls);
+  const firstClassRows = rows.filter((row) => {
+    if (controls.office_label && row.office_label !== controls.office_label)
+      return false;
+    if (
+      controls.affiliation_type &&
+      row.affiliation_type !== controls.affiliation_type
+    )
+      return false;
+    if (
+      controls.contractor_name &&
+      row.contractor_name !== controls.contractor_name
+    )
+      return false;
 
-  const reportsToPersonId = String(controls.reports_to_person_id ?? "").trim();
-  if (!reportsToPersonId) {
-    return firstClassRows;
-  }
+    return true;
+  });
 
-  const directRows = filterDirectRows(firstClassRows, reportsToPersonId);
-  const affiliateDirectRows = getAffiliateDirectRows(
-    firstClassRows,
-    reportsToPersonId
+  const supervisorId = String(
+    controls.reports_to_person_id ?? ""
+  ).trim();
+
+  if (!supervisorId) return firstClassRows;
+
+  const directRows = firstClassRows.filter(
+    (row) =>
+      String(row.reports_to_person_id ?? "").trim() === supervisorId
   );
 
-  const teamScopeMode = controls.team_scope_mode ?? "ROLLUP";
+  const affiliationRows = firstClassRows.filter((row) => {
+    const chain = row.supervisor_chain_person_ids ?? [];
+    const isInChain = chain.includes(supervisorId);
 
-  if (teamScopeMode === "DIRECT") {
-    return dedupeRows(directRows);
-  }
+    const isDirect =
+      String(row.reports_to_person_id ?? "").trim() === supervisorId;
 
-  if (teamScopeMode === "AFFILIATION_DIRECT") {
-    return dedupeRows(affiliateDirectRows);
-  }
+    return isInChain && !isDirect;
+  });
 
-  return dedupeRows([...directRows, ...affiliateDirectRows]);
+  const mode = controls.team_scope_mode ?? "ROLLUP";
+
+  if (mode === "DIRECT") return dedupeRows(directRows);
+  if (mode === "AFFILIATION_DIRECT") return dedupeRows(affiliationRows);
+
+  return dedupeRows([...directRows, ...affiliationRows]);
 }

@@ -42,6 +42,10 @@ type Props = {
   showContractor?: boolean;
   showSupervisor?: boolean;
   showTeamScope?: boolean;
+
+  reportActionLabel?: string;
+  onReportAction?: () => void;
+  reportActionDisabled?: boolean;
 };
 
 function ControlSelect(props: {
@@ -94,6 +98,10 @@ export default function MetricsControlsStrip(props: Props) {
     showContractor = contractorOptions.length > 0,
     showSupervisor = supervisorOptions.length > 0,
     showTeamScope = false,
+
+    reportActionLabel,
+    onReportAction,
+    reportActionDisabled = false,
   } = props;
 
   const showClass =
@@ -106,6 +114,8 @@ export default function MetricsControlsStrip(props: Props) {
     typeof selectedRange === "string" &&
     !!onRangeChange;
 
+  const showReportAction = Boolean(reportActionLabel && onReportAction);
+
   const visibleControlCount = [
     showClass,
     showRange,
@@ -114,6 +124,7 @@ export default function MetricsControlsStrip(props: Props) {
     showContractor,
     showSupervisor,
     showTeamScope,
+    showReportAction,
   ].filter(Boolean).length;
 
   if (visibleControlCount === 0) {
@@ -280,6 +291,17 @@ export default function MetricsControlsStrip(props: Props) {
         >
           Clear
         </button>
+
+        {showReportAction ? (
+          <button
+            type="button"
+            onClick={onReportAction}
+            disabled={reportActionDisabled}
+            className="inline-flex h-9 items-center justify-center rounded-lg border bg-foreground px-3 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {reportActionLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   );

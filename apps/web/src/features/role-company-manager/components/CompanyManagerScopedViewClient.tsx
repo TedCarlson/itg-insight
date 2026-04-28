@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
@@ -26,6 +26,9 @@ import type { MetricsSurfacePayload } from "@/shared/types/metrics/surfacePayloa
 
 import { useScopedTeamControls } from "../hooks/useScopedTeamControls";
 import { useManagerHeaderScope } from "../hooks/useManagerHeaderScope";
+import ManagerRollupReportOverlay, {
+  type ManagerRollupReportPayload,
+} from "./ManagerRollupReportOverlay";
 
 type Props = {
   payload: MetricsSurfacePayload;
@@ -38,6 +41,14 @@ type SupervisorOption = {
 
 type ReportClassType = "NSR" | "SMART";
 type MetricsRangeKey = "FM" | "PREVIOUS" | "3FM" | "12FM";
+
+const DEFAULT_CONTROLS: MetricsControlsValue = {
+  office_label: null,
+  affiliation_type: null,
+  contractor_name: null,
+  reports_to_person_id: null,
+  team_scope_mode: "ROLLUP",
+};
 
 function formatPercent(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
@@ -110,17 +121,28 @@ function toRangeLabel(rangeKey: MetricsRangeKey): string {
   return "Previous 12FM";
 }
 
+function uniqueSorted(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}
+
 export default function CompanyManagerScopedViewClient({ payload }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [controls, setControls] = useState<MetricsControlsValue>({
-    office_label: null,
-    affiliation_type: null,
-    contractor_name: null,
-    reports_to_person_id: null,
-    team_scope_mode: "ROLLUP",
-  });
+  const [controls, setControls] =
+    useState<MetricsControlsValue>(DEFAULT_CONTROLS);
+
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportPayload, setReportPayload] =
+    useState<ManagerRollupReportPayload | null>(null);
 
   const currentClass = normalizeClassType(searchParams.get("class_type"));
   const currentRange = normalizeRangeType(
@@ -131,31 +153,57 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
   const allRows = useMemo(() => mapTeamRows(payload), [payload]);
 
   const officeOptions = useMemo(() => {
-    return Array.from(
-      new Set(allRows.map((row) => row.office_label).filter(Boolean))
-    ).sort() as string[];
+    return uniqueSorted(allRows.map((row) => row.office_label));
   }, [allRows]);
+
+  const rowsForAffiliationOptions = useMemo(() => {
+    return controls.office_label
+      ? allRows.filter((row) => row.office_label === controls.office_label)
+      : allRows;
+  }, [allRows, controls.office_label]);
 
   const affiliationOptions = useMemo(() => {
-    return Array.from(
-      new Set(allRows.map((row) => row.affiliation_type).filter(Boolean))
-    ).sort() as string[];
-  }, [allRows]);
+    return uniqueSorted(
+      rowsForAffiliationOptions.map((row) => row.affiliation_type)
+    );
+  }, [rowsForAffiliationOptions]);
+
+  const rowsForContractorOptions = useMemo(() => {
+    return rowsForAffiliationOptions.filter((row) => {
+      if (
+        controls.affiliation_type &&
+        row.affiliation_type !== controls.affiliation_type
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [rowsForAffiliationOptions, controls.affiliation_type]);
 
   const contractorOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        allRows
-          .map((row) => row.contractor_name)
-          .filter((value): value is string => Boolean(value))
-      )
-    ).sort();
-  }, [allRows]);
+    return uniqueSorted(
+      rowsForContractorOptions.map((row) => row.contractor_name)
+    );
+  }, [rowsForContractorOptions]);
+
+  const rowsForSupervisorOptions = useMemo(() => {
+    return rowsForContractorOptions.filter((row) => {
+      if (
+        controls.contractor_name &&
+        row.contractor_name !== controls.contractor_name
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [rowsForContractorOptions, controls.contractor_name]);
 
   const supervisorOptions = useMemo<SupervisorOption[]>(() => {
     const byValue = new Map<string, string>();
 
-    for (const row of allRows) {
+    for (const row of rowsForSupervisorOptions) {
       const value = String(row.reports_to_person_id ?? "").trim();
       if (!value) continue;
 
@@ -166,14 +214,67 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
     return [...byValue.entries()]
       .sort((a, b) => a[1].localeCompare(b[1]))
       .map(([value, label]) => ({ value, label }));
-  }, [allRows]);
+  }, [rowsForSupervisorOptions]);
 
-  const showOffice = officeOptions.length > 1;
-  const showAffiliation = affiliationOptions.length > 1;
-  const showContractor = contractorOptions.length > 1;
-  const showSupervisor = supervisorOptions.length > 1;
+  useEffect(() => {
+    setControls((current) => {
+      const next: MetricsControlsValue = { ...current };
 
-  const { showTeamScope } = useScopedTeamControls(allRows, controls);
+      if (
+        next.office_label &&
+        officeOptions.length > 0 &&
+        !officeOptions.includes(next.office_label)
+      ) {
+        next.office_label = null;
+        next.affiliation_type = null;
+        next.contractor_name = null;
+        next.reports_to_person_id = null;
+        next.team_scope_mode = "ROLLUP";
+      }
+
+      if (
+        next.affiliation_type &&
+        affiliationOptions.length > 0 &&
+        !affiliationOptions.includes(next.affiliation_type)
+      ) {
+        next.affiliation_type = null;
+        next.contractor_name = null;
+        next.reports_to_person_id = null;
+        next.team_scope_mode = "ROLLUP";
+      }
+
+      if (
+        next.contractor_name &&
+        contractorOptions.length > 0 &&
+        !contractorOptions.includes(next.contractor_name)
+      ) {
+        next.contractor_name = null;
+        next.reports_to_person_id = null;
+        next.team_scope_mode = "ROLLUP";
+      }
+
+      if (
+        next.reports_to_person_id &&
+        supervisorOptions.length > 0 &&
+        !supervisorOptions.some(
+          (option) => option.value === next.reports_to_person_id
+        )
+      ) {
+        next.reports_to_person_id = null;
+        next.team_scope_mode = "ROLLUP";
+      }
+
+      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+    });
+  }, [officeOptions, affiliationOptions, contractorOptions, supervisorOptions]);
+
+  const {
+    directRows,
+    affiliateDirectRows,
+    rollupRows,
+    showTeamScope,
+    hasAffiliateDirectRows,
+  } = useScopedTeamControls(allRows, controls);
 
   const scopedRows = useMemo(() => {
     return buildScopedRows(allRows, controls);
@@ -199,7 +300,7 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
 
   const baseExecutiveItems = useMemo(() => {
     return payload.executive_strip?.base?.items ?? [];
-  }, [payload]);
+  }, [payload.executive_strip]);
 
   const scopedExecutiveItems = useMemo(() => {
     if (!hasExecutiveSlice) return [];
@@ -221,6 +322,43 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
   const scopedWorkMix = useMemo(() => {
     return buildScopedWorkMix(scopedRows);
   }, [scopedRows]);
+
+  const showOffice = officeOptions.length > 1;
+  const showAffiliation = affiliationOptions.length > 1;
+  const showContractor = contractorOptions.length > 1;
+  const showSupervisor = supervisorOptions.length > 1;
+
+  async function openRollupReport() {
+    setReportOpen(true);
+    setReportLoading(true);
+    setReportError(null);
+
+    try {
+      const params = new URLSearchParams();
+      params.set("class_type", currentClass);
+      params.set("range", currentRange);
+
+      const res = await fetch(
+        `/api/company-manager/metrics-rollup-report?${params.toString()}`,
+        { method: "GET" }
+      );
+
+      const json = await res.json();
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error ?? "Unable to build rollup report");
+      }
+
+      setReportPayload(json.data as ManagerRollupReportPayload);
+    } catch (err) {
+      setReportPayload(null);
+      setReportError(
+        err instanceof Error ? err.message : "Unable to build rollup report"
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  }
 
   const workMixContent = scopedWorkMix ? (
     <div className="space-y-4">
@@ -268,6 +406,13 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
           </div>
         </div>
       </div>
+
+      {controls.reports_to_person_id ? (
+        <div className="rounded-xl border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Direct: {directRows.length} • Affiliation Direct:{" "}
+          {affiliateDirectRows.length} • Rollup: {rollupRows.length}
+        </div>
+      ) : null}
     </div>
   ) : (
     <div className="text-sm text-muted-foreground">No work mix available.</div>
@@ -313,17 +458,19 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
         showContractor={showContractor}
         showSupervisor={showSupervisor}
         showTeamScope={showTeamScope}
+        reportActionLabel={reportLoading ? "Building Report..." : "Rollup Report"}
+        reportActionDisabled={reportLoading}
+        onReportAction={openRollupReport}
         value={controls}
-        onChange={setControls}
-        onReset={() =>
+        onChange={(next) => {
           setControls({
-            office_label: null,
-            affiliation_type: null,
-            contractor_name: null,
-            reports_to_person_id: null,
-            team_scope_mode: "ROLLUP",
-          })
-        }
+            ...next,
+            team_scope_mode: next.reports_to_person_id
+              ? next.team_scope_mode
+              : "ROLLUP",
+          });
+        }}
+        onReset={() => setControls(DEFAULT_CONTROLS)}
       />
 
       {payload.permissions.can_view_exec_strip ? (
@@ -351,12 +498,24 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
             report_order: column.report_order,
           }))}
           rows={scopedRows}
-          range={payload.filters.active_range}
+          range={currentRange}
           classType={currentClass}
-          workMixTitle="Work Mix"
+          workMixTitle={
+            controls.reports_to_person_id && hasAffiliateDirectRows
+              ? "Work Mix by Selected Scope"
+              : "Work Mix"
+          }
           workMixContent={workMixContent}
         />
       ) : null}
+
+      <ManagerRollupReportOverlay
+        open={reportOpen}
+        loading={reportLoading}
+        payload={reportPayload}
+        error={reportError}
+        onClose={() => setReportOpen(false)}
+      />
     </div>
   );
 }

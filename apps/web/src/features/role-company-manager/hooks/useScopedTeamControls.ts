@@ -1,7 +1,32 @@
 // path: apps/web/src/features/role-company-manager/hooks/useScopedTeamControls.ts
 
 import { useMemo } from "react";
-import type { MetricsControlsValue, TeamRowClient } from "@/shared/lib/metrics/buildScopedRows";
+import type {
+  MetricsControlsValue,
+  TeamRowClient,
+} from "@/shared/lib/metrics/buildScopedRows";
+
+function isCompanyLane(row: TeamRowClient): boolean {
+  return String(row.affiliation_type ?? "").trim().toUpperCase() === "COMPANY";
+}
+
+function dedupeRows(rows: TeamRowClient[]): TeamRowClient[] {
+  const out: TeamRowClient[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const key =
+      String(row.person_id ?? "").trim() ||
+      String(row.tech_id ?? "").trim() ||
+      row.subject_key;
+
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+
+  return out;
+}
 
 export function useScopedTeamControls(
   rows: TeamRowClient[],
@@ -40,38 +65,37 @@ export function useScopedTeamControls(
     controls.reports_to_person_id ?? ""
   ).trim();
 
-  const directRows = useMemo(() => {
+  const supervisorRows = useMemo(() => {
     if (!selectedSupervisorId) return [];
 
     return firstClassRows.filter(
       (row) =>
-        String(row.reports_to_person_id ?? "").trim() ===
-        selectedSupervisorId
+        String(row.reports_to_person_id ?? "").trim() === selectedSupervisorId
     );
   }, [firstClassRows, selectedSupervisorId]);
 
-  // 🔑 THIS is the correct rule
-  // Team scope exists if a supervisor is selected AND there are any rows under them
+  const directRows = useMemo(() => {
+    return supervisorRows.filter(isCompanyLane);
+  }, [supervisorRows]);
+
+  const affiliateDirectRows = useMemo(() => {
+    return supervisorRows.filter((row) => !isCompanyLane(row));
+  }, [supervisorRows]);
+
+  const rollupRows = useMemo(() => {
+    return dedupeRows([...directRows, ...affiliateDirectRows]);
+  }, [directRows, affiliateDirectRows]);
+
   const hasSupervisor = Boolean(selectedSupervisorId);
-  const hasDirectReports = directRows.length > 0;
-
-  // Optional refinement signal (for AFFILIATION_DIRECT usefulness)
-  const hasMultipleAffiliations = useMemo(() => {
-    return (
-      new Set(
-        directRows
-          .map((r) => String(r.affiliation_type ?? "").trim())
-          .filter(Boolean)
-      ).size > 1
-    );
-  }, [directRows]);
-
-  const showTeamScope = hasSupervisor && hasDirectReports;
+  const showTeamScope = hasSupervisor && rollupRows.length > 0;
 
   return {
     firstClassRows,
     directRows,
+    affiliateDirectRows,
+    rollupRows,
     showTeamScope,
-    hasMultipleAffiliations,
+    hasDirectRows: directRows.length > 0,
+    hasAffiliateDirectRows: affiliateDirectRows.length > 0,
   };
 }

@@ -18,6 +18,7 @@ type ManagerScopeMeta = {
   person_id: string | null;
   office_label: string | null;
   reports_to_person_id: string | null;
+  reports_to_label: string | null;
   leader_name: string | null;
   leader_title: string | null;
   team_class: "ITG" | "BP" | null;
@@ -25,6 +26,7 @@ type ManagerScopeMeta = {
   office_id: string | null;
   affiliation_type: string | null;
   co_code: string | null;
+  supervisor_chain_person_ids: string[];
 };
 
 type EnrichedMetricsSurfaceTeamRow = MetricsSurfaceTeamRow & {
@@ -34,6 +36,8 @@ type EnrichedMetricsSurfaceTeamRow = MetricsSurfaceTeamRow & {
   team_class?: "ITG" | "BP" | null;
   contractor_name?: string | null;
   office_id?: string | null;
+  affiliation?: string | null;
+  supervisor_chain_person_ids?: string[];
 };
 
 function normalizeProfileKey(
@@ -50,6 +54,27 @@ function normalizeRangeKey(value: string | null | undefined): MetricsRangeKey {
   if (upper === "3FM") return "3FM";
   if (upper === "12FM") return "12FM";
   return "FM";
+}
+
+function joinLeaderLabel(args: {
+  leader_name: string | null;
+  leader_title: string | null;
+}) {
+  const name = String(args.leader_name ?? "").trim();
+  const title = String(args.leader_title ?? "").trim();
+
+  if (name && title) return `${name} • ${title}`;
+  if (name) return name;
+  if (title) return title;
+  return null;
+}
+
+function normalizeChain(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean);
 }
 
 function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
@@ -86,16 +111,13 @@ function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
       show_work_mix: false,
       show_parity: false,
     },
-
     executive_strip: {
       base: { items: [] },
       scope: null,
       runtime: null,
     },
-
     executive_kpis: [],
     executive_kpis_scoped: [],
-
     risk_strip: [],
     team_table: {
       columns: [],
@@ -125,7 +147,7 @@ export async function getCompanyManagerSurfacePayload(args?: {
 
   const resolvedScope = await resolveCompanyManagerScope();
 
-  const scopedTechIds: string[] = Array.from(
+  const scopedTechIds = Array.from(
     new Set(
       resolvedScope.scoped_assignments
         .map((row: CompanyManagerScopeAssignmentRow) =>
@@ -153,63 +175,103 @@ export async function getCompanyManagerSurfacePayload(args?: {
 
   const scopeByTechId = new Map<string, ManagerScopeMeta>(
     resolvedScope.scoped_assignments
-      .filter((row: CompanyManagerScopeAssignmentRow) =>
-        Boolean(String(row.tech_id ?? "").trim())
-      )
-      .map((row: CompanyManagerScopeAssignmentRow) => [
-        String(row.tech_id ?? "").trim(),
-        {
-          person_id: row.person_id ?? null,
-          office_label: row.office_name ?? null,
-          reports_to_person_id: row.leader_person_id ?? null,
+      .filter((row) => Boolean(String(row.tech_id ?? "").trim()))
+      .map((row) => {
+        const leaderLabel = joinLeaderLabel({
           leader_name: row.leader_name ?? null,
           leader_title: row.leader_title ?? null,
-          team_class: row.team_class ?? null,
-          contractor_name: row.contractor_name ?? null,
-          office_id: row.office_id ?? null,
-          affiliation_type:
-            row.team_class === "ITG"
-              ? "COMPANY"
-              : row.team_class === "BP"
-              ? "CONTRACTOR"
-              : null,
-          co_code: row.contractor_name ?? null,
-        },
-      ])
+        });
+
+        return [
+          String(row.tech_id ?? "").trim(),
+          {
+            person_id: row.person_id ?? null,
+            office_label: row.office_name ?? null,
+            reports_to_person_id: row.leader_person_id ?? null,
+            reports_to_label: leaderLabel,
+            leader_name: row.leader_name ?? null,
+            leader_title: row.leader_title ?? null,
+            team_class: row.team_class ?? null,
+            contractor_name: row.contractor_name ?? null,
+            office_id: row.office_id ?? null,
+            affiliation_type:
+              row.team_class === "ITG"
+                ? "COMPANY"
+                : row.team_class === "BP"
+                  ? "CONTRACTOR"
+                  : null,
+            co_code: row.contractor_name ?? null,
+            supervisor_chain_person_ids: normalizeChain(
+              row.supervisor_chain_person_ids
+            ),
+          },
+        ];
+      })
   );
 
   const enrichedRows: EnrichedMetricsSurfaceTeamRow[] =
-    basePayload.team_table.rows.map((row: MetricsSurfaceTeamRow) => {
+    basePayload.team_table.rows.map((row) => {
+      const unsafeRow = row as MetricsSurfaceTeamRow & {
+        person_id?: string | null;
+        office_id?: string | null;
+        affiliation?: string | null;
+        contractor_name?: string | null;
+        leader_name?: string | null;
+        leader_title?: string | null;
+        team_class?: "ITG" | "BP" | null;
+        supervisor_chain_person_ids?: string[];
+      };
+
       const techId = String(row.tech_id ?? "").trim();
       const scopeMeta = techId ? scopeByTechId.get(techId) : undefined;
 
       return {
         ...row,
-        person_id: scopeMeta?.person_id ?? null,
-        office_label: scopeMeta?.office_label ?? row.office_label ?? null,
+
+        person_id: unsafeRow.person_id ?? scopeMeta?.person_id ?? null,
+        office_label: row.office_label ?? scopeMeta?.office_label ?? null,
         affiliation_type:
-          scopeMeta?.affiliation_type ?? row.affiliation_type ?? null,
+          row.affiliation_type ?? scopeMeta?.affiliation_type ?? null,
         reports_to_person_id:
-          scopeMeta?.reports_to_person_id ?? row.reports_to_person_id ?? null,
-        co_code: scopeMeta?.co_code ?? row.co_code ?? null,
-        leader_name: scopeMeta?.leader_name ?? null,
-        leader_title: scopeMeta?.leader_title ?? null,
-        team_class: scopeMeta?.team_class ?? null,
-        contractor_name: scopeMeta?.contractor_name ?? null,
-        office_id: scopeMeta?.office_id ?? null,
+          row.reports_to_person_id ??
+          scopeMeta?.reports_to_person_id ??
+          null,
+        reports_to_label:
+          row.reports_to_label ?? scopeMeta?.reports_to_label ?? null,
+
+        co_code: row.co_code ?? scopeMeta?.co_code ?? null,
+        leader_name: unsafeRow.leader_name ?? scopeMeta?.leader_name ?? null,
+        leader_title: unsafeRow.leader_title ?? scopeMeta?.leader_title ?? null,
+        team_class:
+          unsafeRow.team_class ??
+          scopeMeta?.team_class ??
+          (row.affiliation_type === "COMPANY"
+            ? "ITG"
+            : row.affiliation_type === "CONTRACTOR"
+              ? "BP"
+              : null),
+        contractor_name:
+          unsafeRow.contractor_name ??
+          scopeMeta?.contractor_name ??
+          (row.affiliation_type === "CONTRACTOR"
+            ? ((unsafeRow.affiliation ?? row.co_code ?? null) as string | null)
+            : null),
+        office_id: unsafeRow.office_id ?? scopeMeta?.office_id ?? null,
+        affiliation: unsafeRow.affiliation ?? null,
+        supervisor_chain_person_ids:
+          normalizeChain(unsafeRow.supervisor_chain_person_ids).length > 0
+            ? normalizeChain(unsafeRow.supervisor_chain_person_ids)
+            : scopeMeta?.supervisor_chain_person_ids ?? [],
       };
     });
 
   return {
     ...basePayload,
-
-    // ✅ HARD GUARANTEE (prevents future break)
     executive_strip: basePayload.executive_strip ?? {
       base: { items: [] },
       scope: null,
       runtime: null,
     },
-
     header: {
       ...basePayload.header,
       total_headcount: scopedTechIds.length,

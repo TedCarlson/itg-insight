@@ -3,6 +3,7 @@
 import { loadMetricCompositeRows } from "@/shared/server/metrics/loadMetricCompositeRows.server";
 import { loadMetricScoreRows } from "@/shared/server/metrics/loadMetricScoreRows.server";
 import { loadMetricWorkMixRows } from "@/shared/server/metrics/loadMetricWorkMixRows.server";
+import type { WorkforceSourceRow } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
 import type {
   MetricsSurfaceTeamCell,
   MetricsSurfaceTeamColumn,
@@ -27,6 +28,24 @@ export type RubricRow = {
   max_value: number | null;
 };
 
+export type WorkforceMetricsIdentity = {
+  assignment_id: string | null;
+  person_id: string | null;
+  tech_id: string;
+  full_name: string | null;
+  office_id: string | null;
+  office_label: string | null;
+  affiliation_id: string | null;
+  affiliation: string | null;
+  affiliation_type: string | null;
+  reports_to_assignment_id: string | null;
+  reports_to_person_id: string | null;
+  reports_to_label: string | null;
+  seat_type: string | null;
+  position_title: string | null;
+  is_active: boolean;
+};
+
 function toNullableString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -35,6 +54,75 @@ function toNullableString(value: unknown): string | null {
 
 function toNullableNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeAffiliationType(row: WorkforceSourceRow): string | null {
+  const raw = toNullableString(row.affiliation)?.toUpperCase() ?? "";
+
+  if (raw.includes("CONTRACTOR") || raw.includes("BP")) return "CONTRACTOR";
+  if (raw.includes("COMPANY") || raw.includes("ITG")) return "COMPANY";
+
+  return null;
+}
+
+function normalizeSeatType(row: WorkforceSourceRow): string | null {
+  const roleType = toNullableString(row.role_type)?.toUpperCase();
+  if (roleType) return roleType;
+
+  const title = toNullableString(row.position_title)?.toLowerCase() ?? "";
+
+  if (row.is_travel_tech === true) return "TRAVEL";
+  if (row.is_field === true) return "FIELD";
+  if (row.is_leadership === true) return "LEADERSHIP";
+
+  if (
+    title.includes("supervisor") ||
+    title.includes("manager") ||
+    title.includes("owner") ||
+    title.includes("lead") ||
+    title.includes("director")
+  ) {
+    return "LEADERSHIP";
+  }
+
+  if (title.includes("technician") || title.includes("field")) {
+    return "FIELD";
+  }
+
+  return null;
+}
+
+export function buildWorkforceIdentityMap(
+  rows: WorkforceSourceRow[]
+): Map<string, WorkforceMetricsIdentity> {
+  const byTechId = new Map<string, WorkforceMetricsIdentity>();
+
+  for (const row of rows ?? []) {
+    const techId = toNullableString(row.tech_id);
+    if (!techId) continue;
+
+    if (byTechId.has(techId)) continue;
+
+    byTechId.set(techId, {
+      assignment_id: toNullableString(row.assignment_id),
+      person_id: toNullableString(row.person_id),
+      tech_id: techId,
+      full_name: toNullableString(row.full_name),
+      office_id: toNullableString(row.office_id),
+      office_label: toNullableString(row.office),
+      affiliation_id: toNullableString(row.affiliation_id),
+      affiliation: toNullableString(row.affiliation),
+      affiliation_type: normalizeAffiliationType(row),
+      reports_to_assignment_id: toNullableString(row.reports_to_assignment_id),
+      reports_to_person_id: toNullableString(row.reports_to_person_id),
+      reports_to_label: toNullableString(row.reports_to_name),
+      seat_type: normalizeSeatType(row),
+      position_title: toNullableString(row.position_title),
+      is_active: row.is_active !== false,
+    });
+  }
+
+  return byTechId;
 }
 
 export function buildMetricDefinitions(args: {
@@ -176,13 +264,19 @@ export function buildTeamRows(args: {
   >;
   scoreMap: Map<string, MetricsSurfaceTeamCell[]>;
   riskCountByTech: Map<string, number>;
+  workforceByTechId?: Map<string, WorkforceMetricsIdentity>;
 }): MetricsSurfaceTeamRow[] {
   return args.latestCompositeRows.map((row, index) => {
     const workMix = args.workMixMap.get(row.tech_id) ?? null;
+    const workforce = args.workforceByTechId?.get(row.tech_id) ?? null;
 
     return {
+      assignment_id: workforce?.assignment_id ?? null,
+      person_id: workforce?.person_id ?? null,
+
       tech_id: row.tech_id,
-      full_name: row.full_name,
+      full_name: workforce?.full_name ?? row.full_name,
+
       rank: row.rank_in_profile,
       composite_score: row.composite_score,
       metrics: args.scoreMap.get(row.tech_id) ?? [],
@@ -190,9 +284,23 @@ export function buildTeamRows(args: {
       work_mix: workMix,
       jobs_display: workMix && workMix.total > 0 ? String(workMix.total) : null,
       risk_count: args.riskCountByTech.get(row.tech_id) ?? 0,
-      office_label: row.office_label,
-      affiliation_type: row.affiliation_type,
-      reports_to_person_id: row.reports_to_person_id,
+
+      office_id: workforce?.office_id ?? null,
+      office_label: workforce?.office_label ?? row.office_label,
+
+      affiliation_id: workforce?.affiliation_id ?? null,
+      affiliation: workforce?.affiliation ?? null,
+      affiliation_type: workforce?.affiliation_type ?? row.affiliation_type,
+
+      reports_to_assignment_id: workforce?.reports_to_assignment_id ?? null,
+      reports_to_person_id:
+        workforce?.reports_to_person_id ?? row.reports_to_person_id,
+      reports_to_label: workforce?.reports_to_label ?? null,
+
+      seat_type: workforce?.seat_type ?? null,
+      position_title: workforce?.position_title ?? null,
+      is_active: workforce?.is_active ?? null,
+
       co_code: row.co_code,
     };
   });
