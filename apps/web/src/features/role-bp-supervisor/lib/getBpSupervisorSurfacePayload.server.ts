@@ -1,27 +1,87 @@
+// path: apps/web/src/features/role-bp-supervisor/lib/getBpSupervisorSurfacePayload.server.ts
+
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { buildMetricsSurfacePayload } from "@/shared/server/metrics/buildMetricsSurfacePayload.server";
 import type {
   MetricsRangeKey,
   MetricsSurfacePayload,
-  MetricsSurfaceTeamRow,
 } from "@/shared/types/metrics/surfacePayload";
-
 import {
   resolveBpSupervisorScope,
-  type BpSupervisorScopeRow,
 } from "./resolveBpSupervisorScope.server";
 
-type EnrichedRow = MetricsSurfaceTeamRow & {
-  person_id?: string | null;
-  office_id?: string | null;
-};
+type BpSupervisorProfileKey = "NSR" | "SMART";
 
-function normalizeRange(value?: string | null): MetricsRangeKey {
-  const v = String(value ?? "FM").toUpperCase();
-  if (v === "PREVIOUS") return "PREVIOUS";
-  if (v === "3FM") return "3FM";
-  if (v === "12FM") return "12FM";
+function normalizeProfileKey(
+  value: string | null | undefined
+): BpSupervisorProfileKey {
+  return String(value ?? "NSR").trim().toUpperCase() === "SMART"
+    ? "SMART"
+    : "NSR";
+}
+
+function normalizeRangeKey(value: string | null | undefined): MetricsRangeKey {
+  const upper = String(value ?? "FM").trim().toUpperCase();
+  if (upper === "PREVIOUS") return "PREVIOUS";
+  if (upper === "3FM") return "3FM";
+  if (upper === "12FM") return "12FM";
   return "FM";
+}
+
+function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
+  return {
+    header: {
+      role_label: "BP Supervisor",
+      rep_full_name: null,
+      org_display: null,
+      pc_label: null,
+      scope_headcount: 0,
+      total_headcount: 0,
+      as_of_date: null,
+    },
+    permissions: {
+      can_view_exec_strip: true,
+      can_view_risk_strip: true,
+      can_view_team_table: true,
+      can_view_work_mix: true,
+      can_view_parity: true,
+      can_view_kpi_rubric: true,
+      can_view_tech_drill: true,
+      can_view_org_drill: true,
+      can_filter_range: true,
+      can_filter_scope: false,
+      can_sort_table: true,
+    },
+    filters: {
+      active_range: range,
+      available_ranges: ["FM", "PREVIOUS", "3FM", "12FM"],
+    },
+    visibility: {
+      show_jobs: false,
+      show_risk: true,
+      show_work_mix: false,
+      show_parity: false,
+    },
+    executive_strip: {
+      base: { items: [] },
+      scope: null,
+      runtime: null,
+    },
+    executive_kpis: [],
+    executive_kpis_scoped: [],
+    risk_strip: [],
+    team_table: {
+      columns: [],
+      rows: [],
+    },
+    overlays: {
+      work_mix: null,
+      parity_summary: [],
+      parity_detail: [],
+      jobs_summary: null,
+      jobs_detail: [],
+    },
+  };
 }
 
 export async function getBpSupervisorSurfacePayload(args?: {
@@ -29,77 +89,32 @@ export async function getBpSupervisorSurfacePayload(args?: {
   range?: string | null;
 }): Promise<MetricsSurfacePayload> {
   const scope = await requireSelectedPcOrgServer();
-  const range = normalizeRange(args?.range);
+  const profileKey = normalizeProfileKey(args?.profile_key);
+  const activeRange = normalizeRangeKey(args?.range);
 
   if (!scope.ok) {
-    return {
-      header: {
-        role_label: "BP Supervisor",
-        rep_full_name: null,
-        org_display: null,
-        pc_label: null,
-        scope_headcount: 0,
-        total_headcount: 0,
-        as_of_date: null,
-      },
-      permissions: {
-        can_view_exec_strip: true,
-        can_view_risk_strip: true,
-        can_view_team_table: true,
-        can_view_work_mix: true,
-        can_view_parity: true,
-        can_view_kpi_rubric: true,
-        can_view_tech_drill: true,
-        can_view_org_drill: true,
-        can_filter_range: true,
-        can_filter_scope: false,
-        can_sort_table: true,
-      },
-      filters: {
-        active_range: range,
-        available_ranges: ["FM", "PREVIOUS", "3FM", "12FM"],
-      },
-      visibility: {
-        show_jobs: false,
-        show_risk: true,
-        show_work_mix: false,
-        show_parity: false,
-      },
-      executive_strip: { base: { items: [] }, scope: null, runtime: null },
-      executive_kpis: [],
-      executive_kpis_scoped: [],
-      risk_strip: [],
-      team_table: { columns: [], rows: [] },
-      overlays: {
-        work_mix: null,
-        parity_summary: [],
-        parity_detail: [],
-        jobs_summary: null,
-        jobs_detail: [],
-      },
-    };
+    return buildEmptyPayload(activeRange);
   }
 
-  const resolved = await resolveBpSupervisorScope();
+  const resolvedScope = await resolveBpSupervisorScope();
 
-  const techIds: string[] = Array.from(
+  // 🔥 ONLY SCOPE CONTROL — NOTHING ELSE
+  const scopedTechIds = Array.from(
     new Set(
-      resolved.scoped_assignments
-        .map((r: BpSupervisorScopeRow) =>
-          String(r.tech_id ?? "").trim()
-        )
+      resolvedScope.scoped_assignments
+        .map((row) => String(row.tech_id ?? "").trim())
         .filter(Boolean)
     )
   );
 
-  const base = await buildMetricsSurfacePayload({
+  const basePayload = await buildMetricsSurfacePayload({
     role_key: "BP_SUPERVISOR",
-    profile_key: "NSR",
+    profile_key: profileKey,
     pc_org_id: scope.selected_pc_org_id,
-    range,
-    scoped_tech_ids: techIds,
-    role_label: "BP Supervisor",
-    rep_full_name: resolved.rep_full_name,
+    range: activeRange,
+    scoped_tech_ids: scopedTechIds,
+    role_label: resolvedScope.role_label,
+    rep_full_name: resolvedScope.rep_full_name,
     visibility: {
       show_jobs: false,
       show_risk: true,
@@ -108,34 +123,14 @@ export async function getBpSupervisorSurfacePayload(args?: {
     },
   });
 
-  const mapByTech = new Map<string, BpSupervisorScopeRow>(
-    resolved.scoped_assignments.map((r) => [
-      String(r.tech_id ?? "").trim(),
-      r,
-    ])
-  );
-
-  const rows: EnrichedRow[] = base.team_table.rows.map((row) => {
-    const techId = String(row.tech_id ?? "").trim();
-    const meta = mapByTech.get(techId);
-
-    return {
-      ...row,
-      person_id: meta?.person_id ?? null,
-      office_id: meta?.office_id ?? null,
-    };
-  });
-
+  // 🔥 ONLY ADD rep_person_id FOR CLIENT DEFAULTING
   return {
-    ...base,
+    ...basePayload,
     header: {
-      ...base.header,
-      total_headcount: techIds.length,
-      scope_headcount: rows.length,
-    },
-    team_table: {
-      ...base.team_table,
-      rows,
+      ...basePayload.header,
+      rep_person_id: resolvedScope.rep_person_id ?? null,
+    } as MetricsSurfacePayload["header"] & {
+      rep_person_id?: string | null;
     },
   };
 }

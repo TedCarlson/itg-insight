@@ -8,7 +8,7 @@ export type WorkforceSeatType =
   | "DROP_BURY"
   | "FMLA";
 
-export type WorkforceTabKey = WorkforceSeatType | "ALL" | "INCOMPLETE";
+export type WorkforceTabKey = WorkforceSeatType | "ALL" | "INCOMPLETE" | "PROCESSING";
 
 export type WorkforceScheduleDay = {
   day: "U" | "M" | "T" | "W" | "H" | "F" | "S";

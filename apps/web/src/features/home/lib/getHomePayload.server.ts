@@ -1,3 +1,5 @@
+// path: apps/web/src/features/home/lib/getHomePayload.server.ts
+
 import { bootstrapProfileServer } from "@/lib/auth/bootstrapProfile.server";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -145,6 +147,26 @@ function buildPrivilegedDestinations(
   return items;
 }
 
+function buildBpSupervisorDestinations(): HomeDestination[] {
+  return [
+    {
+      label: "Team Metrics",
+      href: "/bp-supervisor/metrics",
+      description: "Your scoped team KPI comparison, focus view, and performance table",
+    },
+    {
+      label: "Dispatch Console",
+      href: "/dispatch-console",
+      description: "Live job routing, assignments, and activity log",
+    },
+    {
+      label: "Field Log",
+      href: "/field-log",
+      description: "Submit, review, and track field activity",
+    },
+  ];
+}
+
 function buildDestinations(
   role: HomeRole,
   hasSelectedOrg: boolean
@@ -213,12 +235,16 @@ function buildDestinations(
     ];
   }
 
-  if (role === "BP_OWNER" || role === "BP_LEAD" || role === "BP_SUPERVISOR") {
+  if (role === "BP_SUPERVISOR") {
+    return buildBpSupervisorDestinations();
+  }
+
+  if (role === "BP_OWNER" || role === "BP_LEAD") {
     return [
       {
-        label: "BP View",
-        href: "/bp/view",
-        description: "Team performance, KPI strip, and risk surface",
+        label: "Team Metrics",
+        href: "/bp-supervisor/metrics",
+        description: "Partner team KPI comparison, focus view, and performance table",
       },
       {
         label: "Dispatch Console",

@@ -51,10 +51,8 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
 
   if (role === "BP_SUPERVISOR") {
     return [
-      { key: "home", label: "Home", href: "/bp-supervisor" },
+      { key: "home", label: "Home", href: "/home" },
       { key: "metrics", label: "Metrics", href: "/bp-supervisor/metrics" },
-      { key: "workforce", label: "Workforce", href: "/bp-supervisor/workforce" },
-      { key: "people", label: "People", href: "/bp-supervisor/people" },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
       { key: "fieldlog", label: "Field Log", href: "/field-log" },
     ];
@@ -62,10 +60,8 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
 
   if (role === "BP_LEAD") {
     return [
-      { key: "home", label: "Home", href: "/bp-lead" },
-      { key: "metrics", label: "Metrics", href: "/bp-lead/metrics" },
-      { key: "workforce", label: "Workforce", href: "/bp-lead/workforce" },
-      { key: "people", label: "People", href: "/bp-lead/people" },
+      { key: "home", label: "Home", href: "/home" },
+      { key: "metrics", label: "Metrics", href: "/bp-supervisor/metrics" },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
       { key: "fieldlog", label: "Field Log", href: "/field-log" },
     ];
@@ -73,10 +69,8 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
 
   if (role === "BP_OWNER") {
     return [
-      { key: "home", label: "Home", href: "/bp-owner" },
-      { key: "metrics", label: "Metrics", href: "/bp-owner/metrics" },
-      { key: "workforce", label: "Workforce", href: "/bp-owner/workforce" },
-      { key: "people", label: "People", href: "/bp-owner/people" },
+      { key: "home", label: "Home", href: "/home" },
+      { key: "metrics", label: "Metrics", href: "/bp-supervisor/metrics" },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
       { key: "fieldlog", label: "Field Log", href: "/field-log" },
     ];

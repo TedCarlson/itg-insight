@@ -1,6 +1,10 @@
+// path: apps/web/src/features/role-bp-supervisor/lib/resolveBpSupervisorScope.server.ts
+
 import { bootstrapProfileServer } from "@/lib/auth/bootstrapProfile.server";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
+
+type Sb = ReturnType<typeof supabaseAdmin>;
 
 export type BpSupervisorScopeRow = {
   assignment_id: string | null;
@@ -27,10 +31,16 @@ type PersonRow = {
   co_ref_id: string | null;
 };
 
+type ContractorRow = {
+  contractor_id: string | null;
+  contractor_name: string | null;
+};
+
 export type BpSupervisorScopeResult = {
   selected_pc_org_id: string;
   role_label: "BP Supervisor";
   rep_full_name: string | null;
+  rep_person_id: string | null;
   scoped_assignments: BpSupervisorScopeRow[];
 };
 
@@ -56,48 +66,77 @@ function buildChildrenByParent(edges: LeadershipEdgeRow[]) {
   const out = new Map<string, string[]>();
 
   for (const edge of edges) {
-    const parentId = String(edge.parent_assignment_id ?? "").trim();
-    const childId = String(edge.child_assignment_id ?? "").trim();
-    if (!parentId || !childId) continue;
+    const parent = String(edge.parent_assignment_id ?? "").trim();
+    const child = String(edge.child_assignment_id ?? "").trim();
+
+    if (!parent || !child) continue;
     if (edge.active === false) continue;
 
-    const arr = out.get(parentId) ?? [];
-    arr.push(childId);
-    out.set(parentId, arr);
+    const arr = out.get(parent) ?? [];
+    arr.push(child);
+    out.set(parent, arr);
   }
 
   return out;
 }
 
-function collectDescendants(seedIds: string[], childrenByParent: Map<string, string[]>) {
-  const out = new Set<string>();
-  const queue = [...seedIds];
+function collectDescendants(
+  seeds: string[],
+  childrenByParent: Map<string, string[]>
+) {
+  const visited = new Set<string>();
+  const queue = [...seeds];
 
   while (queue.length) {
     const current = queue.shift();
-    if (!current || out.has(current)) continue;
+    if (!current || visited.has(current)) continue;
 
-    out.add(current);
+    visited.add(current);
 
     const children = childrenByParent.get(current) ?? [];
     for (const child of children) {
-      if (!out.has(child)) queue.push(child);
+      if (!visited.has(child)) queue.push(child);
     }
   }
 
-  return out;
+  return visited;
 }
 
 function uniqueByTech(rows: BpSupervisorScopeRow[]) {
   const map = new Map<string, BpSupervisorScopeRow>();
 
   for (const row of rows) {
-    const techId = String(row.tech_id ?? "").trim();
-    if (!techId) continue;
-    if (!map.has(techId)) map.set(techId, row);
+    const tech = String(row.tech_id ?? "").trim();
+    if (!tech) continue;
+
+    if (!map.has(tech)) map.set(tech, row);
   }
 
   return [...map.values()];
+}
+
+function formatRepName(args: {
+  affiliateName: string | null;
+  repName: string | null;
+}) {
+  const affiliate = String(args.affiliateName ?? "").trim();
+  const rep = String(args.repName ?? "").trim();
+
+  if (affiliate && rep) return `${affiliate} • ${rep}`;
+  if (rep) return rep;
+  if (affiliate) return affiliate;
+  return null;
+}
+
+async function loadContractorName(admin: Sb, contractorId: string) {
+  const { data } = await admin
+    .from("contractor_admin_v")
+    .select("contractor_id,contractor_name")
+    .eq("contractor_id", contractorId)
+    .maybeSingle();
+
+  const row = (data ?? null) as ContractorRow | null;
+  return String(row?.contractor_name ?? "").trim() || null;
 }
 
 export async function resolveBpSupervisorScope(): Promise<BpSupervisorScopeResult> {
@@ -120,19 +159,25 @@ export async function resolveBpSupervisorScope(): Promise<BpSupervisorScopeResul
 
   const { data: meData } = await admin
     .from("person")
-    .select("person_id,full_name,co_ref_id")
+    .select("person_id, full_name, co_ref_id")
     .eq("person_id", boot.person_id)
     .maybeSingle();
 
   const me = (meData ?? null) as PersonRow | null;
-
   const contractorId = String(me?.co_ref_id ?? "").trim();
+  const contractorName = contractorId
+    ? await loadContractorName(admin, contractorId)
+    : null;
 
   if (!contractorId) {
     return {
       selected_pc_org_id,
       role_label: "BP Supervisor",
-      rep_full_name: me?.full_name ?? null,
+      rep_full_name: formatRepName({
+        affiliateName: contractorName,
+        repName: me?.full_name ?? null,
+      }),
+      rep_person_id: boot.person_id,
       scoped_assignments: [],
     };
   }
@@ -140,20 +185,18 @@ export async function resolveBpSupervisorScope(): Promise<BpSupervisorScopeResul
   const { data: assignmentsRaw } = await admin
     .from("assignment_admin_v")
     .select(
-      "assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active,office_id,co_ref_id"
+      "assignment_id, person_id, pc_org_id, tech_id, start_date, end_date, position_title, active, office_id, co_ref_id"
     )
     .eq("pc_org_id", selected_pc_org_id);
 
-  const allAssignments = (assignmentsRaw ?? []) as BpSupervisorScopeRow[];
+  const all = (assignmentsRaw ?? []) as BpSupervisorScopeRow[];
 
-  const contractorAssignments = allAssignments
+  const contractorAssignments = all
     .filter((row) => isActiveWindow(row, today))
-    .filter(
-      (row) => String(row.co_ref_id ?? "").trim() === contractorId
-    );
+    .filter((row) => String(row.co_ref_id ?? "").trim() === contractorId);
 
   const myAssignments = contractorAssignments.filter(
-    (row) => String(row.person_id ?? "").trim() === String(boot.person_id)
+    (row) => String(row.person_id ?? "").trim() === boot.person_id
   );
 
   const myIds = myAssignments
@@ -164,12 +207,17 @@ export async function resolveBpSupervisorScope(): Promise<BpSupervisorScopeResul
     return {
       selected_pc_org_id,
       role_label: "BP Supervisor",
-      rep_full_name: me?.full_name ?? null,
+      rep_full_name: formatRepName({
+        affiliateName: contractorName,
+        repName: me?.full_name ?? null,
+      }),
+      rep_person_id: boot.person_id,
       scoped_assignments: [],
     };
   }
 
   const byId = new Map<string, BpSupervisorScopeRow>();
+
   for (const row of contractorAssignments) {
     const id = String(row.assignment_id ?? "").trim();
     if (id) byId.set(id, row);
@@ -179,25 +227,29 @@ export async function resolveBpSupervisorScope(): Promise<BpSupervisorScopeResul
 
   const { data: edgesRaw } = await admin
     .from("assignment_leadership_admin_v")
-    .select("parent_assignment_id,child_assignment_id,active")
+    .select("parent_assignment_id, child_assignment_id, active")
     .in("parent_assignment_id", ids)
     .in("child_assignment_id", ids)
     .eq("active", true);
 
   const edges = (edgesRaw ?? []) as LeadershipEdgeRow[];
   const childrenByParent = buildChildrenByParent(edges);
-
   const descendantIds = collectDescendants(myIds, childrenByParent);
-  myIds.forEach((id) => descendantIds.delete(id));
 
-  const rows = Array.from(descendantIds)
+  myIds.forEach((id) => descendantIds.add(id));
+
+  const scopedRows = Array.from(descendantIds)
     .map((id) => byId.get(id))
     .filter((r): r is BpSupervisorScopeRow => !!r);
 
   return {
     selected_pc_org_id,
     role_label: "BP Supervisor",
-    rep_full_name: me?.full_name ?? null,
-    scoped_assignments: uniqueByTech(rows),
+    rep_full_name: formatRepName({
+      affiliateName: contractorName,
+      repName: me?.full_name ?? null,
+    }),
+    rep_person_id: boot.person_id,
+    scoped_assignments: uniqueByTech(scopedRows),
   };
 }

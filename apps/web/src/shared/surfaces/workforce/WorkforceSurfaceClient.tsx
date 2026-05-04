@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import type {
@@ -43,6 +43,7 @@ type ReportsToOption = {
 
 function buildTabs(payload: WorkforceSurfacePayload) {
   const tabs = [...payload.tabs];
+
   const hasDropBuryTab = tabs.some((tab) => tab.key === "DROP_BURY");
   const dropBuryCount = payload.rows.filter(
     (row) => row.seat_type === "DROP_BURY"
@@ -53,6 +54,16 @@ function buildTabs(payload: WorkforceSurfacePayload) {
       key: "DROP_BURY",
       label: tabLabel("DROP_BURY"),
       count: dropBuryCount,
+    });
+  }
+
+  const hasProcessingTab = tabs.some((tab) => tab.key === "INCOMPLETE");
+
+  if (!hasProcessingTab) {
+    tabs.push({
+      key: "INCOMPLETE",
+      label: tabLabel("INCOMPLETE"),
+      count: payload.rows.filter((row) => row.is_incomplete).length,
     });
   }
 
@@ -72,6 +83,76 @@ function isLeadershipTitle(value: string | null | undefined) {
     title.includes("lead") ||
     title.includes("manager")
   );
+}
+
+function isTechnicianCandidate(row: WorkforcePersonSearchRow) {
+  const title = String(row.position_title ?? "").toLowerCase();
+  return title.includes("tech");
+}
+
+function buildProcessingRow(
+  row: WorkforcePersonSearchRow,
+  pcOrgId: string | null
+): WorkforceRow {
+  const displayName = row.full_name ?? "Unknown Person";
+
+  return {
+    assignment_id: "NEW",
+    person_id: row.person_id,
+    affiliation_id: null,
+    workspace_id: null,
+    pc_org_id: pcOrgId,
+
+    tech_id: row.tech_id,
+
+    full_name: row.full_name,
+    legal_name: null,
+    first_name: null,
+    preferred_name: null,
+    last_name: null,
+    display_name: displayName,
+
+    office_id: null,
+    office: null,
+
+    reports_to_assignment_id: null,
+    reports_to_person_id: null,
+    reports_to_name: null,
+
+    schedule: [],
+
+    seat_type: "FIELD",
+
+    mobile: null,
+    email: null,
+    nt_login: null,
+    csg: null,
+
+    position_title: row.position_title ?? "Technician",
+    affiliation: null,
+
+    start_date: null,
+    end_date: null,
+
+    assignment_status: null,
+    person_status: row.person_status,
+    is_primary: false,
+
+    is_active: row.person_status === "active",
+    is_travel_tech: false,
+    is_incomplete: true,
+
+    searchable_text: [
+      displayName,
+      row.tech_id,
+      row.position_title,
+      "processing",
+      "no active workforce assignment",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+  };
 }
 
 function buildReportsToOptions(args: {
@@ -138,6 +219,9 @@ export function WorkforceSurfaceClient({ payload }: Props) {
 
   const [tab, setTab] = useState<WorkforceTabKey>("FIELD");
   const [search, setSearch] = useState("");
+  const [processingRows, setProcessingRows] = useState<WorkforcePersonSearchRow[]>([]);
+  const [processingLoading, setProcessingLoading] = useState(false);
+  const [processingError, setProcessingError] = useState<string | null>(null);
   const [selected, setSelected] = useState<WorkforceRow | null>(null);
   const [draft, setDraft] = useState<WorkforceDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -149,21 +233,68 @@ export function WorkforceSurfaceClient({ payload }: Props) {
   const pcOrgId = payload.rows[0]?.pc_org_id ?? null;
   const tabs = useMemo(() => buildTabs(payload), [payload]);
 
+  useEffect(() => {
+    if (!pcOrgId) return;
+
+    let cancelled = false;
+
+    async function loadProcessing() {
+      setProcessingLoading(true);
+      setProcessingError(null);
+
+      const params = new URLSearchParams();
+      params.set("pc_org_id", pcOrgId ?? "");
+      params.set("mode", "processing");
+
+      // only include search IF user is on tab
+      if (tab === "INCOMPLETE" && search) {
+        params.set("q", search);
+      }
+
+      const res = await fetch(
+        `/api/workforce/person-search?${params.toString()}`
+      );
+      const json = await res.json().catch(() => null);
+
+      if (cancelled) return;
+
+      if (!res.ok) {
+        setProcessingRows([]);
+        setProcessingError(json?.error ?? "Unable to load processing rows.");
+        setProcessingLoading(false);
+        return;
+      }
+
+      setProcessingRows(
+        (json?.rows ?? []).filter(isTechnicianCandidate)
+      );
+      setProcessingLoading(false);
+    }
+
+    // preload immediately
+    loadProcessing();
+
+    return () => {
+      cancelled = true;
+    };
+    }, [pcOrgId, search, tab]);
+
   const filtered = useMemo(() => {
+    if (tab === "INCOMPLETE") {
+      return processingRows.map((row) => buildProcessingRow(row, pcOrgId));
+    }
+
     let rows = payload.rows;
 
     if (tab !== "ALL") {
-      rows =
-        tab === "INCOMPLETE"
-          ? rows.filter((r) => r.is_incomplete)
-          : rows.filter((r) => r.seat_type === tab);
+      rows = rows.filter((r) => r.seat_type === tab);
     }
 
     const q = search.trim().toLowerCase();
     if (q) rows = rows.filter((r) => r.searchable_text.includes(q));
 
     return rows;
-  }, [payload.rows, tab, search]);
+  }, [payload.rows, processingRows, pcOrgId, tab, search]);
 
   const reportsToOptions = useMemo(() => {
     if (!selected || !draft) return [];
@@ -174,6 +305,13 @@ export function WorkforceSurfaceClient({ payload }: Props) {
       draft,
     });
   }, [payload.rows, selected, draft]);
+
+  function tabCount(key: WorkforceTabKey, fallback: number) {
+    if (key === "INCOMPLETE") {
+      return processingLoading ? 0 : processingRows.length;
+    }
+    return fallback;
+  }
 
   function openRow(row: WorkforceRow) {
     setSelected(row);
@@ -204,54 +342,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
     setStagedPerson(null);
     setSaveError(null);
 
-    const stagedRow: WorkforceRow = {
-      assignment_id: "NEW",
-      person_id: person.person_id,
-      affiliation_id: null,
-      workspace_id: null,
-      pc_org_id: pcOrgId,
-
-      tech_id: person.tech_id,
-
-      full_name: person.full_name,
-      legal_name: null,
-      first_name: null,
-      preferred_name: null,
-      last_name: null,
-      display_name: person.full_name ?? "Unknown Person",
-
-      office_id: null,
-      office: null,
-
-      reports_to_assignment_id: null,
-      reports_to_person_id: null,
-      reports_to_name: null,
-
-      schedule: [],
-
-      seat_type: "FIELD",
-
-      mobile: null,
-      email: null,
-      nt_login: null,
-      csg: null,
-
-      position_title: person.position_title ?? "Technician",
-      affiliation: null,
-
-      start_date: null,
-      end_date: null,
-
-      assignment_status: "active",
-      person_status: null,
-      is_primary: true,
-
-      is_active: true,
-      is_travel_tech: false,
-      is_incomplete: true,
-
-      searchable_text: "",
-    };
+    const stagedRow = buildProcessingRow(person, pcOrgId);
 
     setSelected(stagedRow);
     setDraft({
@@ -345,21 +436,33 @@ export function WorkforceSurfaceClient({ payload }: Props) {
       <Card className="p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={[
-                  "rounded-xl border px-3 py-2 text-sm",
-                  tab === t.key
-                    ? "border-[var(--to-accent)] bg-[color-mix(in_oklab,var(--to-accent)_10%,white)]"
-                    : "bg-card",
-                ].join(" ")}
-              >
-                {tabLabel(t.key)} ({t.count})
-              </button>
-            ))}
+            {tabs
+              .filter((t) => {
+                if (t.key === "INCOMPLETE") {
+                  return processingRows.length > 0;
+                }
+                return t.count > 0;
+              })
+              .map((t) => {
+                const count =
+                  t.key === "INCOMPLETE" ? processingRows.length : t.count;
+
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setTab(t.key)}
+                    className={[
+                      "rounded-xl border px-3 py-2 text-sm",
+                      tab === t.key
+                        ? "border-[var(--to-accent)] bg-[color-mix(in_oklab,var(--to-accent)_10%,white)]"
+                        : "bg-card",
+                    ].join(" ")}
+                  >
+                    {tabLabel(t.key)} ({count})
+                  </button>
+                );
+              })}
           </div>
 
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
@@ -384,8 +487,18 @@ export function WorkforceSurfaceClient({ payload }: Props) {
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
           <div>{tabLabel(tab)}</div>
-          <div>{filtered.length} rows</div>
+          <div>
+            {tab === "INCOMPLETE" && processingLoading
+              ? "Loading…"
+              : `${filtered.length} rows`}
+          </div>
         </div>
+
+        {processingError ? (
+          <div className="mb-3 rounded-xl border border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_8%,white)] p-3 text-xs">
+            {processingError}
+          </div>
+        ) : null}
 
         {filtered.length === 0 ? (
           <div className="text-sm text-muted-foreground">No records.</div>
@@ -405,8 +518,23 @@ export function WorkforceSurfaceClient({ payload }: Props) {
               <tbody>
                 {filtered.map((row) => (
                   <tr
-                    key={row.assignment_id}
-                    onClick={() => openRow(row)}
+                    key={`${row.assignment_id}:${row.person_id}`}
+                    onClick={() => {
+                      if (tab === "INCOMPLETE") {
+                        setSelected(row);
+                        setDraft({
+                          position_title: row.position_title ?? "Technician",
+                          affiliation_id: null,
+                          office_id: null,
+                          reports_to_assignment_id: null,
+                          seat_type: "FIELD",
+                          start_date: null,
+                        });
+                        return;
+                      }
+
+                      openRow(row);
+                    }}
                     className="cursor-pointer border-b hover:bg-muted/30"
                   >
                     <td className="px-4 py-3">

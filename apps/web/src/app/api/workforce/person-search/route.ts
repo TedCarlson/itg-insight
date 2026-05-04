@@ -10,6 +10,7 @@ export async function GET(req: Request) {
 
   const pc_org_id = searchParams.get("pc_org_id");
   const q = searchParams.get("q");
+  const mode = searchParams.get("mode"); // NEW
 
   if (!pc_org_id) {
     return NextResponse.json(
@@ -21,6 +22,7 @@ export async function GET(req: Request) {
   const { data, error } = await sb.rpc("workforce_person_search", {
     p_pc_org_id: pc_org_id,
     p_query: q ?? null,
+    p_mode: mode ?? null, // NEW
   });
 
   if (error) {

@@ -40,7 +40,13 @@ export function resolveSurfaceFamily(
   // BP role surfaces
   if (
     pathname === "/bp/view" ||
-    pathname.startsWith("/bp/view/")
+    pathname.startsWith("/bp/view/") ||
+    pathname === "/bp-supervisor" ||
+    pathname.startsWith("/bp-supervisor/") ||
+    pathname === "/bp-lead" ||
+    pathname.startsWith("/bp-lead/") ||
+    pathname === "/bp-owner" ||
+    pathname.startsWith("/bp-owner/")
   ) {
     return "BP";
   }

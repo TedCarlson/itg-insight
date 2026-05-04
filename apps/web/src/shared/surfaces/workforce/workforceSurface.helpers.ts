@@ -55,7 +55,7 @@ export function tabLabel(key: WorkforceTabKey) {
   if (key === "ALL") return "All";
   if (key === "FIELD") return "Field";
   if (key === "LEADERSHIP") return "Leadership";
-  if (key === "INCOMPLETE") return "Incomplete";
+  if (key === "PROCESSING") return "Processing";
   if (key === "SUPPORT") return "Support";
   if (key === "DROP_BURY") return "Drop Bury";
   if (key === "FMLA") return "FMLA";
