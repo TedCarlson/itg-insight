@@ -68,6 +68,20 @@ export type MetricsRowWorkMix = {
 export type MetricsSurfaceTeamRow = {
   tech_id: string | null;
   full_name: string | null;
+
+  // workforce identity / scope enrichment
+  person_id?: string | null;
+  assignment_id?: string | null;
+  reports_to_assignment_id?: string | null;
+  affiliation_id?: string | null;
+  seat_type?: string | null;
+
+  contractor_name?: string | null;
+  office_id?: string | null;
+  team_class?: "ITG" | "BP" | null;
+  affiliation?: string | null;
+  supervisor_chain_person_ids?: string[];
+
   rank: number | null;
   composite_score: number | null;
   metrics: MetricsSurfaceTeamCell[];
@@ -75,6 +89,8 @@ export type MetricsSurfaceTeamRow = {
   work_mix: MetricsRowWorkMix | null;
   jobs_display: string | null;
   risk_count?: number | null;
+
+  // dimensions
   office_label?: string | null;
   affiliation_type?: string | null;
   reports_to_person_id?: string | null;

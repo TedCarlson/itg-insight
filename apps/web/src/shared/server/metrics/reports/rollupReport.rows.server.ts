@@ -1,0 +1,98 @@
+// path: apps/web/src/shared/server/metrics/reports/rollupReport.rows.server.ts
+
+import type { TeamRowClient } from "@/shared/lib/metrics/buildScopedRows";
+import type { MetricsSurfacePayload } from "@/shared/types/metrics/surfacePayload";
+import {
+  buildKpis,
+  computeComposite,
+  readNumeric,
+} from "./rollupReport.kpis.server";
+import { getRowTeamClass } from "./rollupReport.groups.server";
+
+export type SupervisorRollupRow = {
+  supervisor_person_id: string;
+  supervisor_name: string;
+  team_class: "ITG" | "BP";
+  rollup_hc: number;
+  jobs: number;
+  composite_score: number | null;
+  rank: number;
+  kpis: any[];
+};
+
+function cleanTechId(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text || text === "—" || text.startsWith("UNASSIGNED-")) return null;
+  return text;
+}
+
+function getMetric(row: TeamRowClient, metricKey: string): any | null {
+  return (
+    (row.metrics ?? []).find((metric: any) => metric.metric_key === metricKey) ??
+    null
+  );
+}
+
+function getRowJobCount(row: TeamRowClient): number {
+  const ftrMetric = getMetric(row, "ftr_rate");
+  return readNumeric(ftrMetric?.denominator) ?? 0;
+}
+
+function isEligibleRollupRow(row: TeamRowClient): boolean {
+  const techId = cleanTechId(row.tech_id);
+  if (!techId) return false;
+
+  return getRowJobCount(row) > 0;
+}
+
+function getRollupHeadcount(rows: TeamRowClient[]): number {
+  const techIds = new Set<string>();
+
+  for (const row of rows) {
+    if (!isEligibleRollupRow(row)) continue;
+
+    const techId = cleanTechId(row.tech_id);
+    if (techId) techIds.add(techId);
+  }
+
+  return techIds.size;
+}
+
+function getRollupJobs(rows: TeamRowClient[]): number {
+  return rows.reduce((total, row) => {
+    if (!isEligibleRollupRow(row)) return total;
+    return total + getRowJobCount(row);
+  }, 0);
+}
+
+export function buildSupervisorRow(args: {
+  payload: MetricsSurfacePayload;
+  supervisor: any;
+  rows: TeamRowClient[];
+  visibleKpiKeys: string[];
+}): SupervisorRollupRow | null {
+  const eligibleRows = args.rows.filter(isEligibleRollupRow);
+
+  if (!eligibleRows.length) return null;
+
+  return {
+    supervisor_person_id: args.supervisor.supervisor_person_id,
+    supervisor_name: args.supervisor.supervisor_name,
+    team_class: getRowTeamClass(eligibleRows[0]) ?? "BP",
+    rollup_hc: getRollupHeadcount(eligibleRows),
+    jobs: getRollupJobs(eligibleRows),
+    composite_score: computeComposite(),
+    rank: 0,
+    kpis: buildKpis({
+      payload: args.payload,
+      rows: eligibleRows,
+      visibleKpiKeys: args.visibleKpiKeys,
+    }),
+  };
+}
+
+export function rankRows(rows: SupervisorRollupRow[]) {
+  return [...rows]
+    .sort((a, b) => (b.composite_score ?? -1) - (a.composite_score ?? -1))
+    .map((row, i) => ({ ...row, rank: i + 1 }));
+}

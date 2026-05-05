@@ -1,3 +1,5 @@
+// path: apps/web/src/shared/components/metrics/RollupReportOverlay.tsx
+
 "use client";
 
 type TeamClass = "ITG" | "BP";
@@ -17,6 +19,7 @@ type SupervisorRollupRow = {
   supervisor_name: string;
   team_class: TeamClass;
   rollup_hc: number;
+  jobs: number;
   composite_score: number | null;
   rank: number;
   kpis: RollupKpi[];
@@ -31,7 +34,7 @@ export type RollupReportPayload = {
   };
   segments: {
     itg_supervisors: SupervisorRollupRow[];
-    bp_supervisors: SupervisorRollupRow[];
+    bp_companies: SupervisorRollupRow[];
     all_supervisors: SupervisorRollupRow[];
   };
 };
@@ -55,62 +58,107 @@ function shortKpiLabel(kpi: RollupKpi) {
     ftr_rate: "FTR",
     tool_usage_rate: "Tool",
   };
+
   return map[kpi.kpi_key] ?? kpi.label;
 }
 
 function bandTone(band: string | null) {
-  if (band === "EXCEEDS") return "border-emerald-300 bg-emerald-50 text-emerald-800";
-  if (band === "MEETS") return "border-sky-300 bg-sky-50 text-sky-800";
-  if (band === "NEEDS_IMPROVEMENT") return "border-amber-300 bg-amber-50 text-amber-800";
-  if (band === "MISSES") return "border-rose-300 bg-rose-50 text-rose-800";
+  if (band === "EXCEEDS") {
+    return "border-emerald-300 bg-emerald-50 text-emerald-800";
+  }
+
+  if (band === "MEETS") {
+    return "border-sky-300 bg-sky-50 text-sky-800";
+  }
+
+  if (band === "NEEDS_IMPROVEMENT") {
+    return "border-amber-300 bg-amber-50 text-amber-800";
+  }
+
+  if (band === "MISSES") {
+    return "border-rose-300 bg-rose-50 text-rose-800";
+  }
+
   return "border-slate-200 bg-slate-50 text-slate-500";
 }
 
 function RollupTable({
   title,
+  nameColumnLabel = "Supervisor",
   rows,
 }: {
   title: string;
+  nameColumnLabel?: string;
   rows: SupervisorRollupRow[];
 }) {
-  const sampleKpis = rows[0]?.kpis ?? [];
+  const safeRows = rows ?? [];
+  const sampleKpis = safeRows[0]?.kpis ?? [];
 
   return (
     <section className="rounded-2xl border bg-background p-4">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-muted-foreground border-b">
-            <th>Rank</th>
-            <th>Supervisor</th>
-            <th>HC</th>
-            <th>Comp</th>
-            {sampleKpis.map((kpi) => (
-              <th key={kpi.kpi_key}>{shortKpiLabel(kpi)}</th>
-            ))}
-          </tr>
-        </thead>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr className="border-b text-xs text-muted-foreground">
+              <th className="px-2 py-2 text-left font-medium">Rank</th>
+              <th className="px-2 py-2 text-left font-medium">
+                {nameColumnLabel}
+              </th>
+              <th className="px-2 py-2 text-right font-medium">HC</th>
+              <th className="px-2 py-2 text-right font-medium">Jobs</th>
+              <th className="px-2 py-2 text-right font-medium">Comp</th>
 
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.supervisor_person_id} className="border-b">
-              <td>#{row.rank}</td>
-              <td>{row.supervisor_name}</td>
-              <td>{row.rollup_hc}</td>
-              <td>{formatScore(row.composite_score)}</td>
-
-              {row.kpis.map((kpi) => (
-                <td key={kpi.kpi_key}>
-                  <span className={`px-2 py-1 rounded-full border text-xs ${bandTone(kpi.band_key)}`}>
-                    {kpi.value_display}
-                  </span>
-                </td>
+              {sampleKpis.map((kpi) => (
+                <th
+                  key={kpi.kpi_key}
+                  className="px-2 py-2 text-right font-medium"
+                >
+                  {shortKpiLabel(kpi)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+
+          <tbody>
+            {safeRows.length ? (
+              safeRows.map((row) => (
+                <tr key={row.supervisor_person_id} className="border-b">
+                  <td className="px-2 py-2 text-left">#{row.rank}</td>
+                  <td className="px-2 py-2 text-left">{row.supervisor_name}</td>
+                  <td className="px-2 py-2 text-right">{row.rollup_hc}</td>
+                  <td className="px-2 py-2 text-right">{row.jobs}</td>
+                  <td className="px-2 py-2 text-right">
+                    {formatScore(row.composite_score)}
+                  </td>
+
+                  {row.kpis.map((kpi) => (
+                    <td key={kpi.kpi_key} className="px-2 py-2 text-right">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-1 text-xs ${bandTone(
+                          kpi.band_key
+                        )}`}
+                      >
+                        {kpi.value_display}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td
+                  className="px-2 py-4 text-sm text-muted-foreground"
+                  colSpan={5 + sampleKpis.length}
+                >
+                  No rows available.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -126,35 +174,52 @@ export default function RollupReportOverlay({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 p-4">
-      <div className="mx-auto max-w-6xl rounded-2xl bg-card p-4 shadow-xl">
-
-        <div className="flex justify-between mb-4">
+      <div className="mx-auto flex max-h-[92vh] max-w-6xl flex-col rounded-2xl bg-card p-4 shadow-xl">
+        <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">
             {payload?.header.org_display ?? "Rollup Report"}
           </h2>
 
-          <button onClick={onClose}>Close</button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border px-3 py-1 text-sm"
+          >
+            Close
+          </button>
         </div>
 
-        {loading && <p>Loading report...</p>}
-        {error && <p className="text-red-600">{error}</p>}
+        {loading ? (
+          <p className="shrink-0 text-sm text-muted-foreground">
+            Loading report...
+          </p>
+        ) : null}
 
-        {payload && (
-          <div className="space-y-4">
+        {error ? (
+          <p className="shrink-0 text-sm text-red-600">{error}</p>
+        ) : null}
+
+        {payload ? (
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             <RollupTable
               title="ITG Supervisors"
-              rows={payload.segments.itg_supervisors}
+              nameColumnLabel="Supervisor"
+              rows={payload.segments.itg_supervisors ?? []}
             />
+
             <RollupTable
-              title="BP Supervisors"
-              rows={payload.segments.bp_supervisors}
+              title="BP Companies"
+              nameColumnLabel="Company"
+              rows={payload.segments.bp_companies ?? []}
             />
+
             <RollupTable
               title="All Supervisors"
-              rows={payload.segments.all_supervisors}
+              nameColumnLabel="Supervisor"
+              rows={payload.segments.all_supervisors ?? []}
             />
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-// path: apps/web/src/features/role-company-manager/lib/resolveManagerScope.server.ts
+// path: apps/web/src/features/role-company-manager/lib/resolveCompanyManagerScope.server.ts
 
 import { bootstrapProfileServer } from "@/lib/auth/bootstrapProfile.server";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
@@ -16,6 +16,8 @@ export type CompanyManagerScopeAssignmentRow = {
   start_date?: string | null;
   end_date?: string | null;
   office_id?: string | null;
+  reports_to_assignment_id?: string | null;
+
   office_name?: string | null;
   leader_assignment_id?: string | null;
   leader_person_id?: string | null;
@@ -29,8 +31,8 @@ export type CompanyManagerScopeAssignmentRow = {
 export type CompanyManagerScopePersonRow = {
   person_id: string;
   full_name: string | null;
-  role: string | null;
-  co_ref_id: string | null;
+  status: string | null;
+  prospecting_affiliation_id: string | null;
 };
 
 export type CompanyManagerScopeRole = "Company Manager";
@@ -54,6 +56,12 @@ type LeadershipEdgeRow = {
 type ContractorRow = {
   contractor_id: string | null;
   contractor_name: string | null;
+  contractor_code?: string | null;
+};
+
+type ContractorMeta = {
+  contractor_name: string | null;
+  contractor_code: string | null;
 };
 
 type OfficeRow = {
@@ -94,62 +102,6 @@ function isActiveWindow(
   const startOk = !row.start_date || String(row.start_date) <= today;
   const endOk = !row.end_date || String(row.end_date) >= today;
   return activeOk && startOk && endOk;
-}
-
-function choosePreferredAssignment(
-  rows: CompanyManagerScopeAssignmentRow[]
-): CompanyManagerScopeAssignmentRow | null {
-  if (!rows.length) return null;
-
-  const sorted = [...rows].sort((a, b) => {
-    const aActive = a.active === true ? 1 : 0;
-    const bActive = b.active === true ? 1 : 0;
-    if (bActive !== aActive) return bActive - aActive;
-
-    const aOpenEnded = !normalizeDate(a.end_date) ? 1 : 0;
-    const bOpenEnded = !normalizeDate(b.end_date) ? 1 : 0;
-    if (bOpenEnded !== aOpenEnded) return bOpenEnded - aOpenEnded;
-
-    const endCmp = compareNullableDatesDesc(a.end_date, b.end_date);
-    if (endCmp !== 0) return endCmp;
-
-    const startCmp = compareNullableDatesDesc(a.start_date, b.start_date);
-    if (startCmp !== 0) return startCmp;
-
-    return String(b.assignment_id ?? "").localeCompare(
-      String(a.assignment_id ?? "")
-    );
-  });
-
-  return sorted[0] ?? null;
-}
-
-function dedupeAssignmentsByPerson(
-  rows: CompanyManagerScopeAssignmentRow[]
-): CompanyManagerScopeAssignmentRow[] {
-  const byPerson = new Map<string, CompanyManagerScopeAssignmentRow[]>();
-  const passthrough: CompanyManagerScopeAssignmentRow[] = [];
-
-  for (const row of rows) {
-    const personId = String(row.person_id ?? "").trim();
-    if (!personId) {
-      passthrough.push(row);
-      continue;
-    }
-
-    const list = byPerson.get(personId) ?? [];
-    list.push(row);
-    byPerson.set(personId, list);
-  }
-
-  const deduped = [...passthrough];
-
-  for (const group of byPerson.values()) {
-    const preferred = choosePreferredAssignment(group);
-    if (preferred) deduped.push(preferred);
-  }
-
-  return deduped;
 }
 
 async function loadOrgLabels(
@@ -214,24 +166,6 @@ function uniqueByTech(rows: CompanyManagerScopeAssignmentRow[]) {
   return [...out.values()];
 }
 
-function isItgAssignment(args: {
-  assignment: CompanyManagerScopeAssignmentRow;
-  person: CompanyManagerScopePersonRow | undefined;
-}) {
-  const role = String(args.person?.role ?? "").toLowerCase();
-  const positionTitle = String(
-    args.assignment.position_title ?? ""
-  ).toLowerCase();
-
-  return (
-    role === "hires" ||
-    role === "employee" ||
-    role === "employees" ||
-    role === "itg" ||
-    positionTitle.includes("itg")
-  );
-}
-
 function isLeadershipDisplayAssignment(
   assignment: CompanyManagerScopeAssignmentRow
 ) {
@@ -255,7 +189,7 @@ function buildChildrenByParent(edges: LeadershipEdgeRow[]) {
     const parentId = String(edge.parent_assignment_id ?? "");
     const childId = String(edge.child_assignment_id ?? "");
     if (!parentId || !childId) continue;
-    if (edge.active === false) continue;
+    if (edge.active !== true) continue;
 
     const arr = out.get(parentId) ?? [];
     arr.push(childId);
@@ -272,33 +206,9 @@ function buildParentByChild(edges: LeadershipEdgeRow[]) {
     const parentId = String(edge.parent_assignment_id ?? "");
     const childId = String(edge.child_assignment_id ?? "");
     if (!parentId || !childId) continue;
-    if (edge.active === false) continue;
+    if (edge.active !== true) continue;
+
     out.set(childId, parentId);
-  }
-
-  return out;
-}
-
-function collectDescendantAssignmentIds(args: {
-  seedIds: string[];
-  childrenByParent: Map<string, string[]>;
-}) {
-  const out = new Set<string>();
-  const queue = [...args.seedIds];
-
-  while (queue.length) {
-    const current = queue.shift();
-    if (!current) continue;
-    if (out.has(current)) continue;
-
-    out.add(current);
-
-    const children = args.childrenByParent.get(current) ?? [];
-    for (const childId of children) {
-      if (!out.has(childId)) {
-        queue.push(childId);
-      }
-    }
   }
 
   return out;
@@ -320,9 +230,7 @@ function resolveNearestLeader(args: {
   let cursor = parentByChild.get(assignmentId) ?? null;
 
   while (cursor) {
-    if (managerAssignmentIds.has(cursor)) {
-      return null;
-    }
+    if (managerAssignmentIds.has(cursor)) return null;
 
     const candidate = assignmentsById.get(cursor);
     if (candidate && isLeadershipDisplayAssignment(candidate)) {
@@ -363,22 +271,33 @@ async function loadContractorLabels(
   admin: ReturnType<typeof supabaseAdmin>,
   contractorIds: string[]
 ) {
-  const out = new Map<string, string>();
+  const out = new Map<string, ContractorMeta>();
   if (!contractorIds.length) return out;
 
   const { data } = await admin
     .from("contractor_admin_v")
-    .select("contractor_id,contractor_name")
+    .select("contractor_id,contractor_name,contractor_code")
     .in("contractor_id", contractorIds);
 
   for (const row of (data ?? []) as ContractorRow[]) {
-    const contractorId = String(row.contractor_id ?? "");
-    const contractorName = String(row.contractor_name ?? "").trim();
-    if (!contractorId || !contractorName) continue;
-    out.set(contractorId, contractorName);
+    const contractorId = String(row.contractor_id ?? "").trim();
+    if (!contractorId) continue;
+
+    out.set(contractorId, {
+      contractor_name: String(row.contractor_name ?? "").trim() || null,
+      contractor_code: String(row.contractor_code ?? "").trim() || null,
+    });
   }
 
   return out;
+}
+
+function resolveTeamClass(meta: ContractorMeta | undefined): TeamClass {
+  const code = String(meta?.contractor_code ?? "").trim().toUpperCase();
+  const name = String(meta?.contractor_name ?? "").trim().toLowerCase();
+
+  if (code === "ITG" || name === "integrated tech group") return "ITG";
+  return "BP";
 }
 
 export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeResult> {
@@ -401,40 +320,64 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
 
   const [meRes, allOrgAssignmentsRes] = await Promise.all([
     admin
-      .from("person")
-      .select("person_id,full_name,role,co_ref_id")
+      .from("people")
+      .select("person_id,full_name,status,prospecting_affiliation_id")
       .eq("person_id", boot.person_id)
       .maybeSingle(),
     admin
-      .from("assignment_admin_v")
+      .schema("core")
+      .from("assignments")
       .select(
-        "assignment_id,person_id,pc_org_id,tech_id,start_date,end_date,position_title,active,office_id"
+        "assignment_id,person_id,workspace_id,tech_id,start_date,end_date,position_title,assignment_status,office_id,reports_to_assignment_id"
       )
-      .eq("pc_org_id", selected_pc_org_id),
+      .eq("workspace_id", selected_pc_org_id),
   ]);
 
-  const me = (meRes.data ?? null) as CompanyManagerScopePersonRow | null;
+  const me = (meRes.data ?? null) as {
+    person_id: string;
+    full_name: string | null;
+    role: string | null;
+  } | null;
 
-  if (!me) {
-    throw new Error("Unable to resolve current person");
-  }
+  const repFullName = me?.full_name ?? null;
 
-  const allOrgAssignmentsRaw = (
-    (allOrgAssignmentsRes.data ?? []) as CompanyManagerScopeAssignmentRow[]
-  ).filter((a) => {
-    const startOk = !a.start_date || String(a.start_date) <= today;
-    const endOk = !a.end_date || String(a.end_date) >= today;
-    return startOk && endOk;
-  });
+  const allOrgAssignmentsRaw = ((allOrgAssignmentsRes.data ?? []) as any[])
+    .map((row): CompanyManagerScopeAssignmentRow => ({
+      assignment_id: row.assignment_id ?? null,
+      person_id: row.person_id ?? null,
+      pc_org_id: row.workspace_id ?? null,
+      tech_id: row.tech_id ?? null,
+      position_title: row.position_title ?? null,
+      active: row.assignment_status === "active",
+      start_date: row.start_date ?? null,
+      end_date: row.end_date ?? null,
+      office_id: row.office_id ?? null,
+      reports_to_assignment_id: row.reports_to_assignment_id ?? null,
+    }))
+    .filter((a) => {
+      const startOk = !a.start_date || String(a.start_date) <= today;
+      const endOk = !a.end_date || String(a.end_date) >= today;
+      return startOk && endOk;
+    });
 
-  const allOrgAssignments = dedupeAssignmentsByPerson(
-    allOrgAssignmentsRaw
-  ).filter((a) => isActiveWindow(a, today));
+  const allOrgAssignments = allOrgAssignmentsRaw
+    .filter((a) => isActiveWindow(a, today))
+    .sort((a, b) => {
+      const aHasTech = a.tech_id ? 1 : 0;
+      const bHasTech = b.tech_id ? 1 : 0;
+      if (bHasTech !== aHasTech) return bHasTech - aHasTech;
+
+      const aActive = a.active === true ? 1 : 0;
+      const bActive = b.active === true ? 1 : 0;
+      if (bActive !== aActive) return bActive - aActive;
+
+      return compareNullableDatesDesc(a.start_date, b.start_date);
+    });
 
   const assignmentsById = new Map<string, CompanyManagerScopeAssignmentRow>();
 
   for (const row of allOrgAssignments) {
-    const assignmentId = String(row.assignment_id ?? "");
+    const assignmentId = String(row.assignment_id ?? "").trim();
     if (!assignmentId) continue;
     assignmentsById.set(assignmentId, row);
   }
@@ -444,48 +387,34 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
   );
 
   const myAssignmentIds = myAssignments
-    .map((a) => String(a.assignment_id ?? ""))
+    .map((a) => String(a.assignment_id ?? "").trim())
     .filter(Boolean);
 
-  if (!myAssignmentIds.length) {
-    return {
-      selected_pc_org_id,
-      role_label: "Company Manager",
-      rep_full_name: me.full_name ? String(me.full_name) : null,
-      company_label: null,
-      scoped_assignments: [],
-      people_by_id: new Map<string, CompanyManagerScopePersonRow>(),
-      org_labels_by_id: await loadOrgLabels(admin, [selected_pc_org_id]),
-    };
-  }
-
   const managerAssignmentIdSet = new Set(myAssignmentIds);
-  const orgAssignmentIds = Array.from(assignmentsById.keys());
 
-  const leadershipRes = orgAssignmentIds.length
-    ? await admin
-        .from("assignment_leadership_admin_v")
-        .select("parent_assignment_id,child_assignment_id,active")
-        .in("parent_assignment_id", orgAssignmentIds)
-        .eq("active", true)
-    : { data: [] as LeadershipEdgeRow[] };
+  const leadershipRows: LeadershipEdgeRow[] = allOrgAssignments
+    .map((assignment) => ({
+      parent_assignment_id: assignment.reports_to_assignment_id ?? null,
+      child_assignment_id: assignment.assignment_id ?? null,
+      active: assignment.active,
+    }))
+    .filter(
+      (edge) =>
+        Boolean(edge.parent_assignment_id) &&
+        Boolean(edge.child_assignment_id) &&
+        edge.active === true
+    );
 
-  const leadershipRows = (leadershipRes.data ?? []) as LeadershipEdgeRow[];
   const childrenByParent = buildChildrenByParent(leadershipRows);
   const parentByChild = buildParentByChild(leadershipRows);
 
-  const descendantAssignmentIds = collectDescendantAssignmentIds({
-    seedIds: myAssignmentIds,
-    childrenByParent,
+  const orgTechAssignments = allOrgAssignments.filter((assignment) => {
+    const techId = String(assignment.tech_id ?? "").trim();
+    if (!techId) return false;
+    if (techId.startsWith("UNASSIGNED-")) return false;
+
+    return true;
   });
-
-  for (const myAssignmentId of myAssignmentIds) {
-    descendantAssignmentIds.delete(myAssignmentId);
-  }
-
-  const descendantAssignments = Array.from(descendantAssignmentIds)
-    .map((id) => assignmentsById.get(id))
-    .filter((row): row is CompanyManagerScopeAssignmentRow => !!row);
 
   const basePersonIds = new Set(
     allOrgAssignments.map((r) => String(r.person_id ?? "")).filter(Boolean)
@@ -511,9 +440,10 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
 
   const peopleRes = personIds.length
     ? await admin
-        .from("person")
-        .select("person_id,full_name,role,co_ref_id")
-        .in("person_id", personIds)
+      .schema("core")
+      .from("people")
+      .select("person_id,full_name,status,prospecting_affiliation_id")
+      .in("person_id", personIds)
     : { data: [] as CompanyManagerScopePersonRow[] };
 
   const people_by_id = new Map<string, CompanyManagerScopePersonRow>();
@@ -525,13 +455,12 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
   const contractorIds = Array.from(
     new Set(
       Array.from(people_by_id.values())
-        .filter((person) => String(person.role ?? "") === "Contractors")
-        .map((person) => String(person.co_ref_id ?? ""))
+        .map((person) => String(person.prospecting_affiliation_id ?? "").trim())
         .filter(Boolean)
     )
   );
 
-  const contractorNameById = await loadContractorLabels(admin, contractorIds);
+  const contractorById = await loadContractorLabels(admin, contractorIds);
 
   const officeIds = Array.from(
     new Set(
@@ -543,34 +472,30 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
 
   const officeNameById = await loadOfficeLabels(admin, officeIds);
 
-  const descendantTechAssignments = descendantAssignments.filter(
-    (assignment) => !!assignment.tech_id
-  );
-
   const scoped_assignments = uniqueByTech(
-    descendantTechAssignments.map((assignment) => {
+    orgTechAssignments.map((assignment) => {
       const person = people_by_id.get(String(assignment.person_id ?? ""));
-      const isItg = isItgAssignment({ assignment, person });
+      const affiliationId = String(
+        person?.prospecting_affiliation_id ?? ""
+      ).trim();
 
-      const personRole = String(person?.role ?? "");
-      const coRefId = String(person?.co_ref_id ?? "");
+      const contractorMeta = affiliationId
+        ? contractorById.get(affiliationId)
+        : undefined;
+
+      const teamClass = resolveTeamClass(contractorMeta);
       const officeId = String(assignment.office_id ?? "").trim();
-
-      const contractor_name =
-        !isItg && personRole === "Contractors" && coRefId
-          ? contractorNameById.get(coRefId) ?? null
-          : null;
 
       const office_name = officeId ? officeNameById.get(officeId) ?? null : null;
 
       const assignmentId = String(assignment.assignment_id ?? "");
       const leaderAssignment = assignmentId
         ? resolveNearestLeader({
-            assignmentId,
-            parentByChild,
-            assignmentsById,
-            managerAssignmentIds: managerAssignmentIdSet,
-          })
+          assignmentId,
+          parentByChild,
+          assignmentsById,
+          managerAssignmentIds: managerAssignmentIdSet,
+        })
         : null;
 
       const leaderPerson = leaderAssignment
@@ -579,10 +504,10 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
 
       const supervisor_chain_person_ids = assignmentId
         ? buildSupervisorChain({
-            assignmentId,
-            parentByChild,
-            assignmentsById,
-          })
+          assignmentId,
+          parentByChild,
+          assignmentsById,
+        })
         : [];
 
       return {
@@ -593,8 +518,9 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
         leader_person_id: leaderAssignment?.person_id ?? null,
         leader_name: leaderPerson?.full_name ?? null,
         leader_title: leaderAssignment?.position_title ?? null,
-        team_class: isItg ? ("ITG" as TeamClass) : ("BP" as TeamClass),
-        contractor_name: isItg ? null : contractor_name,
+        team_class: teamClass,
+        contractor_name:
+          teamClass === "BP" ? contractorMeta?.contractor_name ?? null : null,
         supervisor_chain_person_ids,
       };
     })
@@ -605,7 +531,7 @@ export async function resolveCompanyManagerScope(): Promise<CompanyManagerScopeR
   return {
     selected_pc_org_id,
     role_label: "Company Manager",
-    rep_full_name: me.full_name ? String(me.full_name) : null,
+    rep_full_name: repFullName ? String(repFullName) : null,
     company_label: null,
     scoped_assignments,
     people_by_id,

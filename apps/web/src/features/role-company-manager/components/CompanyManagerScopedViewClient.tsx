@@ -26,9 +26,8 @@ import type { MetricsSurfacePayload } from "@/shared/types/metrics/surfacePayloa
 
 import { useScopedTeamControls } from "../hooks/useScopedTeamControls";
 import { useManagerHeaderScope } from "../hooks/useManagerHeaderScope";
-import ManagerRollupReportOverlay, {
-  type RollupReportPayload,
-} from "../../../shared/components/metrics/RollupReportOverlay";
+import type { RollupReportPayload } from "@/shared/components/metrics/RollupReportOverlay";
+import { ManagerRollupReportModal } from "./ManagerRollupReportModal";
 
 type Props = {
   payload: MetricsSurfacePayload;
@@ -58,9 +57,9 @@ function formatPercent(value: number | null | undefined) {
 function hasActiveExecutiveSlice(controls: MetricsControlsValue): boolean {
   return Boolean(
     controls.office_label ||
-      controls.affiliation_type ||
-      controls.contractor_name ||
-      controls.reports_to_person_id
+    controls.affiliation_type ||
+    controls.contractor_name ||
+    controls.reports_to_person_id
   );
 }
 
@@ -509,7 +508,7 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
         />
       ) : null}
 
-      <ManagerRollupReportOverlay
+      <ManagerRollupReportModal
         open={reportOpen}
         loading={reportLoading}
         payload={reportPayload}
