@@ -12,6 +12,7 @@ type RollupKpi = {
   value: number | null;
   value_display: string;
   band_key: string | null;
+  weighted_points?: number | null;
 };
 
 type SupervisorRollupRow = {
@@ -21,7 +22,7 @@ type SupervisorRollupRow = {
   rollup_hc: number;
   jobs: number;
   composite_score: number | null;
-  rank: number;
+  rank: number | null;
   kpis: RollupKpi[];
 };
 
@@ -47,8 +48,8 @@ type Props = {
   onClose: () => void;
 };
 
-function formatScore(value: number | null) {
-  if (typeof value !== "number") return "—";
+function formatComposite(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return value.toFixed(2);
 }
 
@@ -57,29 +58,81 @@ function shortKpiLabel(kpi: RollupKpi) {
     tnps_score: "tNPS",
     ftr_rate: "FTR",
     tool_usage_rate: "Tool",
+    contact_48hr_rate: "48hr Contact",
+    pure_pass_rate: "Pure Pass",
+    soi_rate: "SOI",
+    repeat_rate: "Repeat",
+    rework_rate: "Rework",
+    met_rate: "MET",
   };
 
   return map[kpi.kpi_key] ?? kpi.label;
 }
 
-function bandTone(band: string | null) {
-  if (band === "EXCEEDS") {
-    return "border-emerald-300 bg-emerald-50 text-emerald-800";
+function metricTone(renderBandKey?: string | null) {
+  switch (renderBandKey) {
+    case "EXCEEDS":
+      return "border-[color-mix(in_oklab,var(--to-success)_35%,white)]";
+    case "MEETS":
+      return "border-[color-mix(in_oklab,var(--to-warning)_35%,white)]";
+    case "NEEDS_IMPROVEMENT":
+      return "border-[color-mix(in_oklab,var(--to-warning)_55%,white)]";
+    case "MISSES":
+      return "border-[color-mix(in_oklab,var(--to-danger)_45%,white)]";
+    default:
+      return "border-[var(--to-border)]";
   }
+}
 
-  if (band === "MEETS") {
-    return "border-sky-300 bg-sky-50 text-sky-800";
+function metricAccent(renderBandKey?: string | null) {
+  switch (renderBandKey) {
+    case "EXCEEDS":
+      return "bg-[var(--to-success)]";
+    case "MEETS":
+      return "bg-[color-mix(in_oklab,var(--to-success)_65%,var(--to-warning))]";
+    case "NEEDS_IMPROVEMENT":
+      return "bg-[var(--to-warning)]";
+    case "MISSES":
+      return "bg-[var(--to-danger)]";
+    default:
+      return "bg-[var(--to-border)]";
   }
+}
 
-  if (band === "NEEDS_IMPROVEMENT") {
-    return "border-amber-300 bg-amber-50 text-amber-800";
-  }
+function CompositeCell({ row }: { row: SupervisorRollupRow }) {
+  return (
+    <div className="text-center">
+      <div className="text-[18px] font-semibold leading-none text-[var(--to-ink)]">
+        {formatComposite(row.composite_score)}
+      </div>
+    </div>
+  );
+}
 
-  if (band === "MISSES") {
-    return "border-rose-300 bg-rose-50 text-rose-800";
-  }
-
-  return "border-slate-200 bg-slate-50 text-slate-500";
+function MetricPill({ kpi }: { kpi: RollupKpi }) {
+  return (
+    <div
+      className={[
+        "relative inline-flex min-w-[72px] flex-col overflow-hidden rounded-xl border bg-white px-2 py-1.5 text-center shadow-[var(--to-shadow-xs)]",
+        metricTone(kpi.band_key),
+      ].join(" ")}
+    >
+      <div
+        className={[
+          "absolute left-0 top-0 h-[3px] w-full rounded-t-xl",
+          metricAccent(kpi.band_key),
+        ].join(" ")}
+      />
+      <div className="pt-0.5 text-[13px] font-medium leading-none text-[var(--to-ink)]">
+        {kpi.value_display ?? "—"}
+      </div>
+      <div className="mt-0.5 text-[9px] leading-none text-[var(--to-ink-muted)]">
+        {kpi.weighted_points != null
+          ? `+${formatComposite(kpi.weighted_points)}`
+          : "—"}
+      </div>
+    </div>
+  );
 }
 
 function RollupTable({
@@ -98,22 +151,30 @@ function RollupTable({
     <section className="rounded-2xl border bg-background p-4">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
+      <div className="overflow-x-auto rounded-2xl border">
+        <table className="min-w-full border-collapse">
           <thead>
-            <tr className="border-b text-xs text-muted-foreground">
-              <th className="px-2 py-2 text-left font-medium">Rank</th>
-              <th className="px-2 py-2 text-left font-medium">
+            <tr className="border-b text-[10px]">
+              <th className="w-[70px] px-3 py-2.5 text-left font-medium text-muted-foreground">
+                Rank
+              </th>
+              <th className="w-[190px] px-3 py-2.5 text-left font-medium text-muted-foreground">
                 {nameColumnLabel}
               </th>
-              <th className="px-2 py-2 text-right font-medium">HC</th>
-              <th className="px-2 py-2 text-right font-medium">Jobs</th>
-              <th className="px-2 py-2 text-right font-medium">Comp</th>
+              <th className="w-[70px] px-3 py-2.5 text-center font-medium text-muted-foreground">
+                HC
+              </th>
+              <th className="w-[80px] px-3 py-2.5 text-center font-medium text-muted-foreground">
+                Jobs
+              </th>
+              <th className="w-[92px] px-3 py-2.5 text-center font-medium text-muted-foreground">
+                Composite
+              </th>
 
               {sampleKpis.map((kpi) => (
                 <th
                   key={kpi.kpi_key}
-                  className="px-2 py-2 text-right font-medium"
+                  className="px-2.5 py-2.5 text-center font-medium text-muted-foreground whitespace-nowrap"
                 >
                   {shortKpiLabel(kpi)}
                 </th>
@@ -124,24 +185,31 @@ function RollupTable({
           <tbody>
             {safeRows.length ? (
               safeRows.map((row) => (
-                <tr key={row.supervisor_person_id} className="border-b">
-                  <td className="px-2 py-2 text-left">#{row.rank}</td>
-                  <td className="px-2 py-2 text-left">{row.supervisor_name}</td>
-                  <td className="px-2 py-2 text-right">{row.rollup_hc}</td>
-                  <td className="px-2 py-2 text-right">{row.jobs}</td>
-                  <td className="px-2 py-2 text-right">
-                    {formatScore(row.composite_score)}
+                <tr
+                  key={row.supervisor_person_id}
+                  className="border-b last:border-b-0"
+                >
+                  <td className="px-3 py-3 text-left text-[var(--to-ink)]">
+                    {row.rank != null ? `#${row.rank}` : "—"}
+                  </td>
+                  <td className="px-3 py-3 text-left">
+                    <div className="font-medium leading-tight text-[var(--to-ink)]">
+                      {row.supervisor_name}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-center text-[var(--to-ink)]">
+                    {row.rollup_hc}
+                  </td>
+                  <td className="px-3 py-3 text-center text-[var(--to-ink)]">
+                    {row.jobs}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <CompositeCell row={row} />
                   </td>
 
                   {row.kpis.map((kpi) => (
-                    <td key={kpi.kpi_key} className="px-2 py-2 text-right">
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-1 text-xs ${bandTone(
-                          kpi.band_key
-                        )}`}
-                      >
-                        {kpi.value_display}
-                      </span>
+                    <td key={kpi.kpi_key} className="px-2 py-2.5 text-center">
+                      <MetricPill kpi={kpi} />
                     </td>
                   ))}
                 </tr>
@@ -149,7 +217,7 @@ function RollupTable({
             ) : (
               <tr>
                 <td
-                  className="px-2 py-4 text-sm text-muted-foreground"
+                  className="px-3 py-4 text-sm text-muted-foreground"
                   colSpan={5 + sampleKpis.length}
                 >
                   No rows available.

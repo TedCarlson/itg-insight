@@ -7,6 +7,7 @@ import {
   getUniqueSupervisors,
   getChainRowsForSupervisor,
   getDirectRowsForSupervisor,
+  getSupervisorChainIds,
 } from "./rollupReport.groups.server";
 
 import {
@@ -107,6 +108,39 @@ export function buildRollupReportPayload(args: {
     )
     .filter(Boolean);
 
+  const itgSupervisorIds = new Set(
+    directRows
+      .filter((row) => row.team_class === "ITG")
+      .map((row) => row.supervisor_person_id)
+  );
+
+  function getNearestItgSupervisorId(row: TeamRowClient): string | null {
+    const chain = getSupervisorChainIds(row);
+
+    for (const supervisorId of chain) {
+      if (itgSupervisorIds.has(supervisorId)) {
+        return supervisorId;
+      }
+    }
+
+    return null;
+  }
+
+  const itgSupervisorRows = supervisors
+    .filter((supervisor) => itgSupervisorIds.has(supervisor.supervisor_person_id))
+    .map((supervisor) =>
+      buildSupervisorRow({
+        payload,
+        supervisor,
+        rows: allRows.filter(
+          (row) =>
+            getNearestItgSupervisorId(row) === supervisor.supervisor_person_id
+        ),
+        visibleKpiKeys,
+      })
+    )
+    .filter(Boolean);
+
   return {
     header: {
       generated_at: new Date().toISOString(),
@@ -115,15 +149,7 @@ export function buildRollupReportPayload(args: {
       org_display: payload.header.org_display,
     },
     segments: {
-      itg_supervisors: rankRows(
-        chainRows.filter((row) =>
-          directRows.some(
-            (direct) =>
-              direct.supervisor_person_id === row.supervisor_person_id &&
-              direct.team_class === "ITG"
-          )
-        )
-      ),
+      itg_supervisors: rankRows(itgSupervisorRows as any[]),
       bp_companies: rankRows(bpCompanyRows as any[]),
       all_supervisors: rankRows(directRows),
     },

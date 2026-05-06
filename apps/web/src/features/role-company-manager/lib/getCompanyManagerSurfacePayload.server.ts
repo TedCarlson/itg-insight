@@ -177,12 +177,17 @@ export async function getCompanyManagerSurfacePayload(args?: {
 
   const resolvedScope = await resolveCompanyManagerScope();
 
+  const workforceRowsForScope = await loadWorkforceSourceRows({
+    pc_org_id: scope.selected_pc_org_id,
+    as_of_date: new Date().toISOString().slice(0, 10),
+  });
+
   const scopedTechIds = Array.from(
     new Set(
-      resolvedScope.scoped_assignments
-        .map((row: CompanyManagerScopeAssignmentRow) =>
-          String(row.tech_id ?? "").trim()
-        )
+      workforceRowsForScope
+        .filter((row) => row.is_active)
+        .filter((row) => row.is_field)
+        .map((row) => String(row.tech_id ?? "").trim())
         .filter(Boolean)
     )
   );
@@ -203,11 +208,7 @@ export async function getCompanyManagerSurfacePayload(args?: {
     },
   });
 
-  const workforceRows = await loadWorkforceSourceRows({
-    pc_org_id: scope.selected_pc_org_id,
-    as_of_date: basePayload.header.as_of_date ?? new Date().toISOString().slice(0, 10),
-  });
-
+  const workforceRows = workforceRowsForScope;
 
   const workforceByTechId = new Map(
     workforceRows
@@ -337,44 +338,6 @@ export async function getCompanyManagerSurfacePayload(args?: {
       };
     });
 
-  console.log(
-    "[manager enriched regiistek check]",
-    enrichedRows
-      .filter((row: any) =>
-        ["I810", "4798", "IK63"].includes(String(row.tech_id ?? "").trim())
-      )
-      .map((row: any) => ({
-        full_name: row.full_name,
-        tech_id: row.tech_id,
-        person_id: row.person_id,
-        contractor_name: row.contractor_name,
-        affiliation_type: row.affiliation_type,
-        team_class: row.team_class,
-        reports_to_label: row.reports_to_label,
-        jobs: row.metrics?.find((m: any) => m.metric_key === "ftr_rate")
-          ?.denominator,
-      }))
-  );
-  console.log(
-    "[manager scope regiistek check]",
-    resolvedScope.scoped_assignments
-      .filter((row: any) =>
-        ["I810", "4798", "IK63"].includes(String(row.tech_id ?? "").trim()) ||
-        [
-          "0214fe5c-f515-4846-a763-2eb50d00deab",
-          "be04a37f-05b4-4ff0-8ed8-85851042a0a8",
-          "25605dce-6f15-470d-b51e-47993b535109",
-        ].includes(String(row.person_id ?? "").trim())
-      )
-      .map((row: any) => ({
-        tech_id: row.tech_id,
-        person_id: row.person_id,
-        team_class: row.team_class,
-        contractor_name: row.contractor_name,
-        leader_name: row.leader_name,
-      }))
-  );
-
   return {
     ...basePayload,
     executive_strip: basePayload.executive_strip ?? {
@@ -384,7 +347,7 @@ export async function getCompanyManagerSurfacePayload(args?: {
     },
     header: {
       ...basePayload.header,
-      total_headcount: scopedTechIds.length,
+      total_headcount: enrichedRows.length,
       scope_headcount: enrichedRows.length,
     },
     team_table: {

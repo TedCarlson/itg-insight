@@ -2,11 +2,13 @@
 
 import type { TeamRowClient } from "@/shared/lib/metrics/buildScopedRows";
 import type { MetricsSurfacePayload } from "@/shared/types/metrics/surfacePayload";
+
 import {
   buildKpis,
   computeComposite,
   readNumeric,
 } from "./rollupReport.kpis.server";
+
 import { getRowTeamClass } from "./rollupReport.groups.server";
 
 export type SupervisorRollupRow = {
@@ -16,20 +18,25 @@ export type SupervisorRollupRow = {
   rollup_hc: number;
   jobs: number;
   composite_score: number | null;
-  rank: number;
+  rank: number | null;
   kpis: any[];
 };
 
 function cleanTechId(value: unknown): string | null {
   const text = String(value ?? "").trim();
-  if (!text || text === "—" || text.startsWith("UNASSIGNED-")) return null;
+
+  if (!text || text === "—" || text.startsWith("UNASSIGNED-")) {
+    return null;
+  }
+
   return text;
 }
 
 function getMetric(row: TeamRowClient, metricKey: string): any | null {
   return (
-    (row.metrics ?? []).find((metric: any) => metric.metric_key === metricKey) ??
-    null
+    (row.metrics ?? []).find(
+      (metric: any) => metric.metric_key === metricKey
+    ) ?? null
   );
 }
 
@@ -40,6 +47,7 @@ function getRowJobCount(row: TeamRowClient): number {
 
 function isEligibleRollupRow(row: TeamRowClient): boolean {
   const techId = cleanTechId(row.tech_id);
+
   if (!techId) return false;
 
   return getRowJobCount(row) > 0;
@@ -52,7 +60,10 @@ function getRollupHeadcount(rows: TeamRowClient[]): number {
     if (!isEligibleRollupRow(row)) continue;
 
     const techId = cleanTechId(row.tech_id);
-    if (techId) techIds.add(techId);
+
+    if (techId) {
+      techIds.add(techId);
+    }
   }
 
   return techIds.size;
@@ -61,6 +72,7 @@ function getRollupHeadcount(rows: TeamRowClient[]): number {
 function getRollupJobs(rows: TeamRowClient[]): number {
   return rows.reduce((total, row) => {
     if (!isEligibleRollupRow(row)) return total;
+
     return total + getRowJobCount(row);
   }, 0);
 }
@@ -73,7 +85,17 @@ export function buildSupervisorRow(args: {
 }): SupervisorRollupRow | null {
   const eligibleRows = args.rows.filter(isEligibleRollupRow);
 
-  if (!eligibleRows.length) return null;
+  if (!eligibleRows.length) {
+    return null;
+  }
+
+  const kpis = buildKpis({
+    payload: args.payload,
+    rows: eligibleRows,
+    visibleKpiKeys: args.visibleKpiKeys,
+  });
+
+const compositeScore = computeComposite(kpis);
 
   return {
     supervisor_person_id: args.supervisor.supervisor_person_id,
@@ -81,18 +103,47 @@ export function buildSupervisorRow(args: {
     team_class: getRowTeamClass(eligibleRows[0]) ?? "BP",
     rollup_hc: getRollupHeadcount(eligibleRows),
     jobs: getRollupJobs(eligibleRows),
-    composite_score: computeComposite(),
-    rank: 0,
-    kpis: buildKpis({
-      payload: args.payload,
-      rows: eligibleRows,
-      visibleKpiKeys: args.visibleKpiKeys,
-    }),
+    composite_score: compositeScore,
+    rank: null,
+    kpis,
   };
 }
 
 export function rankRows(rows: SupervisorRollupRow[]) {
-  return [...rows]
-    .sort((a, b) => (b.composite_score ?? -1) - (a.composite_score ?? -1))
-    .map((row, i) => ({ ...row, rank: i + 1 }));
+  const rankedRows = [...rows].sort((a, b) => {
+    const aHasComposite = typeof a.composite_score === "number";
+    const bHasComposite = typeof b.composite_score === "number";
+
+    if (aHasComposite && bHasComposite) {
+      const aScore = a.composite_score as number;
+      const bScore = b.composite_score as number;
+
+      if (bScore !== aScore) {
+        return bScore - aScore;
+      }
+
+      return a.supervisor_name.localeCompare(b.supervisor_name);
+    }
+
+    if (aHasComposite) return -1;
+    if (bHasComposite) return 1;
+
+    return a.supervisor_name.localeCompare(b.supervisor_name);
+  });
+
+  let nextRank = 1;
+
+  return rankedRows.map((row) => {
+    if (typeof row.composite_score !== "number") {
+      return {
+        ...row,
+        rank: null,
+      };
+    }
+
+    return {
+      ...row,
+      rank: nextRank++,
+    };
+  });
 }

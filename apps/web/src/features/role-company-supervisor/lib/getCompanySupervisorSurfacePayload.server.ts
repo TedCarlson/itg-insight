@@ -2,6 +2,7 @@
 
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { buildMetricsSurfacePayload } from "@/shared/server/metrics/buildMetricsSurfacePayload.server";
+import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforceSourceRows.server";
 import type {
   MetricsRangeKey,
   MetricsSurfacePayload,
@@ -59,10 +60,7 @@ function normalizeRangeKey(value: string | null | undefined): MetricsRangeKey {
 
 function normalizeChain(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => String(item ?? "").trim())
-    .filter(Boolean);
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
 function joinLeaderLabel(args: {
@@ -134,6 +132,37 @@ function buildEmptyPayload(range: MetricsRangeKey): MetricsSurfacePayload {
   };
 }
 
+function toScopeMeta(
+  row: CompanySupervisorScopeAssignmentRow
+): SupervisorScopeMeta {
+  const reportsToLabel = joinLeaderLabel({
+    leader_name: row.leader_name ?? null,
+    leader_title: row.leader_title ?? null,
+  });
+
+  return {
+    person_id: row.person_id ?? null,
+    office_label: row.office_name ?? null,
+    reports_to_person_id: row.leader_person_id ?? null,
+    reports_to_label: reportsToLabel,
+    leader_name: row.leader_name ?? null,
+    leader_title: row.leader_title ?? null,
+    team_class: row.team_class ?? null,
+    contractor_name: row.contractor_name ?? null,
+    office_id: row.office_id ?? null,
+    affiliation_type:
+      row.team_class === "ITG"
+        ? "COMPANY"
+        : row.team_class === "BP"
+          ? "CONTRACTOR"
+          : null,
+    co_code: row.contractor_name ?? null,
+    supervisor_chain_person_ids: normalizeChain(
+      row.supervisor_chain_person_ids
+    ),
+  };
+}
+
 export async function getCompanySupervisorSurfacePayload(args?: {
   profile_key?: string | null;
   range?: string | null;
@@ -147,13 +176,67 @@ export async function getCompanySupervisorSurfacePayload(args?: {
   }
 
   const resolvedScope = await resolveCompanySupervisorScope();
+  const asOfDate = new Date().toISOString().slice(0, 10);
+
+  const workforceRows = await loadWorkforceSourceRows({
+    pc_org_id: scope.selected_pc_org_id,
+    as_of_date: asOfDate,
+  });
+
+  const workforceByTechId = new Map(
+    workforceRows
+      .filter((row) => row.tech_id)
+      .map((row) => [String(row.tech_id).trim(), row])
+  );
+
+  const workforceByAssignmentId = new Map(
+    workforceRows
+      .filter((row) => row.assignment_id)
+      .map((row) => [String(row.assignment_id).trim(), row])
+  );
+
+  function buildWorkforceSupervisorChain(row: any): string[] {
+    const chain: string[] = [];
+    const seen = new Set<string>();
+
+    let parentAssignmentId = String(row?.reports_to_assignment_id ?? "").trim();
+
+    while (parentAssignmentId && !seen.has(parentAssignmentId)) {
+      seen.add(parentAssignmentId);
+
+      const parent = workforceByAssignmentId.get(parentAssignmentId);
+      if (!parent) break;
+
+      const parentPersonId = String(parent.person_id ?? "").trim();
+      if (parentPersonId) chain.push(parentPersonId);
+
+      parentAssignmentId = String(parent.reports_to_assignment_id ?? "").trim();
+    }
+
+    return chain;
+  }
+
+  const supervisorPersonIds = Array.from(
+    new Set(
+      resolvedScope.scoped_assignments
+        .map((row) => String(row.leader_person_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
 
   const scopedTechIds = Array.from(
     new Set(
-      resolvedScope.scoped_assignments
-        .map((row: CompanySupervisorScopeAssignmentRow) =>
-          String(row.tech_id ?? "").trim()
-        )
+      workforceRows
+        .filter((row) => row.is_active)
+        .filter((row) => row.is_field)
+        .filter((row) => {
+          const techId = String(row.tech_id ?? "").trim();
+          if (!techId || techId.startsWith("UNASSIGNED-")) return false;
+
+          const chain = buildWorkforceSupervisorChain(row);
+          return supervisorPersonIds.some((id) => chain.includes(id));
+        })
+        .map((row) => String(row.tech_id ?? "").trim())
         .filter(Boolean)
     )
   );
@@ -177,37 +260,7 @@ export async function getCompanySupervisorSurfacePayload(args?: {
   const scopeByTechId = new Map<string, SupervisorScopeMeta>(
     resolvedScope.scoped_assignments
       .filter((row) => Boolean(String(row.tech_id ?? "").trim()))
-      .map((row) => {
-        const reportsToLabel = joinLeaderLabel({
-          leader_name: row.leader_name ?? null,
-          leader_title: row.leader_title ?? null,
-        });
-
-        return [
-          String(row.tech_id ?? "").trim(),
-          {
-            person_id: row.person_id ?? null,
-            office_label: row.office_name ?? null,
-            reports_to_person_id: row.leader_person_id ?? null,
-            reports_to_label: reportsToLabel,
-            leader_name: row.leader_name ?? null,
-            leader_title: row.leader_title ?? null,
-            team_class: row.team_class ?? null,
-            contractor_name: row.contractor_name ?? null,
-            office_id: row.office_id ?? null,
-            affiliation_type:
-              row.team_class === "ITG"
-                ? "COMPANY"
-                : row.team_class === "BP"
-                  ? "CONTRACTOR"
-                  : null,
-            co_code: row.contractor_name ?? null,
-            supervisor_chain_person_ids: normalizeChain(
-              row.supervisor_chain_person_ids
-            ),
-          },
-        ];
-      })
+      .map((row) => [String(row.tech_id ?? "").trim(), toScopeMeta(row)])
   );
 
   const enrichedRows: EnrichedMetricsSurfaceTeamRow[] =
@@ -224,17 +277,45 @@ export async function getCompanySupervisorSurfacePayload(args?: {
       };
 
       const techId = String(row.tech_id ?? "").trim();
+      const wf = workforceByTechId.get(techId);
       const scopeMeta = techId ? scopeByTechId.get(techId) : undefined;
 
-      const unsafeChain = normalizeChain(unsafeRow.supervisor_chain_person_ids);
+      const wfAffiliationCode = String(
+        (wf as any)?.affiliation_code ?? ""
+      ).trim().toUpperCase();
+      const wfAffiliationName = String(wf?.affiliation ?? "").trim();
+
+      const wfTeamClass =
+        wfAffiliationCode === "ITG" ||
+        wfAffiliationName === "Integrated Tech Group"
+          ? "ITG"
+          : wfAffiliationName
+            ? "BP"
+            : null;
+
+      const resolvedAffiliationType =
+        wfTeamClass === "ITG"
+          ? "COMPANY"
+          : wfTeamClass === "BP"
+            ? "CONTRACTOR"
+            : row.affiliation_type ?? scopeMeta?.affiliation_type ?? null;
+
+      const resolvedTeamClass =
+        wfTeamClass ??
+        unsafeRow.team_class ??
+        scopeMeta?.team_class ??
+        (resolvedAffiliationType === "COMPANY"
+          ? "ITG"
+          : resolvedAffiliationType === "CONTRACTOR"
+            ? "BP"
+            : null);
 
       return {
         ...row,
 
         person_id: unsafeRow.person_id ?? scopeMeta?.person_id ?? null,
         office_label: row.office_label ?? scopeMeta?.office_label ?? null,
-        affiliation_type:
-          row.affiliation_type ?? scopeMeta?.affiliation_type ?? null,
+        affiliation_type: resolvedAffiliationType,
         reports_to_person_id:
           row.reports_to_person_id ??
           scopeMeta?.reports_to_person_id ??
@@ -245,26 +326,22 @@ export async function getCompanySupervisorSurfacePayload(args?: {
         co_code: row.co_code ?? scopeMeta?.co_code ?? null,
         leader_name: unsafeRow.leader_name ?? scopeMeta?.leader_name ?? null,
         leader_title: unsafeRow.leader_title ?? scopeMeta?.leader_title ?? null,
-        team_class:
-          unsafeRow.team_class ??
-          scopeMeta?.team_class ??
-          (row.affiliation_type === "COMPANY"
-            ? "ITG"
-            : row.affiliation_type === "CONTRACTOR"
-              ? "BP"
-              : null),
+        team_class: resolvedTeamClass,
         contractor_name:
-          unsafeRow.contractor_name ??
-          scopeMeta?.contractor_name ??
-          (row.affiliation_type === "CONTRACTOR"
-            ? ((unsafeRow.affiliation ?? row.co_code ?? null) as string | null)
-            : null),
+          wfTeamClass === "BP"
+            ? wfAffiliationName ||
+              scopeMeta?.contractor_name ||
+              unsafeRow.contractor_name ||
+              null
+            : null,
         office_id: unsafeRow.office_id ?? scopeMeta?.office_id ?? null,
         affiliation: unsafeRow.affiliation ?? null,
         supervisor_chain_person_ids:
-          unsafeChain.length > 0
-            ? unsafeChain
-            : scopeMeta?.supervisor_chain_person_ids ?? [],
+          wf
+            ? buildWorkforceSupervisorChain(wf)
+            : scopeMeta?.supervisor_chain_person_ids?.length
+              ? scopeMeta.supervisor_chain_person_ids
+              : normalizeChain(unsafeRow.supervisor_chain_person_ids),
       };
     });
 
