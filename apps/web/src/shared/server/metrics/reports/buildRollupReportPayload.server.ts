@@ -67,7 +67,23 @@ export function buildRollupReportPayload(args: {
 }) {
   const { payload, class_type, range } = args;
 
-  const allRows = mapTeamRows(payload);
+  const mappedRows = mapTeamRows(payload);
+
+  const rawRowsByTechId = new Map(
+    (payload.team_table.rows ?? [])
+      .filter((row: any) => row.tech_id)
+      .map((row: any) => [String(row.tech_id).trim(), row])
+  );
+
+  const allRows = mappedRows.map((row) => {
+    const techId = String(row.tech_id ?? "").trim();
+    const rawRow = techId ? rawRowsByTechId.get(techId) : null;
+
+    return {
+      ...row,
+      ...(rawRow ?? {}),
+    };
+  });
   const supervisors = getUniqueSupervisors(allRows);
   const visibleKpiKeys = getVisibleKpiKeys({ payload, class_type });
 
@@ -101,6 +117,7 @@ export function buildRollupReportPayload(args: {
         supervisor: {
           supervisor_person_id: company.company_name,
           supervisor_name: company.company_name,
+          team_class: "BP",
         },
         rows: company.rows,
         visibleKpiKeys,
@@ -109,9 +126,9 @@ export function buildRollupReportPayload(args: {
     .filter(Boolean);
 
   const itgSupervisorIds = new Set(
-    directRows
-      .filter((row) => row.team_class === "ITG")
-      .map((row) => row.supervisor_person_id)
+    supervisors
+      .filter((supervisor) => supervisor.team_class === "ITG")
+      .map((supervisor) => supervisor.supervisor_person_id)
   );
 
   function getNearestItgSupervisorId(row: TeamRowClient): string | null {

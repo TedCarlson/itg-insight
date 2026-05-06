@@ -9,12 +9,16 @@ import {
   readNumeric,
 } from "./rollupReport.kpis.server";
 
-import { getRowTeamClass } from "./rollupReport.groups.server";
+import {
+  getRowTeamClass,
+  type RollupTeamClass,
+  type SupervisorOption,
+} from "./rollupReport.groups.server";
 
 export type SupervisorRollupRow = {
   supervisor_person_id: string;
   supervisor_name: string;
-  team_class: "ITG" | "BP";
+  team_class: RollupTeamClass;
   rollup_hc: number;
   jobs: number;
   composite_score: number | null;
@@ -77,9 +81,19 @@ function getRollupJobs(rows: TeamRowClient[]): number {
   }, 0);
 }
 
+function resolveRollupTeamClass(args: {
+  supervisor: SupervisorOption;
+  eligibleRows: TeamRowClient[];
+}): RollupTeamClass {
+  if (args.supervisor.team_class === "ITG") return "ITG";
+  if (args.supervisor.team_class === "BP") return "BP";
+
+  return getRowTeamClass(args.eligibleRows[0]) ?? "BP";
+}
+
 export function buildSupervisorRow(args: {
   payload: MetricsSurfacePayload;
-  supervisor: any;
+  supervisor: SupervisorOption;
   rows: TeamRowClient[];
   visibleKpiKeys: string[];
 }): SupervisorRollupRow | null {
@@ -95,12 +109,15 @@ export function buildSupervisorRow(args: {
     visibleKpiKeys: args.visibleKpiKeys,
   });
 
-const compositeScore = computeComposite(kpis);
+  const compositeScore = computeComposite(kpis);
 
   return {
     supervisor_person_id: args.supervisor.supervisor_person_id,
     supervisor_name: args.supervisor.supervisor_name,
-    team_class: getRowTeamClass(eligibleRows[0]) ?? "BP",
+    team_class: resolveRollupTeamClass({
+      supervisor: args.supervisor,
+      eligibleRows,
+    }),
     rollup_hc: getRollupHeadcount(eligibleRows),
     jobs: getRollupJobs(eligibleRows),
     composite_score: compositeScore,
