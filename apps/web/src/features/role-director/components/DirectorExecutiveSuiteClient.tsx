@@ -121,13 +121,14 @@ function WorkforceRowGrid({
       <div
         className={
           showOnboarding
-            ? "grid grid-cols-[1fr_72px_96px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]"
+            ? "grid grid-cols-[1fr_64px_96px_80px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]"
             : "grid grid-cols-[1fr_72px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]"
         }
       >
         <div>{showOnboarding ? "BP Name" : "Office"}</div>
         <div className="text-right">HC</div>
         {showOnboarding ? <div className="text-right">Onboarding</div> : null}
+        {showOnboarding ? <div className="text-right">Training</div> : null}
       </div>
 
       {cards.map((card) => (
@@ -135,7 +136,7 @@ function WorkforceRowGrid({
           key={card.key}
           className={
             showOnboarding
-              ? "grid grid-cols-[1fr_72px_96px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
+              ? "grid grid-cols-[1fr_64px_96px_80px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
               : "grid grid-cols-[1fr_72px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
           }
         >
@@ -146,6 +147,11 @@ function WorkforceRowGrid({
           {showOnboarding ? (
             <div className="text-right tabular-nums">
               {String(card.meta?.onboarding ?? 0)}
+            </div>
+          ) : null}
+          {showOnboarding ? (
+            <div className="text-right tabular-nums">
+              {String(card.meta?.training ?? 0)}
             </div>
           ) : null}
         </div>
@@ -178,7 +184,7 @@ function WorkforceCompositionArtifact({
 
         <section className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Section 2 · Staffing & Onboarding
+            Section 2 · Staffing Pipeline
           </div>
 
           <div className="grid gap-2 md:grid-cols-2">
@@ -190,7 +196,7 @@ function WorkforceCompositionArtifact({
                 <div className="text-[11px] uppercase tracking-wide text-[var(--to-ink-muted)]">
                   {card.label}
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                   <div>
                     <div className="text-[var(--to-ink-muted)]">HC</div>
                     <div className="text-lg font-semibold">{card.value}</div>
@@ -199,6 +205,12 @@ function WorkforceCompositionArtifact({
                     <div className="text-[var(--to-ink-muted)]">Onboarding</div>
                     <div className="text-lg font-semibold">
                       {String(card.meta?.onboarding ?? 0)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[var(--to-ink-muted)]">Training</div>
+                    <div className="text-lg font-semibold">
+                      {String(card.meta?.training ?? 0)}
                     </div>
                   </div>
                 </div>

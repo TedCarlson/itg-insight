@@ -34,7 +34,7 @@ export default async function DirectorExecutiveSuitePageShell(props: {
   return (
     <PageShell>
       <PageHeader
-        title="Director Executive Suite"
+        title="Director Suite"
         subtitle="Executive operating layer across Workforce, Metrics, and Route-Lock."
       />
 

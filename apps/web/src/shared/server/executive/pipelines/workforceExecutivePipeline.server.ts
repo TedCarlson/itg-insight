@@ -54,6 +54,10 @@ function isBpAffiliation(label: string): boolean {
   return !isW2Affiliation(value) && value !== "UNKNOWN";
 }
 
+function isTrainingSeat(row: { role_type?: string | null }): boolean {
+  return normalize(row.role_type).toUpperCase() === "TRAINING";
+}
+
 function percent(part: number, total: number): string {
   if (!total) return "0%";
   return `${Math.round((part / total) * 100)}%`;
@@ -69,6 +73,7 @@ function countCards(
     section: string;
     valueLabel?: string;
     onboardingCounts?: Map<string, number>;
+    trainingCounts?: Map<string, number>;
     limit?: number;
   }
 ): ExecutiveArtifactCard[] {
@@ -77,6 +82,7 @@ function countCards(
     .slice(0, args.limit)
     .map(([label, count]) => {
       const onboarding = args.onboardingCounts?.get(label) ?? 0;
+      const training = args.trainingCounts?.get(label) ?? 0;
 
       return {
         key: `${args.section}_${label
@@ -89,6 +95,7 @@ function countCards(
           section: args.section,
           hc: count,
           onboarding,
+          training,
         },
       };
     });
@@ -110,9 +117,14 @@ export async function buildWorkforceExecutiveDimension(args: {
   ]);
 
   const activeRows = rows.filter((row) => row.is_active);
+
   const techRows = activeRows.filter(
-    (row) => row.is_field || row.is_travel_tech
+    (row) =>
+      !isTrainingSeat(row) &&
+      (row.is_field || row.is_travel_tech)
   );
+
+  const trainingRows = activeRows.filter(isTrainingSeat);
 
   const w2Rows = techRows.filter((row) =>
     isW2Affiliation(affiliationLabel(row))
@@ -126,9 +138,11 @@ export async function buildWorkforceExecutiveDimension(args: {
 
   const bpCounts = new Map<string, number>();
   const bpOnboardingCounts = new Map<string, number>();
+  const bpTrainingCounts = new Map<string, number>();
   const officeCounts = new Map<string, number>();
 
   let w2OnboardingCount = 0;
+  let w2TrainingCount = 0;
 
   for (const row of bpRows) {
     increment(bpCounts, titleCase(affiliationLabel(row)));
@@ -141,6 +155,16 @@ export async function buildWorkforceExecutiveDimension(args: {
       w2OnboardingCount += 1;
     } else if (isBpAffiliation(label)) {
       increment(bpOnboardingCounts, label);
+    }
+  }
+
+  for (const row of trainingRows) {
+    const label = titleCase(affiliationLabel(row));
+
+    if (isW2Affiliation(label)) {
+      w2TrainingCount += 1;
+    } else if (isBpAffiliation(label)) {
+      increment(bpTrainingCounts, label);
     }
   }
 
@@ -161,7 +185,7 @@ export async function buildWorkforceExecutiveDimension(args: {
         key: "workforce_composition",
         title: "Workforce Composition",
         description:
-          "Executive staffing composition across headcount, labor mix, affiliates, onboarding, and office distribution.",
+          "Executive staffing composition across headcount, labor mix, affiliates, onboarding, training, and office distribution.",
         status: "ready",
         href: DIRECTOR_WORKFORCE_HREF,
         cards: [
@@ -206,12 +230,14 @@ export async function buildWorkforceExecutiveDimension(args: {
               section: "staffing_summary",
               hc: w2Count,
               onboarding: w2OnboardingCount,
+              training: w2TrainingCount,
             },
           },
           ...countCards(bpCounts, {
             section: "bp_breakout",
             valueLabel: "HC",
             onboardingCounts: bpOnboardingCounts,
+            trainingCounts: bpTrainingCounts,
           }),
           ...countCards(officeCounts, {
             section: "office_grid",
