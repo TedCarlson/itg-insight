@@ -1,12 +1,11 @@
 // path: apps/web/src/app/api/people/onboarding/route.ts
 
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { loadPeopleOnboardingRows } from "@/shared/server/people/loadPeopleOnboardingRows.server";
 
 export async function GET() {
   const userClient = await supabaseServer();
-  const adminClient = await supabaseAdmin();
 
   const {
     data: { user },
@@ -35,14 +34,17 @@ export async function GET() {
     );
   }
 
-  const { data, error } = await adminClient.rpc("people_onboarding_list_v2", {
-    p_pc_org_id: pcOrgId,
-    p_limit: 500,
-  });
+  try {
+    const rows = await loadPeopleOnboardingRows({
+      pc_org_id: pcOrgId,
+      limit: 500,
+    });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ rows });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to load onboarding rows";
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({ rows: data ?? [] });
 }

@@ -3,12 +3,12 @@
 import { Card } from "@/components/ui/Card";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { ExhibitLauncher } from "@/shared/surfaces/reports/ExhibitLauncher";
+import { OnboardingReportLauncher } from "@/shared/surfaces/reports/OnboardingReportLauncher";
 import { WorkforceReportLauncher } from "@/shared/surfaces/reports/WorkforceReportLauncher";
 import { WorkforceSurfaceClient } from "@/shared/surfaces/workforce/WorkforceSurfaceClient";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
 import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
 import { getCompanyManagerWorkforceSurfacePayload } from "../lib/getCompanyManagerWorkforceSurfacePayload.server";
-import { OnboardingReportLauncher } from "@/shared/surfaces/reports/OnboardingReportLauncher";
 
 type WorkforceStatus = "ACTIVE" | "INACTIVE" | "ALL";
 
@@ -65,6 +65,16 @@ function formatPercent(value: number) {
   return `${Math.round(value)}%`;
 }
 
+function uniqueScopedAffiliations(rows: WorkforceRow[]) {
+  return Array.from(
+    new Set(
+      rows
+        .map((row) => String(row.affiliation ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 async function loadRegionLabel(pcOrgId: string | null) {
   if (!pcOrgId) return "Region";
 
@@ -108,6 +118,7 @@ export default async function CompanyManagerWorkforcePageShell(props: Props) {
 
   const w2Percent = totalHeadcount ? (w2Count / totalHeadcount) * 100 : 0;
   const bpPercent = totalHeadcount ? (bpCount / totalHeadcount) * 100 : 0;
+  const scopedAffiliations = uniqueScopedAffiliations(headcountRows);
 
   return (
     <div className="space-y-4 p-4">
@@ -146,6 +157,7 @@ export default async function CompanyManagerWorkforcePageShell(props: Props) {
             <OnboardingReportLauncher
               regionLabel={regionLabel}
               reportMonthLabel={reportMonthLabel}
+              scopedAffiliations={scopedAffiliations}
             />
 
             <button
