@@ -1,14 +1,17 @@
-// path: apps/web/src/shared/types/workforce/workforce.types.ts
-
 export type WorkforceSeatType =
   | "FIELD"
   | "LEADERSHIP"
   | "SUPPORT"
   | "TRAVEL"
   | "DROP_BURY"
+  | "TRAINING"
   | "FMLA";
 
-export type WorkforceTabKey = WorkforceSeatType | "ALL" | "INCOMPLETE" | "PROCESSING";
+export type WorkforceTabKey =
+  | WorkforceSeatType
+  | "ALL"
+  | "INCOMPLETE"
+  | "PROCESSING";
 
 export type WorkforceScheduleDay = {
   day: "U" | "M" | "T" | "W" | "H" | "F" | "S";

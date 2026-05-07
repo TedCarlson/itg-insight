@@ -1,5 +1,3 @@
-// path: apps/web/src/app/api/workforce/assignment/update/route.ts
-
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
@@ -10,6 +8,7 @@ type SeatType =
   | "SUPPORT"
   | "TRAVEL"
   | "DROP_BURY"
+  | "TRAINING"
   | "FMLA";
 
 type RequestBody = {
@@ -35,6 +34,7 @@ function isSeatType(value: unknown): value is SeatType {
     value === "SUPPORT" ||
     value === "TRAVEL" ||
     value === "DROP_BURY" ||
+    value === "TRAINING" ||
     value === "FMLA"
   );
 }
@@ -42,15 +42,6 @@ function isSeatType(value: unknown): value is SeatType {
 function clean(value: string | null | undefined) {
   const next = String(value ?? "").trim();
   return next || null;
-}
-
-function requiresTechIdForNewAssignment(seatType: SeatType | undefined) {
-  return (
-    seatType === undefined ||
-    seatType === "FIELD" ||
-    seatType === "TRAVEL" ||
-    seatType === "DROP_BURY"
-  );
 }
 
 export async function POST(req: Request) {
@@ -86,22 +77,15 @@ export async function POST(req: Request) {
     );
   }
 
-  if ("seat_type" in changes && !isSeatType(changes.seat_type)) {
-    return NextResponse.json({ error: "Invalid seat_type" }, { status: 400 });
-  }
-
-  if (
-    isNew &&
-    requiresTechIdForNewAssignment(changes.seat_type) &&
-    !clean(changes.tech_id)
-  ) {
+  if (isNew && !changes.pc_org_id) {
     return NextResponse.json(
-      {
-        error:
-          "Missing tech_id for field workforce assignment. Leadership/support assignments may be created without Tech ID.",
-      },
+      { error: "Missing pc_org_id for new workforce assignment" },
       { status: 400 }
     );
+  }
+
+  if ("seat_type" in changes && !isSeatType(changes.seat_type)) {
+    return NextResponse.json({ error: "Invalid seat_type" }, { status: 400 });
   }
 
   if (

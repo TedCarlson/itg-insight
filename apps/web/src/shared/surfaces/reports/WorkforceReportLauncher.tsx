@@ -31,6 +31,7 @@ export function WorkforceReportLauncher({
 
       <WorkforceReportModal
         open={open}
+        rows={rows}
         onClose={() => setOpen(false)}
         regionLabel={regionLabel}
         reportMonthLabel={reportMonthLabel}

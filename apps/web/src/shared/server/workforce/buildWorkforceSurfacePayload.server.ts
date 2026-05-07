@@ -98,6 +98,7 @@ function classifySeatType(row: WorkforceSourceRow): WorkforceSeatType {
   if (roleType === "LEADERSHIP") return "LEADERSHIP";
   if (roleType === "SUPPORT") return "SUPPORT";
   if (roleType === "DROP_BURY") return "DROP_BURY";
+  if (roleType === "TRAINING") return "TRAINING";
   if (roleType === "FMLA") return "FMLA";
 
   const title = clean(row.position_title)?.toLowerCase() ?? "";
@@ -122,6 +123,13 @@ function classifySeatType(row: WorkforceSourceRow): WorkforceSeatType {
     title.includes("director")
   ) {
     return "LEADERSHIP";
+  }
+
+  if (
+    title.includes("training") ||
+    title.includes("trainee")
+  ) {
+    return "TRAINING";
   }
 
   if (title.includes("technician") || title.includes("field")) {
@@ -349,52 +357,55 @@ export async function buildWorkforceSurfacePayload(args: {
 
     .filter((row) => isActiveWorkforceRow(row, today));
 
-const field = rows.filter((row) => row.seat_type === "FIELD").length;
-const leadership = rows.filter(
-  (row) => row.seat_type === "LEADERSHIP"
-).length;
-const support = rows.filter((row) => row.seat_type === "SUPPORT").length;
-const incomplete = rows.filter((row) => row.is_incomplete).length;
-const travel = rows.filter((row) => row.seat_type === "TRAVEL").length;
-const dropBury = rows.filter((row) => row.seat_type === "DROP_BURY").length;
-const fmla = rows.filter((row) => row.seat_type === "FMLA").length;
+  const field = rows.filter((row) => row.seat_type === "FIELD").length;
+  const leadership = rows.filter(
+    (row) => row.seat_type === "LEADERSHIP"
+  ).length;
+  const support = rows.filter((row) => row.seat_type === "SUPPORT").length;
+  const incomplete = rows.filter((row) => row.is_incomplete).length;
+  const travel = rows.filter((row) => row.seat_type === "TRAVEL").length;
+  const dropBury = rows.filter((row) => row.seat_type === "DROP_BURY").length;
+  const training = rows.filter((row) => row.seat_type === "TRAINING").length;
+  const fmla = rows.filter((row) => row.seat_type === "FMLA").length;
 
-const positions = await loadPositionOptions();
-const affiliations = await loadAffiliationOptions();
+  const positions = await loadPositionOptions();
+  const affiliations = await loadAffiliationOptions();
 
-return {
-  rows,
-  tabs: [
-    { key: "ALL", label: "All", count: rows.length },
-    { key: "FIELD", label: "Field", count: field },
-    { key: "LEADERSHIP", label: "Leadership", count: leadership },
-    { key: "INCOMPLETE", label: "Incomplete", count: incomplete },
-    { key: "TRAVEL", label: "Travel Techs", count: travel },
-    { key: "DROP_BURY", label: "Drop Bury", count: dropBury },
-    { key: "FMLA", label: "FMLA", count: fmla },
-  ],
-  summary: {
-    total: rows.length,
-    field,
-    leadership,
-    support,
-    incomplete,
-    travel,
-    drop_bury: dropBury,
-    fmla,
-  },
-  slices: {
-    offices: buildSliceOptions(rows, (row) => row.office),
-    reportsTo: buildSliceOptions(rows, (row) => row.reports_to_name),
-    positions: buildSliceOptions(rows, (row) => row.position_title),
-    affiliations: buildSliceOptions(rows, (row) => row.affiliation),
-    seatTypes: buildSliceOptions(rows, (row) => row.seat_type),
-  },
-  editOptions: {
-    positions,
-    offices: buildOfficeOptions(rows),
-    reportsTo: buildReportsToOptions(rows),
-    affiliations,
-  },
-};
+  return {
+    rows,
+    tabs: [
+      { key: "ALL", label: "All", count: rows.length },
+      { key: "FIELD", label: "Field", count: field },
+      { key: "TRAINING", label: "Training", count: training },
+      { key: "LEADERSHIP", label: "Leadership", count: leadership },
+      { key: "INCOMPLETE", label: "Incomplete", count: incomplete },
+      { key: "TRAVEL", label: "Travel Techs", count: travel },
+      { key: "DROP_BURY", label: "Drop Bury", count: dropBury },
+      { key: "FMLA", label: "FMLA", count: fmla },
+    ],
+    summary: {
+      total: rows.length,
+      field,
+      training,
+      leadership,
+      support,
+      incomplete,
+      travel,
+      drop_bury: dropBury,
+      fmla,
+    },
+    slices: {
+      offices: buildSliceOptions(rows, (row) => row.office),
+      reportsTo: buildSliceOptions(rows, (row) => row.reports_to_name),
+      positions: buildSliceOptions(rows, (row) => row.position_title),
+      affiliations: buildSliceOptions(rows, (row) => row.affiliation),
+      seatTypes: buildSliceOptions(rows, (row) => row.seat_type),
+    },
+    editOptions: {
+      positions,
+      offices: buildOfficeOptions(rows),
+      reportsTo: buildReportsToOptions(rows),
+      affiliations,
+    },
+  };
 }

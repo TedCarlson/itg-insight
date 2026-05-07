@@ -57,6 +57,19 @@ function buildTabs(payload: WorkforceSurfacePayload) {
     });
   }
 
+  const hasTrainingTab = tabs.some((tab) => tab.key === "TRAINING");
+  const trainingCount = payload.rows.filter(
+    (row) => row.seat_type === "TRAINING"
+  ).length;
+
+  if (!hasTrainingTab && trainingCount > 0) {
+    tabs.push({
+      key: "TRAINING",
+      label: tabLabel("TRAINING"),
+      count: trainingCount,
+    });
+  }
+
   const hasProcessingTab = tabs.some((tab) => tab.key === "INCOMPLETE");
 
   if (!hasProcessingTab) {
@@ -121,7 +134,7 @@ function buildProcessingRow(
 
     schedule: [],
 
-    seat_type: "FIELD",
+    seat_type: "TRAINING",
 
     mobile: null,
     email: null,
@@ -663,16 +676,12 @@ export function WorkforceSurfaceClient({ payload }: Props) {
                   Seat
                   <select
                     value={draft.seat_type}
-                    onChange={(e) => {
-                      const nextPosition = e.target.value || null;
-                      const nextIsLeadership = isLeadershipTitle(nextPosition);
-
+                    onChange={(e) =>
                       setDraft({
                         ...draft,
-                        position_title: nextPosition,
-                        seat_type: nextIsLeadership ? "LEADERSHIP" : draft.seat_type,
-                      });
-                    }}
+                        seat_type: e.target.value as WorkforceSeatType,
+                      })
+                    }
                     className="h-10 rounded-xl border px-3"
                   >
                     {WORKFORCE_SEAT_OPTIONS.map((option) => {

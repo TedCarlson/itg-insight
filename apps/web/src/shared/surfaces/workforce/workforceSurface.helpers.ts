@@ -1,5 +1,3 @@
-// path: apps/web/src/shared/surfaces/workforce/workforceSurface.helpers.ts
-
 import type {
   WorkforceRow,
   WorkforceSeatType,
@@ -24,6 +22,7 @@ export const WORKFORCE_SEAT_OPTIONS: Array<{
   { value: "SUPPORT", label: "Support" },
   { value: "TRAVEL", label: "Travel Tech" },
   { value: "DROP_BURY", label: "Drop Bury" },
+  { value: "TRAINING", label: "Training" },
   { value: "FMLA", label: "FMLA" },
 ];
 
@@ -44,6 +43,10 @@ export function badgeTone(seatType: WorkforceSeatType) {
     return "border-[var(--to-info)] bg-[color-mix(in_oklab,var(--to-info)_12%,white)]";
   }
 
+  if (seatType === "TRAINING") {
+    return "border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_14%,white)]";
+  }
+
   if (seatType === "FMLA") {
     return "border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_10%,white)]";
   }
@@ -58,6 +61,7 @@ export function tabLabel(key: WorkforceTabKey) {
   if (key === "PROCESSING") return "Processing";
   if (key === "SUPPORT") return "Support";
   if (key === "DROP_BURY") return "Drop Bury";
+  if (key === "TRAINING") return "Training";
   if (key === "FMLA") return "FMLA";
   return "Travel Techs";
 }

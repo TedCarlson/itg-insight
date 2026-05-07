@@ -26,6 +26,7 @@ function buildEmptyPayload(): WorkforceSurfacePayload {
     summary: {
       total: 0,
       field: 0,
+      training: 0,
       leadership: 0,
       support: 0,
       incomplete: 0,
