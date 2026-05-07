@@ -1,5 +1,3 @@
-// path: apps/web/src/shared/types/executive/executiveSuite.ts
-
 import type { MetricsRangeKey } from "@/shared/types/metrics/surfacePayload";
 
 export type ExecutiveConsumerKey = "DIRECTOR";
@@ -12,6 +10,7 @@ export type ExecutiveArtifactCard = {
   value: string;
   helper?: string | null;
   status?: ExecutiveArtifactStatus;
+  meta?: Record<string, string | number | boolean | null>;
 };
 
 export type ExecutiveDimensionArtifact = {
