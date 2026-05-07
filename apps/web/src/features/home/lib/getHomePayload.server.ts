@@ -1,5 +1,3 @@
-// path: apps/web/src/features/home/lib/getHomePayload.server.ts
-
 import { bootstrapProfileServer } from "@/lib/auth/bootstrapProfile.server";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -39,6 +37,12 @@ type BootShape = {
   is_owner?: boolean;
   is_admin?: boolean;
   is_app_owner?: boolean;
+};
+
+const DIRECTOR_EXECUTIVE_DESTINATION: HomeDestination = {
+  label: "Director Executive Snapshot",
+  href: "/director/executive",
+  description: "Executive operating layer across Workforce, Metrics, and Route-Lock",
 };
 
 function resolveRole(
@@ -96,6 +100,7 @@ function buildPrivilegedDestinations(
       href: "/home",
       description: "Workspace landing and access-aware navigation",
     },
+    DIRECTOR_EXECUTIVE_DESTINATION,
     {
       label: "Admin",
       href: "/admin",
@@ -300,6 +305,7 @@ function buildDestinations(
   }
 
   return [
+    DIRECTOR_EXECUTIVE_DESTINATION,
     {
       label: "Workspace",
       href: "/home",
@@ -333,10 +339,7 @@ export async function getHomePayload(): Promise<HomePayload> {
 
   if (!hasLinkedPerson) {
     const role = privilegedRole ?? (hasSelectedOrg ? "UNKNOWN" : "UNSCOPED");
-
-    const orgLabel = selectedPcOrgId
-      ? await loadOrgLabel(selectedPcOrgId)
-      : null;
+    const orgLabel = selectedPcOrgId ? await loadOrgLabel(selectedPcOrgId) : null;
 
     return {
       full_name: boot.full_name ?? null,
@@ -351,10 +354,7 @@ export async function getHomePayload(): Promise<HomePayload> {
 
   if (!boot.person_id) {
     const role = privilegedRole ?? (hasSelectedOrg ? "UNKNOWN" : "UNSCOPED");
-
-    const orgLabel = selectedPcOrgId
-      ? await loadOrgLabel(selectedPcOrgId)
-      : null;
+    const orgLabel = selectedPcOrgId ? await loadOrgLabel(selectedPcOrgId) : null;
 
     return {
       full_name: boot.full_name ?? null,
