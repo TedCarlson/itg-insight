@@ -1,3 +1,7 @@
+// path: apps/web/src/features/home/pages/HomePageShell.tsx
+
+import { redirect } from "next/navigation";
+
 import { getHomePayload } from "../lib/getHomePayload.server";
 import { getWidgetPayload } from "../lib/getWidgetPayload.server";
 
@@ -9,13 +13,18 @@ import ManagerHomeWorkspace from "../components/ManagerHomeWorkspace";
 export default async function HomePageShell() {
   const payload = await getHomePayload();
 
+  if (payload.role === "DIRECTOR") {
+    redirect("/director/executive");
+  }
+
   const isItgSupervisor = payload.role === "ITG_SUPERVISOR";
   const isCompanyManager = payload.role === "COMPANY_MANAGER";
+
   const usesWorkspace = isItgSupervisor || isCompanyManager;
 
-  const widgetPayload = payload
-  ? await getWidgetPayload()
-  : null;
+  const widgetPayload = usesWorkspace
+    ? await getWidgetPayload()
+    : null;
 
   return (
     <div className="space-y-4">
@@ -32,7 +41,10 @@ export default async function HomePageShell() {
           widgetPayload={widgetPayload}
         />
       ) : isCompanyManager && widgetPayload ? (
-        <ManagerHomeWorkspace payload={payload} widgetPayload={widgetPayload} />
+        <ManagerHomeWorkspace
+          payload={payload}
+          widgetPayload={widgetPayload}
+        />
       ) : (
         <>
           <HomeHeader payload={payload} />

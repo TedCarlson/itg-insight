@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/shared/data/supabase/admin";
 export type HomeRole =
   | "APP_OWNER"
   | "ADMIN"
+  | "DIRECTOR"
   | "TECH"
   | "BP_SUPERVISOR"
   | "BP_LEAD"
@@ -57,6 +58,14 @@ function resolveRole(
   if (titles.has("BP Owner")) return "BP_OWNER";
   if (titles.has("BP Lead")) return "BP_LEAD";
   if (titles.has("BP Supervisor")) return "BP_SUPERVISOR";
+
+  if (
+    titles.has("Director") ||
+    titles.has("Regional Director") ||
+    titles.has("Senior Director")
+  ) {
+    return "DIRECTOR";
+  }
 
   if (
     titles.has("Manager") ||
@@ -377,14 +386,15 @@ export async function getHomePayload(): Promise<HomePayload> {
 
   const assignmentsPromise = selectedPcOrgId
     ? admin
-        .from("assignment_admin_v")
-        .select("position_title,active")
-        .eq("person_id", boot.person_id)
-        .eq("pc_org_id", selectedPcOrgId)
-        .eq("active", true)
+      .from("company_profile_fact")
+      .select("position_title,active_flag,effective_end_date")
+      .eq("person_id", boot.person_id)
+      .eq("pc_org_id", selectedPcOrgId)
+      .eq("active_flag", true)
+      .is("effective_end_date", null)
     : Promise.resolve({
-        data: [] as Array<{ position_title?: string | null }>,
-      });
+      data: [] as Array<{ position_title?: string | null }>,
+    });
 
   const orgLabelPromise = selectedPcOrgId
     ? loadOrgLabel(selectedPcOrgId)
