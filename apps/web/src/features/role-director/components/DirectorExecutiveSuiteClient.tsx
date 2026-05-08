@@ -4,14 +4,27 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { ExhibitLauncher } from "@/shared/surfaces/reports/ExhibitLauncher";
+import { OnboardingReportLauncher } from "@/shared/surfaces/reports/OnboardingReportLauncher";
+import { WorkforceReportLauncher } from "@/shared/surfaces/reports/WorkforceReportLauncher";
 import type {
   ExecutiveArtifactCard,
   ExecutiveArtifactStatus,
   ExecutiveDimensionArtifact,
   ExecutiveSuitePayload,
 } from "@/shared/types/executive/executiveSuite";
+import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
+import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
 
 type DirectorDimensionKey = "overview" | "workforce" | "metrics" | "route-lock";
+
+type WorkforceReportsPayload = {
+  rows: WorkforceRow[];
+  affiliations: WorkforceAffiliationOption[];
+  scopedAffiliations: string[];
+  regionLabel: string;
+  reportMonthLabel: string;
+};
 
 function statusVariant(
   status: ExecutiveArtifactStatus
@@ -19,18 +32,25 @@ function statusVariant(
   if (status === "ready") return "success";
   if (status === "degraded") return "warning";
   if (status === "empty") return "neutral";
+
   return "info";
 }
 
 function statusLabel(status: ExecutiveArtifactStatus) {
   if (status === "not_wired") return "not wired";
+
   return status;
 }
 
 function dimensionHref(dimension: string) {
   if (dimension === "workforce") return "/director/executive?dimension=workforce";
   if (dimension === "metrics") return "/director/executive?dimension=metrics";
-  if (dimension === "routeLock" || dimension === "route-lock" || dimension === "route_lock") {
+
+  if (
+    dimension === "routeLock" ||
+    dimension === "route-lock" ||
+    dimension === "route_lock"
+  ) {
     return "/director/executive?dimension=route-lock";
   }
 
@@ -41,18 +61,16 @@ function dimensionMatchesActive(dimension: string, active: DirectorDimensionKey)
   if (active === "overview") return true;
   if (active === "workforce") return dimension === "workforce";
   if (active === "metrics") return dimension === "metrics";
+
   if (active === "route-lock") {
-    return dimension === "routeLock" || dimension === "route-lock" || dimension === "route_lock";
+    return (
+      dimension === "routeLock" ||
+      dimension === "route-lock" ||
+      dimension === "route_lock"
+    );
   }
 
   return true;
-}
-
-function activeTitle(active: DirectorDimensionKey) {
-  if (active === "workforce") return "Workforce Source Surface";
-  if (active === "metrics") return "Metrics Source Surface";
-  if (active === "route-lock") return "Route-Lock Source Surface";
-  return "Executive Snapshot";
 }
 
 function sectionCards(
@@ -80,23 +98,27 @@ function ArtifactHeader({ artifact }: { artifact: ExecutiveDimensionArtifact }) 
 
 function TotalStrip({ cards }: { cards: ExecutiveArtifactCard[] }) {
   return (
-    <div className="grid gap-2 md:grid-cols-3">
-      {cards.map((card) => (
-        <div
-          key={card.key}
-          className="rounded-xl bg-[var(--to-surface-soft)] p-3"
-        >
-          <div className="text-[11px] uppercase tracking-wide text-[var(--to-ink-muted)]">
-            {card.label}
-          </div>
-          <div className="mt-1 text-xl font-semibold">{card.value}</div>
-          {card.helper ? (
-            <div className="text-[11px] text-[var(--to-ink-muted)]">
-              {card.helper}
+    <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
+      <div className="grid grid-cols-3 bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+        {cards.map((card) => (
+          <div key={card.key}>{card.label}</div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 border-t border-[var(--to-border)] px-3 py-3 text-xs">
+        {cards.map((card) => (
+          <div key={card.key}>
+            <div className="text-lg font-semibold tabular-nums">
+              {card.value}
             </div>
-          ) : null}
-        </div>
-      ))}
+            {card.helper ? (
+              <div className="mt-0.5 text-[11px] text-[var(--to-ink-muted)]">
+                {card.helper}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -177,88 +199,131 @@ function WorkforceCompositionArtifact({
       <div className="mt-4 space-y-4">
         <section className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Section 1 · Headcount Mix
+            Headcount Mix
           </div>
           <TotalStrip cards={totalCards} />
         </section>
 
         <section className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Section 2 · Staffing Pipeline
+            Staffing Pipeline
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
+            <div className="grid grid-cols-[1fr_72px_96px_80px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+              <div>Group</div>
+              <div className="text-right">HC</div>
+              <div className="text-right">Onboarding</div>
+              <div className="text-right">Training</div>
+            </div>
+
             {staffingCards.map((card) => (
               <div
                 key={card.key}
-                className="rounded-xl bg-[var(--to-surface-soft)] p-3"
+                className="grid grid-cols-[1fr_72px_96px_80px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
               >
-                <div className="text-[11px] uppercase tracking-wide text-[var(--to-ink-muted)]">
-                  {card.label}
+                <div className="font-medium">{card.label}</div>
+                <div className="text-right tabular-nums">
+                  {String(card.meta?.hc ?? card.value)}
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                  <div>
-                    <div className="text-[var(--to-ink-muted)]">HC</div>
-                    <div className="text-lg font-semibold">{card.value}</div>
-                  </div>
-                  <div>
-                    <div className="text-[var(--to-ink-muted)]">Onboarding</div>
-                    <div className="text-lg font-semibold">
-                      {String(card.meta?.onboarding ?? 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[var(--to-ink-muted)]">Training</div>
-                    <div className="text-lg font-semibold">
-                      {String(card.meta?.training ?? 0)}
-                    </div>
-                  </div>
+                <div className="text-right tabular-nums">
+                  {String(card.meta?.onboarding ?? 0)}
+                </div>
+                <div className="text-right tabular-nums">
+                  {String(card.meta?.training ?? 0)}
+                </div>
+              </div>
+            ))}
+
+            {bpCards.map((card, index) => (
+              <div
+                key={card.key}
+                className={[
+                  "grid grid-cols-[1fr_72px_96px_80px] border-t px-3 py-2 text-xs",
+                  index === 0
+                    ? "border-t-2 border-[var(--to-border)]"
+                    : "border-[var(--to-border)]",
+                ].join(" ")}
+              >
+                <div className="font-medium">{card.label}</div>
+                <div className="text-right tabular-nums">
+                  {String(card.meta?.hc ?? card.value)}
+                </div>
+                <div className="text-right tabular-nums">
+                  {String(card.meta?.onboarding ?? 0)}
+                </div>
+                <div className="text-right tabular-nums">
+                  {String(card.meta?.training ?? 0)}
                 </div>
               </div>
             ))}
           </div>
-
-          <WorkforceRowGrid cards={bpCards} showOnboarding />
         </section>
 
         <section className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Section 3 · Office Mix
+            Office Mix
           </div>
           <WorkforceRowGrid cards={officeCards} />
         </section>
       </div>
-
-      <Link
-        href="/director/executive?dimension=workforce"
-        className="mt-3 inline-flex text-xs font-medium text-[var(--to-accent)]"
-      >
-        Open source surface →
-      </Link>
     </div>
   );
 }
 
 function WorkforceReportsArtifact({
   artifact,
+  workforceReports,
 }: {
   artifact: ExecutiveDimensionArtifact;
+  workforceReports?: WorkforceReportsPayload;
 }) {
   return (
     <div className="rounded-2xl border border-[var(--to-border)] p-3">
       <ArtifactHeader artifact={artifact} />
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {artifact.cards.map((card) => (
-          <Link
-            key={card.key}
-            href="/director/executive?dimension=workforce"
-            className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-sm font-semibold hover:bg-muted/20"
+      {workforceReports ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <ExhibitLauncher
+            rows={workforceReports.rows}
+            affiliations={workforceReports.affiliations}
+            regionLabel={workforceReports.regionLabel}
+            reportMonthLabel={workforceReports.reportMonthLabel}
+          />
+
+          <WorkforceReportLauncher
+            rows={workforceReports.rows}
+            regionLabel={workforceReports.regionLabel}
+            reportMonthLabel={workforceReports.reportMonthLabel}
+          />
+
+          <OnboardingReportLauncher
+            regionLabel={workforceReports.regionLabel}
+            reportMonthLabel={workforceReports.reportMonthLabel}
+            scopedAffiliations={workforceReports.scopedAffiliations}
+          />
+
+          <button
+            type="button"
+            disabled
+            className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-left text-sm font-semibold opacity-80"
           >
-            {card.value}
-          </Link>
-        ))}
-      </div>
+            Org Chart
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {artifact.cards.map((card) => (
+            <Link
+              key={card.key}
+              href="/director/executive?dimension=workforce"
+              className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-sm font-semibold hover:bg-muted/20"
+            >
+              {card.value}
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -307,13 +372,6 @@ function RouteLockSevenDayArtifact(props: {
           No cards returned yet.
         </div>
       )}
-
-      <Link
-        href="/director/executive?dimension=route-lock"
-        className="mt-3 inline-flex text-xs font-medium text-[var(--to-accent)]"
-      >
-        Open source surface →
-      </Link>
     </div>
   );
 }
@@ -352,13 +410,6 @@ function StandardArtifact(props: {
           No cards returned yet.
         </div>
       )}
-
-      <Link
-        href={dimensionHref(dimension)}
-        className="mt-3 inline-flex text-xs font-medium text-[var(--to-accent)]"
-      >
-        Open source surface →
-      </Link>
     </div>
   );
 }
@@ -366,16 +417,23 @@ function StandardArtifact(props: {
 function ExecutiveArtifactRenderer({
   artifact,
   dimension,
+  workforceReports,
 }: {
   artifact: ExecutiveDimensionArtifact;
   dimension: string;
+  workforceReports?: WorkforceReportsPayload;
 }) {
   if (artifact.key === "workforce_composition") {
     return <WorkforceCompositionArtifact artifact={artifact} />;
   }
 
   if (artifact.key === "workforce_reports") {
-    return <WorkforceReportsArtifact artifact={artifact} />;
+    return (
+      <WorkforceReportsArtifact
+        artifact={artifact}
+        workforceReports={workforceReports}
+      />
+    );
   }
 
   if (artifact.key === "route_lock_7_day") {
@@ -388,9 +446,11 @@ function ExecutiveArtifactRenderer({
 export default function DirectorExecutiveSuiteClient({
   payload,
   activeDimension,
+  workforceReports,
 }: {
   payload: ExecutiveSuitePayload;
   activeDimension: DirectorDimensionKey;
+  workforceReports?: WorkforceReportsPayload;
 }) {
   const visibleDimensions = payload.dimensions.filter((dimension) =>
     dimensionMatchesActive(dimension.dimension, activeDimension)
@@ -398,43 +458,6 @@ export default function DirectorExecutiveSuiteClient({
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">{activeTitle(activeDimension)}</h2>
-            <p className="text-xs text-[var(--to-ink-muted)]">
-              Director-owned landing surface. Source links stay inside the Executive Suite.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/director/executive"
-              className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-muted/20"
-            >
-              Overview
-            </Link>
-            <Link
-              href="/director/executive?dimension=workforce"
-              className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-muted/20"
-            >
-              Workforce
-            </Link>
-            <Link
-              href="/director/executive?dimension=metrics"
-              className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-muted/20"
-            >
-              Metrics
-            </Link>
-            <Link
-              href="/director/executive?dimension=route-lock"
-              className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-muted/20"
-            >
-              Route-Lock
-            </Link>
-          </div>
-        </div>
-      </Card>
 
       <div className="grid gap-3 md:grid-cols-3">
         {visibleDimensions.map((dimension) => (
@@ -458,6 +481,7 @@ export default function DirectorExecutiveSuiteClient({
                   key={artifact.key}
                   artifact={artifact}
                   dimension={dimension.dimension}
+                  workforceReports={workforceReports}
                 />
               ))}
             </div>
