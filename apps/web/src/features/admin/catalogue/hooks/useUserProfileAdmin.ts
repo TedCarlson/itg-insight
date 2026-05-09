@@ -1,3 +1,5 @@
+// path: apps/web/src/features/admin/catalogue/hooks/useUserProfileAdmin.ts
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -5,8 +7,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 export type UserProfileAdminRow = {
   auth_user_id: string;
   email: string | null;
+
+  // UI-compatible alias now points to core.people
   person_id: string | null;
   person_full_name: string | null;
+
+  core_person_id: string | null;
+  core_person_full_name: string | null;
+  legacy_person_id: string | null;
+
   status: string | null;
   selected_pc_org_id: string | null;
   selected_pc_org_name: string | null;
@@ -23,6 +32,7 @@ type UserProfileAdminResponse = {
 
 type SavePatch = {
   auth_user_id: string;
+  core_person_id?: string | null;
   person_id?: string | null;
   selected_pc_org_id?: string | null;
   status?: string;
@@ -39,25 +49,38 @@ export function useUserProfileAdmin(opts?: { pageSize?: number }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const params = useMemo(() => ({ q, pageIndex, pageSize }), [q, pageIndex, pageSize]);
+  const params = useMemo(
+    () => ({ q, pageIndex, pageSize }),
+    [q, pageIndex, pageSize]
+  );
 
   const fetchNow = useCallback(async () => {
     setLoading(true);
     setErr(null);
+
     try {
       const sp = new URLSearchParams();
+
       if (params.q.trim()) sp.set("q", params.q.trim());
+
       sp.set("pageIndex", String(params.pageIndex));
       sp.set("pageSize", String(params.pageSize));
 
-      const res = await fetch(`/api/admin/catalogue/user_profile?${sp.toString()}`, { method: "GET" });
-      const json = (await res.json()) as UserProfileAdminResponse & { error?: string };
+      const res = await fetch(
+        `/api/admin/catalogue/user_profile?${sp.toString()}`,
+        { method: "GET" }
+      );
+
+      const json = (await res.json()) as UserProfileAdminResponse & {
+        error?: string;
+      };
 
       if (!res.ok) throw new Error(json?.error ?? "Request failed");
+
       setData(json);
-    } catch (e: any) {
+    } catch (error: any) {
       setData(null);
-      setErr(e?.message ?? "Failed to load");
+      setErr(error?.message ?? "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -71,19 +94,31 @@ export function useUserProfileAdmin(opts?: { pageSize?: number }) {
     async (patch: SavePatch) => {
       setSaving(true);
       setErr(null);
+
       try {
         const res = await fetch(`/api/admin/catalogue/user_profile`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(patch),
         });
-        const json = (await res.json()) as { ok?: boolean; row?: UserProfileAdminRow | null; error?: string };
-        if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Save failed");
+
+        const json = (await res.json()) as {
+          ok?: boolean;
+          row?: UserProfileAdminRow | null;
+          error?: string;
+        };
+
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error ?? "Save failed");
+        }
+
         await fetchNow();
+
         return { ok: true as const, row: json?.row ?? null };
-      } catch (e: any) {
-        const message = e?.message ?? "Save failed";
+      } catch (error: any) {
+        const message = error?.message ?? "Save failed";
         setErr(message);
+
         return { ok: false as const, error: message };
       } finally {
         setSaving(false);
@@ -94,18 +129,18 @@ export function useUserProfileAdmin(opts?: { pageSize?: number }) {
 
   return {
     q,
-    setQ: (v: string) => {
+    setQ: (value: string) => {
       setPageIndex(0);
-      setQ(v);
+      setQ(value);
     },
 
     pageIndex,
     setPageIndex,
 
     pageSize,
-    setPageSize: (n: number) => {
+    setPageSize: (value: number) => {
       setPageIndex(0);
-      setPageSize(n);
+      setPageSize(value);
     },
 
     data,
