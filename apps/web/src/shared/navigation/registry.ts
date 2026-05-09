@@ -21,6 +21,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     defaultRoles: ["APP_OWNER", "ADMIN", "DIRECTOR"],
     sortOrder: 20,
   },
+
   {
     key: "bp_owner_overview",
     label: "Overview",
@@ -32,16 +33,6 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     sortOrder: 30,
   },
   {
-    key: "bp_owner_onboarding",
-    label: "Onboarding",
-    href: "/bp-owner/onboarding",
-    icon: "field_log",
-    visibility: "default",
-    defaultRoles: ["BP_OWNER"],
-    exposeWhenPermissions: ["bp_owner_access"],
-    sortOrder: 40,
-  },
-  {
     key: "bp_owner_workforce",
     label: "Workforce",
     href: "/bp-owner/workforce",
@@ -49,17 +40,17 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     visibility: "default",
     defaultRoles: ["BP_OWNER"],
     exposeWhenPermissions: ["bp_owner_access", "workforce_access"],
-    sortOrder: 50,
+    sortOrder: 40,
   },
   {
-    key: "bp_owner_scheduling",
-    label: "Scheduling",
-    href: "/bp-owner/scheduling",
-    icon: "calendar",
+    key: "bp_owner_people",
+    label: "People",
+    href: "/bp-owner/people",
+    icon: "people",
     visibility: "default",
     defaultRoles: ["BP_OWNER"],
-    exposeWhenPermissions: ["bp_owner_access", "route_lock_read"],
-    sortOrder: 60,
+    exposeWhenPermissions: ["bp_owner_access", "people_access"],
+    sortOrder: 50,
   },
   {
     key: "bp_owner_metrics",
@@ -69,8 +60,9 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     visibility: "default",
     defaultRoles: ["BP_OWNER"],
     exposeWhenPermissions: ["bp_owner_access", "metrics_access"],
-    sortOrder: 70,
+    sortOrder: 60,
   },
+
   {
     key: "company_supervisor",
     label: "Company Supervisor",
@@ -99,6 +91,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     exposeWhenPermissions: ["metrics_access"],
     sortOrder: 100,
   },
+
   {
     key: "metrics_uploads",
     label: "Metrics Uploads",
@@ -137,6 +130,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     exposeWhenPermissions: ["field_log_access"],
     sortOrder: 140,
   },
+
   {
     key: "roster",
     label: "Roster",

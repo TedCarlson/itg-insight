@@ -32,14 +32,28 @@ type ContractorRow = {
   contractor_name: string | null;
 };
 
-type ContractorWorkspaceAssignmentRow = {
+type ContractorAssignmentRow = {
   contractor_id: string | null;
   pc_org_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+};
+
+type AssignmentRow = {
+  assignment_id: string | null;
+  person_id: string | null;
+  pc_org_id: string | null;
+  tech_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  position_title: string | null;
   active: boolean | null;
+  office_id: string | null;
 };
 
 export type BpOwnerScopeResult = {
   selected_pc_org_id: string;
+  covered_pc_org_ids: string[];
   role_label: "BP Owner";
   rep_full_name: string | null;
   rep_person_id: string | null;
@@ -72,13 +86,17 @@ function isActiveWindow(
   return activeOk && startOk && endOk;
 }
 
-function uniqueByTech(rows: BpOwnerScopeRow[]) {
+function uniqueByAssignment(rows: BpOwnerScopeRow[]) {
   const map = new Map<string, BpOwnerScopeRow>();
 
   for (const row of rows) {
-    const tech = clean(row.tech_id);
-    if (!tech) continue;
-    if (!map.has(tech)) map.set(tech, row);
+    const key =
+      clean(row.assignment_id) ??
+      clean(row.tech_id) ??
+      clean(row.person_id);
+
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, row);
   }
 
   return [...map.values()];
@@ -96,26 +114,35 @@ async function loadContractorName(admin: Sb, contractorId: string) {
   return clean(row?.contractor_name);
 }
 
-async function hasActiveContractorCoverage(args: {
+async function loadCoveredOrgIds(args: {
   admin: Sb;
   contractorId: string;
-  pcOrgId: string;
+  today: string;
 }) {
   const { data } = await args.admin
-    .from("v_contractor_workspace_assignment")
-    .select("contractor_id,pc_org_id,active")
-    .eq("contractor_id", args.contractorId)
-    .eq("pc_org_id", args.pcOrgId)
-    .eq("active", true)
-    .maybeSingle();
+    .from("contractor_assignment_v")
+    .select("contractor_id,pc_org_id,start_date,end_date")
+    .eq("contractor_id", args.contractorId);
 
-  const row = (data ?? null) as ContractorWorkspaceAssignmentRow | null;
+  const rows = (data ?? []) as ContractorAssignmentRow[];
 
-  return (
-    clean(row?.contractor_id) === args.contractorId &&
-    clean(row?.pc_org_id) === args.pcOrgId &&
-    row?.active === true
-  );
+  return Array.from(
+    new Set(
+      rows
+        .filter((row) =>
+          isActiveWindow(
+            {
+              active: true,
+              start_date: row.start_date,
+              end_date: row.end_date,
+            },
+            args.today
+          )
+        )
+        .map((row) => clean(row.pc_org_id))
+        .filter(Boolean)
+    )
+  ) as string[];
 }
 
 function formatRepName(args: {
@@ -138,9 +165,14 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
     requireSelectedPcOrgServer(),
   ]);
 
+  if (!scope.ok) {
+    throw new Error("No org selected");
+  }
+
   if (!boot.ok || !boot.person_id) {
     return {
-      selected_pc_org_id: scope.ok ? scope.selected_pc_org_id : "",
+      selected_pc_org_id: scope.selected_pc_org_id,
+      covered_pc_org_ids: [],
       role_label: "BP Owner",
       rep_full_name: null,
       rep_person_id: null,
@@ -150,13 +182,8 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
     };
   }
 
-  if (!scope.ok) {
-    throw new Error("No org selected");
-  }
-
   const admin = supabaseAdmin();
   const today = isoToday();
-  const selected_pc_org_id = scope.selected_pc_org_id;
 
   const { data: meData } = await admin
     .from("person")
@@ -171,7 +198,7 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
     : null;
 
   const baseResult = {
-    selected_pc_org_id,
+    selected_pc_org_id: scope.selected_pc_org_id,
     role_label: "BP Owner" as const,
     rep_full_name: formatRepName({
       contractorName,
@@ -186,19 +213,21 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
     return {
       ...baseResult,
       contractor_id: null,
+      covered_pc_org_ids: [],
       scoped_assignments: [],
     };
   }
 
-  const hasCoverage = await hasActiveContractorCoverage({
+  const coveredPcOrgIds = await loadCoveredOrgIds({
     admin,
     contractorId,
-    pcOrgId: selected_pc_org_id,
+    today,
   });
 
-  if (!hasCoverage) {
+  if (!coveredPcOrgIds.length) {
     return {
       ...baseResult,
+      covered_pc_org_ids: [],
       scoped_assignments: [],
     };
   }
@@ -206,17 +235,62 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
   const { data: assignmentsRaw } = await admin
     .from("assignment_admin_v")
     .select(
-      "assignment_id, person_id, pc_org_id, tech_id, start_date, end_date, position_title, active, office_id, co_ref_id"
+      "assignment_id, person_id, pc_org_id, tech_id, start_date, end_date, position_title, active, office_id"
     )
-    .eq("pc_org_id", selected_pc_org_id)
-    .eq("co_ref_id", contractorId);
+    .in("pc_org_id", coveredPcOrgIds)
+    .eq("active", true);
 
-  const all = (assignmentsRaw ?? []) as BpOwnerScopeRow[];
+  const assignments = ((assignmentsRaw ?? []) as AssignmentRow[]).filter((row) =>
+    isActiveWindow(row, today)
+  );
 
-  const scopedAssignments = all.filter((row) => isActiveWindow(row, today));
+  const personIds = Array.from(
+    new Set(assignments.map((row) => clean(row.person_id)).filter(Boolean))
+  );
+
+  if (!personIds.length) {
+    return {
+      ...baseResult,
+      covered_pc_org_ids: coveredPcOrgIds,
+      scoped_assignments: [],
+    };
+  }
+
+  const { data: peopleRaw } = await admin
+    .from("person")
+    .select("person_id, full_name, co_ref_id")
+    .in("person_id", personIds);
+
+  const people = (peopleRaw ?? []) as PersonRow[];
+  const peopleById = new Map(
+    people.map((person) => [clean(person.person_id), person])
+  );
+
+  const scopedAssignments: BpOwnerScopeRow[] = [];
+
+  for (const assignment of assignments) {
+    const personId = clean(assignment.person_id);
+    const person = personId ? peopleById.get(personId) : null;
+
+    if (clean(person?.co_ref_id) !== contractorId) continue;
+
+    scopedAssignments.push({
+      assignment_id: assignment.assignment_id,
+      person_id: assignment.person_id,
+      pc_org_id: assignment.pc_org_id,
+      tech_id: assignment.tech_id,
+      position_title: assignment.position_title,
+      active: assignment.active,
+      start_date: assignment.start_date,
+      end_date: assignment.end_date,
+      office_id: assignment.office_id,
+      co_ref_id: contractorId,
+    });
+  }
 
   return {
     ...baseResult,
-    scoped_assignments: uniqueByTech(scopedAssignments),
+    covered_pc_org_ids: coveredPcOrgIds,
+    scoped_assignments: uniqueByAssignment(scopedAssignments),
   };
 }
