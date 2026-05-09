@@ -1,4 +1,3 @@
-// RUN THIS
 // path: apps/web/src/app/(app)/bp-owner/metrics/page.tsx
 
 import BpOwnerMetricsPageShell from "@/features/role-bp-owner/pages/BpOwnerMetricsPageShell";
@@ -22,10 +21,5 @@ export default async function Page(props: PageProps) {
   const class_type = normalizeClassType(searchParams?.class_type);
   const range = searchParams?.range;
 
-  return (
-    <BpOwnerMetricsPageShell
-      class_type={class_type}
-      range={range}
-    />
-  );
+  return <BpOwnerMetricsPageShell class_type={class_type} range={range} />;
 }

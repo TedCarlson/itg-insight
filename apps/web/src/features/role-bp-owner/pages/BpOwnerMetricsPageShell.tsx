@@ -16,6 +16,7 @@ export default async function BpOwnerMetricsPageShell(props: Props) {
 
   return (
     <div className="space-y-4 p-4">
+      <div id="shell-role-hint" data-shell-role="BP_OWNER" className="hidden" />
       <BpSupervisorScopedViewClient payload={payload} />
     </div>
   );

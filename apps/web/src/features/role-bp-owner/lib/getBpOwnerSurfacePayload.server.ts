@@ -142,26 +142,22 @@ export async function getBpOwnerSurfacePayload(args?: {
   });
 
   const scopeByTechId = buildScopeByTechId(resolvedScope.scoped_assignments);
+  const scopedTechIdSet = new Set(scopedTechIds);
 
-  const enrichedRows = basePayload.team_table.rows.map((row) => {
-    const techId = clean(row.tech_id);
-    const scoped = scopeByTechId.get(techId);
+  const enrichedRows = basePayload.team_table.rows
+    .filter((row) => scopedTechIdSet.has(clean(row.tech_id)))
+    .map((row) => {
+      const techId = clean(row.tech_id);
+      const scoped = scopeByTechId.get(techId);
 
-    if (!scoped) {
       return {
         ...row,
-        contractor_name: null,
+        contractor_name: resolvedScope.contractor_name,
+        affiliation_type: "CONTRACTOR",
+        co_code: resolvedScope.contractor_name ?? row.co_code ?? null,
+        office_id: scoped?.office_id ?? (row as any).office_id ?? null,
       };
-    }
-
-    return {
-      ...row,
-      contractor_name: resolvedScope.contractor_name,
-      affiliation_type: "CONTRACTOR",
-      co_code: resolvedScope.contractor_name ?? row.co_code ?? null,
-      office_id: scoped.office_id ?? (row as any).office_id ?? null,
-    };
-  });
+    });
 
   return {
     ...basePayload,
@@ -169,7 +165,8 @@ export async function getBpOwnerSurfacePayload(args?: {
       ...basePayload.header,
       role_label: resolvedScope.role_label,
       rep_full_name: resolvedScope.rep_full_name,
-      scope_headcount: scopedTechIds.length,
+      scope_headcount: enrichedRows.length,
+      total_headcount: enrichedRows.length,
     },
     team_table: {
       ...basePayload.team_table,

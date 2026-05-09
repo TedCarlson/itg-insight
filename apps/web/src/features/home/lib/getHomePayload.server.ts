@@ -1,3 +1,5 @@
+// path: apps/web/src/features/home/lib/getHomePayload.server.ts
+
 import { bootstrapProfileServer } from "@/lib/auth/bootstrapProfile.server";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
@@ -181,6 +183,66 @@ function buildBpSupervisorDestinations(): HomeDestination[] {
   ];
 }
 
+function buildBpOwnerDestinations(): HomeDestination[] {
+  return [
+    {
+      label: "BP Owner Workspace",
+      href: "/bp-owner",
+      description: "Company-scoped operating view for onboarding, workforce, scheduling, and metrics",
+    },
+    {
+      label: "Onboarding",
+      href: "/bp-owner/onboarding",
+      description: "Prospecting and onboarding pipeline grouped by participating org",
+    },
+    {
+      label: "Workforce",
+      href: "/bp-owner/workforce",
+      description: "People tied directly to your business partner affiliation",
+    },
+    {
+      label: "Scheduling",
+      href: "/bp-owner/scheduling",
+      description: "Read-only scheduled coverage for your company population",
+    },
+    {
+      label: "Metrics",
+      href: "/bp-owner/metrics",
+      description: "Company-scoped performance for direct affiliates only",
+    },
+  ];
+}
+
+function buildUnknownDestinations(hasSelectedOrg: boolean): HomeDestination[] {
+  if (!hasSelectedOrg) {
+    return [
+      {
+        label: "Access",
+        href: "/access",
+        description: "Select an org or complete access setup",
+      },
+      {
+        label: "Profile",
+        href: "/profile",
+        description: "Review your profile and account linkage",
+      },
+    ];
+  }
+
+  return [
+    {
+      label: "Profile",
+      href: "/profile",
+      description: "Review your profile and account linkage",
+    },
+    {
+      label: "Access",
+      href: "/access",
+      description: "Role and workspace access could not be resolved yet",
+    },
+  ];
+}
+
 function buildDestinations(
   role: HomeRole,
   hasSelectedOrg: boolean
@@ -249,28 +311,12 @@ function buildDestinations(
     ];
   }
 
-  if (role === "BP_SUPERVISOR") {
+  if (role === "BP_SUPERVISOR" || role === "BP_LEAD") {
     return buildBpSupervisorDestinations();
   }
 
-  if (role === "BP_OWNER" || role === "BP_LEAD") {
-    return [
-      {
-        label: "Team Metrics",
-        href: "/bp-supervisor/metrics",
-        description: "Partner team KPI comparison, focus view, and performance table",
-      },
-      {
-        label: "Dispatch Console",
-        href: "/dispatch-console",
-        description: "Live job routing, assignments, and activity log",
-      },
-      {
-        label: "Field Log",
-        href: "/field-log",
-        description: "Submit, review, and track field activity",
-      },
-    ];
+  if (role === "BP_OWNER") {
+    return buildBpOwnerDestinations();
   }
 
   if (role === "TECH") {
@@ -298,39 +344,7 @@ function buildDestinations(
     ];
   }
 
-  if (!hasSelectedOrg) {
-    return [
-      {
-        label: "Access",
-        href: "/access",
-        description: "Select an org or complete access setup",
-      },
-      {
-        label: "Home",
-        href: "/home",
-        description: "Workspace landing and access-aware navigation",
-      },
-    ];
-  }
-
-  return [
-    DIRECTOR_EXECUTIVE_DESTINATION,
-    {
-      label: "Workspace",
-      href: "/home",
-      description: "Role and access could not be resolved yet",
-    },
-    {
-      label: "Dispatch Console",
-      href: "/dispatch-console",
-      description: "Open an available org-scoped workspace",
-    },
-    {
-      label: "Field Log",
-      href: "/field-log",
-      description: "Open an available org-scoped workspace",
-    },
-  ];
+  return buildUnknownDestinations(hasSelectedOrg);
 }
 
 export async function getHomePayload(): Promise<HomePayload> {
@@ -386,15 +400,15 @@ export async function getHomePayload(): Promise<HomePayload> {
 
   const assignmentsPromise = selectedPcOrgId
     ? admin
-      .from("company_profile_fact")
-      .select("position_title,active_flag,effective_end_date")
-      .eq("person_id", boot.person_id)
-      .eq("pc_org_id", selectedPcOrgId)
-      .eq("active_flag", true)
-      .is("effective_end_date", null)
+        .from("company_profile_fact")
+        .select("position_title,active_flag,effective_end_date")
+        .eq("person_id", boot.person_id)
+        .eq("pc_org_id", selectedPcOrgId)
+        .eq("active_flag", true)
+        .is("effective_end_date", null)
     : Promise.resolve({
-      data: [] as Array<{ position_title?: string | null }>,
-    });
+        data: [] as Array<{ position_title?: string | null }>,
+      });
 
   const orgLabelPromise = selectedPcOrgId
     ? loadOrgLabel(selectedPcOrgId)

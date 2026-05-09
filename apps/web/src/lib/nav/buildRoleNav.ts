@@ -69,10 +69,11 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
 
   if (role === "BP_OWNER") {
     return [
-      { key: "home", label: "Home", href: "/home" },
-      { key: "metrics", label: "Metrics", href: "/bp-supervisor/metrics" },
-      { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
-      { key: "fieldlog", label: "Field Log", href: "/field-log" },
+      { key: "home", label: "Overview", href: "/bp-owner" },
+      { key: "onboarding", label: "Onboarding", href: "/bp-owner/onboarding" },
+      { key: "workforce", label: "Workforce", href: "/bp-owner/workforce" },
+      { key: "schedule", label: "Scheduling", href: "/bp-owner/scheduling" },
+      { key: "metrics", label: "Metrics", href: "/bp-owner/metrics" },
     ];
   }
 

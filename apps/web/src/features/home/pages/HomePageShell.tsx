@@ -17,6 +17,10 @@ export default async function HomePageShell() {
     redirect("/director/executive");
   }
 
+  if (payload.role === "BP_OWNER") {
+    redirect("/bp-owner");
+  }
+
   const isItgSupervisor = payload.role === "ITG_SUPERVISOR";
   const isCompanyManager = payload.role === "COMPANY_MANAGER";
 

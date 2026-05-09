@@ -32,6 +32,12 @@ type ContractorRow = {
   contractor_name: string | null;
 };
 
+type ContractorWorkspaceAssignmentRow = {
+  contractor_id: string | null;
+  pc_org_id: string | null;
+  active: boolean | null;
+};
+
 export type BpOwnerScopeResult = {
   selected_pc_org_id: string;
   role_label: "BP Owner";
@@ -90,6 +96,28 @@ async function loadContractorName(admin: Sb, contractorId: string) {
   return clean(row?.contractor_name);
 }
 
+async function hasActiveContractorCoverage(args: {
+  admin: Sb;
+  contractorId: string;
+  pcOrgId: string;
+}) {
+  const { data } = await args.admin
+    .from("v_contractor_workspace_assignment")
+    .select("contractor_id,pc_org_id,active")
+    .eq("contractor_id", args.contractorId)
+    .eq("pc_org_id", args.pcOrgId)
+    .eq("active", true)
+    .maybeSingle();
+
+  const row = (data ?? null) as ContractorWorkspaceAssignmentRow | null;
+
+  return (
+    clean(row?.contractor_id) === args.contractorId &&
+    clean(row?.pc_org_id) === args.pcOrgId &&
+    row?.active === true
+  );
+}
+
 function formatRepName(args: {
   contractorName: string | null;
   repName: string | null;
@@ -111,7 +139,15 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
   ]);
 
   if (!boot.ok || !boot.person_id) {
-    throw new Error("No linked person profile");
+    return {
+      selected_pc_org_id: scope.ok ? scope.selected_pc_org_id : "",
+      role_label: "BP Owner",
+      rep_full_name: null,
+      rep_person_id: null,
+      contractor_id: null,
+      contractor_name: null,
+      scoped_assignments: [],
+    };
   }
 
   if (!scope.ok) {
@@ -134,17 +170,35 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
     ? await loadContractorName(admin, contractorId)
     : null;
 
+  const baseResult = {
+    selected_pc_org_id,
+    role_label: "BP Owner" as const,
+    rep_full_name: formatRepName({
+      contractorName,
+      repName: me?.full_name ?? null,
+    }),
+    rep_person_id: boot.person_id,
+    contractor_id: contractorId,
+    contractor_name: contractorName,
+  };
+
   if (!contractorId) {
     return {
-      selected_pc_org_id,
-      role_label: "BP Owner",
-      rep_full_name: formatRepName({
-        contractorName,
-        repName: me?.full_name ?? null,
-      }),
-      rep_person_id: boot.person_id,
+      ...baseResult,
       contractor_id: null,
-      contractor_name: contractorName,
+      scoped_assignments: [],
+    };
+  }
+
+  const hasCoverage = await hasActiveContractorCoverage({
+    admin,
+    contractorId,
+    pcOrgId: selected_pc_org_id,
+  });
+
+  if (!hasCoverage) {
+    return {
+      ...baseResult,
       scoped_assignments: [],
     };
   }
@@ -154,24 +208,15 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
     .select(
       "assignment_id, person_id, pc_org_id, tech_id, start_date, end_date, position_title, active, office_id, co_ref_id"
     )
-    .eq("pc_org_id", selected_pc_org_id);
+    .eq("pc_org_id", selected_pc_org_id)
+    .eq("co_ref_id", contractorId);
 
   const all = (assignmentsRaw ?? []) as BpOwnerScopeRow[];
 
-  const scopedAssignments = all
-    .filter((row) => isActiveWindow(row, today))
-    .filter((row) => clean(row.co_ref_id) === contractorId);
+  const scopedAssignments = all.filter((row) => isActiveWindow(row, today));
 
   return {
-    selected_pc_org_id,
-    role_label: "BP Owner",
-    rep_full_name: formatRepName({
-      contractorName,
-      repName: me?.full_name ?? null,
-    }),
-    rep_person_id: boot.person_id,
-    contractor_id: contractorId,
-    contractor_name: contractorName,
+    ...baseResult,
     scoped_assignments: uniqueByTech(scopedAssignments),
   };
 }

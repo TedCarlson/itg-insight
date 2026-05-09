@@ -1,6 +1,7 @@
-import "server-only";
-import { supabaseServer } from "@/shared/data/supabase/server";
+// path: apps/web/src/shared/lib/auth/bootstrapProfile.server.ts
+
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
+import { supabaseServer } from "@/shared/data/supabase/server";
 
 type BootstrapResult = {
   ok: boolean;
@@ -10,27 +11,39 @@ type BootstrapResult = {
   selected_pc_org_id: string | null;
   created: boolean;
   hydrated: boolean;
-
-  // 🔥 ADD THESE
   full_name: string | null;
   is_owner: boolean;
   is_admin: boolean;
   is_app_owner: boolean;
-
   notes?: string[];
 };
 
-function asNonEmptyString(v: unknown): string | null {
-  return typeof v === "string" && v.trim() ? v.trim() : null;
+type UserProfileRow = {
+  auth_user_id?: string | null;
+  status?: string | null;
+  person_id?: string | null;
+  core_person_id?: string | null;
+  selected_pc_org_id?: string | null;
+};
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function normalizeEmail(v: unknown): string | null {
-  const s = asNonEmptyString(v);
-  return s ? s.toLowerCase() : null;
+function normalizeEmail(value: unknown): string | null {
+  const next = asNonEmptyString(value);
+  return next ? next.toLowerCase() : null;
 }
 
-function asBoolean(v: unknown): boolean {
-  return v === true;
+function asBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function resolveProfilePersonId(profile: UserProfileRow | null | undefined) {
+  return (
+    asNonEmptyString(profile?.person_id) ??
+    asNonEmptyString(profile?.core_person_id)
+  );
 }
 
 export async function bootstrapProfileServer(): Promise<BootstrapResult> {
@@ -48,17 +61,12 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
     null;
 
   const isAppOwner =
-    asBoolean(appMeta.is_app_owner) ||
-    asBoolean(meta.is_app_owner);
+    asBoolean(appMeta.is_app_owner) || asBoolean(meta.is_app_owner);
 
   const isOwner =
-    isAppOwner ||
-    asBoolean(appMeta.is_owner) ||
-    asBoolean(meta.is_owner);
+    isAppOwner || asBoolean(appMeta.is_owner) || asBoolean(meta.is_owner);
 
-  const isAdmin =
-    asBoolean(appMeta.is_admin) ||
-    asBoolean(meta.is_admin);
+  const isAdmin = asBoolean(appMeta.is_admin) || asBoolean(meta.is_admin);
 
   if (!user || userErr) {
     return {
@@ -83,10 +91,9 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
 
   const authEmail = normalizeEmail(user.email);
 
-  // 1) Read existing profile
   const existing = await admin
     .from("user_profile" as any)
-    .select("auth_user_id, status, person_id, selected_pc_org_id")
+    .select("auth_user_id, status, person_id, core_person_id, selected_pc_org_id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
@@ -110,9 +117,8 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
   let created = false;
   let hydrated = false;
 
-  // 2) Create if missing
   if (!existing.data) {
-    const ins = await admin.from("user_profile" as any).upsert(
+    const insert = await admin.from("user_profile" as any).upsert(
       {
         auth_user_id: user.id,
         status: "pending",
@@ -122,7 +128,7 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
       { onConflict: "auth_user_id" as any, ignoreDuplicates: true }
     );
 
-    if (ins.error) {
+    if (insert.error) {
       return {
         ok: false,
         auth_user_id: user.id,
@@ -135,17 +141,16 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
         is_owner: isOwner,
         is_admin: isAdmin,
         is_app_owner: isAppOwner,
-        notes: ["profile_insert_failed", ins.error.message],
+        notes: ["profile_insert_failed", insert.error.message],
       };
     }
 
     created = true;
   }
 
-  // 3) Re-read
   const after = await admin
     .from("user_profile" as any)
-    .select("auth_user_id, status, person_id, selected_pc_org_id")
+    .select("auth_user_id, status, person_id, core_person_id, selected_pc_org_id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
@@ -166,7 +171,7 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
     };
   }
 
-  const profile = after.data as any;
+  const profile = after.data as UserProfileRow;
 
   const metaPersonId = asNonEmptyString(meta.person_id);
   const metaPcOrgId =
@@ -177,22 +182,24 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
   let fallbackPersonId: string | null = null;
   let fallbackPcOrgId: string | null = null;
 
-  if (!profile.person_id && authEmail) {
+  const currentPersonId = resolveProfilePersonId(profile);
+
+  if (!currentPersonId && authEmail) {
     const personMatch = await admin
       .from("person" as any)
-      .select("id, email")
+      .select("person_id, id, email")
       .eq("email", authEmail);
 
     if (!personMatch.error) {
       const rows = Array.isArray(personMatch.data) ? personMatch.data : [];
       if (rows.length === 1) {
-        fallbackPersonId = asNonEmptyString(rows[0]?.id);
+        fallbackPersonId =
+          asNonEmptyString(rows[0]?.person_id) ?? asNonEmptyString(rows[0]?.id);
       }
     }
   }
 
-  const resolvedPersonId =
-    profile.person_id ?? metaPersonId ?? fallbackPersonId;
+  const resolvedPersonId = currentPersonId ?? metaPersonId ?? fallbackPersonId;
 
   if (!profile.selected_pc_org_id && !metaPcOrgId && resolvedPersonId) {
     const membership = await admin
@@ -202,16 +209,14 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
       .limit(1);
 
     if (!membership.error) {
-      const row = Array.isArray(membership.data)
-        ? membership.data[0]
-        : null;
+      const row = Array.isArray(membership.data) ? membership.data[0] : null;
       fallbackPcOrgId = asNonEmptyString(row?.pc_org_id);
     }
   }
 
-  const patch: Record<string, any> = { updated_at: nowIso };
+  const patch: Record<string, unknown> = { updated_at: nowIso };
 
-  if (!profile.person_id) {
+  if (!currentPersonId) {
     const chosen = metaPersonId ?? fallbackPersonId;
     if (chosen) patch.person_id = chosen;
   }
@@ -229,7 +234,7 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
   }
 
   const hasMeaningfulPatch = Object.keys(patch).some(
-    (k) => k !== "updated_at"
+    (key) => key !== "updated_at"
   );
 
   if (hasMeaningfulPatch) {
@@ -237,23 +242,25 @@ export async function bootstrapProfileServer(): Promise<BootstrapResult> {
       .from("user_profile" as any)
       .update(patch)
       .eq("auth_user_id", user.id);
+
     hydrated = true;
   }
 
   const final = await admin
     .from("user_profile" as any)
-    .select("auth_user_id, status, person_id, selected_pc_org_id")
+    .select("auth_user_id, status, person_id, core_person_id, selected_pc_org_id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
-  const fp = (final.data as any) ?? profile;
+  const finalProfile = ((final.data as UserProfileRow | null) ?? profile);
+  const finalPersonId = resolveProfilePersonId(finalProfile);
 
   return {
     ok: true,
     auth_user_id: user.id,
-    status: fp?.status ?? null,
-    person_id: fp?.person_id ?? null,
-    selected_pc_org_id: fp?.selected_pc_org_id ?? null,
+    status: finalProfile.status ?? null,
+    person_id: finalPersonId,
+    selected_pc_org_id: finalProfile.selected_pc_org_id ?? null,
     created,
     hydrated,
     full_name: fullName,

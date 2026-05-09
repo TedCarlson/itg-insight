@@ -25,6 +25,14 @@ export function resolveCoreNavContext(args: {
     };
   }
 
+  if (pathname === "/bp-owner" || pathname.startsWith("/bp-owner/")) {
+    return {
+      role: "BP_OWNER",
+      surfaceFamily: "BP",
+      useScopedRail: true,
+    };
+  }
+
   if (surfaceFamily === "TECH") {
     return {
       role: "TECH",
