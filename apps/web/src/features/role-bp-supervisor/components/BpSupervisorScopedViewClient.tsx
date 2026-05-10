@@ -4,11 +4,12 @@
 
 import { useMemo } from "react";
 
-import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
 import MetricsControlsStrip from "@/shared/surfaces/MetricsControlsStrip";
+import MetricsExecutiveKpiMatrix from "@/shared/surfaces/MetricsExecutiveKpiMatrix";
 import MetricsExecutiveKpiStrip from "@/shared/surfaces/MetricsExecutiveKpiStrip";
-import MetricsRiskStrip from "@/shared/surfaces/MetricsRiskStrip";
 import MetricsInspectableTeamPerformanceTable from "@/shared/surfaces/MetricsInspectableTeamPerformanceTable";
+import MetricsRiskStrip from "@/shared/surfaces/MetricsRiskStrip";
+import MetricsSmartHeader from "@/shared/surfaces/MetricsSmartHeader";
 
 import {
   buildScopedRows,
@@ -16,26 +17,27 @@ import {
   type MetricsControlsValue,
 } from "@/shared/lib/metrics/buildScopedRows";
 
-import { buildScopedRiskInsights } from "@/shared/lib/metrics/scopedComputations";
 import { buildScopedExecutiveStrip } from "@/shared/lib/metrics/buildScopedExecutiveStrip";
+import { buildScopedRiskInsights } from "@/shared/lib/metrics/scopedComputations";
 
 import type { MetricsSurfacePayload } from "@/shared/types/metrics/surfacePayload";
 
-import { useBpSupervisorTeamControls } from "../hooks/useBpSupervisorTeamControls";
 import { useBpSupervisorHeaderScope } from "../hooks/useBpSupervisorHeaderScope";
+import { useBpSupervisorTeamControls } from "../hooks/useBpSupervisorTeamControls";
 
 type Props = {
   payload: MetricsSurfacePayload;
 };
 
-type SupervisorOption = {
-  value: string;
-  label: string;
+type BpOwnerOrgKpiRow = {
+  pc_org_id?: string | null;
+  org_label: string;
+  items: NonNullable<MetricsSurfacePayload["executive_strip"]>["base"]["items"];
 };
 
 function uniqueSorted(values: Array<string | null | undefined>): string[] {
   return Array.from(
-    new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean))
+    new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
 }
 
@@ -57,10 +59,7 @@ function buildSupervisorOptions(rows: ReturnType<typeof mapTeamRows>) {
 }
 
 function regionKpiTitle(payload: MetricsSurfacePayload): string {
-  const label =
-    payload.header.org_display ??
-    payload.header.pc_label ??
-    "Region";
+  const label = payload.header.org_display ?? payload.header.pc_label ?? "Region";
 
   const cleaned = String(label)
     .replace(/^HC\s+/i, "")
@@ -68,6 +67,34 @@ function regionKpiTitle(payload: MetricsSurfacePayload): string {
     .trim();
 
   return cleaned ? `${cleaned} Region` : "Region";
+}
+
+function contractorLabel(payload: MetricsSurfacePayload) {
+  return (
+    String(payload.header.org_display ?? "")
+      .replace(/^HC\s+/i, "")
+      .replace(/\s*\([^)]*\)\s*$/g, "")
+      .trim() || "Contractor"
+  );
+}
+
+function getBpOwnerOrgKpiRows(payload: MetricsSurfacePayload): BpOwnerOrgKpiRow[] {
+  const raw = (payload as unknown as { bp_owner_org_kpi_rows?: unknown })
+    .bp_owner_org_kpi_rows;
+
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((row) => {
+      const item = row as Partial<BpOwnerOrgKpiRow>;
+
+      return {
+        pc_org_id: item.pc_org_id ?? null,
+        org_label: String(item.org_label ?? "").trim(),
+        items: Array.isArray(item.items) ? item.items : [],
+      };
+    })
+    .filter((row) => row.org_label);
 }
 
 export default function BpSupervisorScopedViewClient({ payload }: Props) {
@@ -79,18 +106,15 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
   );
 
   const contractorOptions = useMemo(
-    () => uniqueSorted(allRows.map((r) => r.contractor_name)),
+    () => uniqueSorted(allRows.map((row) => row.contractor_name)),
     [allRows]
   );
 
-  const repPersonId = String(
-    (payload.header as any).rep_person_id ?? ""
-  ).trim();
+  const repPersonId = String((payload.header as any).rep_person_id ?? "").trim();
 
-  // 🔥 THIS IS THE ENTIRE FIX
   const controls: MetricsControlsValue = useMemo(() => {
     const hasSupervisor = supervisorOptions.some(
-      (s) => s.value === repPersonId
+      (supervisor) => supervisor.value === repPersonId
     );
 
     if (hasSupervisor) {
@@ -103,7 +127,6 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
       };
     }
 
-    // fallback → affiliate
     return {
       office_label: null,
       affiliation_type: "CONTRACTOR",
@@ -114,7 +137,7 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
     };
   }, [repPersonId, supervisorOptions, contractorOptions]);
 
-  const { showTeamScope } = useBpSupervisorTeamControls(allRows, controls);
+  useBpSupervisorTeamControls(allRows, controls);
 
   const scopedRows = useMemo(() => {
     const rows = buildScopedRows(allRows, controls);
@@ -143,6 +166,14 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
     });
   }, [payload.risk_insights, scopedRows]);
 
+  const bpOwnerOrgKpiRows = useMemo(
+    () => getBpOwnerOrgKpiRows(payload),
+    [payload]
+  );
+
+  const hasBpOwnerOrgRows = bpOwnerOrgKpiRows.length > 0;
+  const contractor = contractorLabel(payload);
+
   return (
     <div className="space-y-4">
       <MetricsSmartHeader
@@ -150,7 +181,7 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
           ...headerModel,
           rep_full_name: (() => {
             const affiliate = scopedRows
-              .map((r) => String(r.contractor_name ?? "").trim())
+              .map((row) => String(row.contractor_name ?? "").trim())
               .find(Boolean);
 
             return affiliate && headerModel.rep_full_name
@@ -161,7 +192,6 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
         scopeLabel={scopeLabel}
       />
 
-      {/* 🔒 locked controls (same as company supervisor pattern) */}
       <div className="opacity-60">
         <MetricsControlsStrip
           officeOptions={[]}
@@ -179,17 +209,36 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
         />
       </div>
 
-      <MetricsExecutiveKpiStrip
-        title={regionKpiTitle(payload)}
-        items={payload.executive_strip?.base?.items ?? []}
-        comparisonItems={scopedExecutiveItems}
-        comparisonTitle={
-          controls.reports_to_person_id
-            ? "Your Team Comparison"
-            : "Affiliate Comparison"
-        }
-        comparisonSubtitle="Scoped comparison against total org baseline."
-      />
+      {hasBpOwnerOrgRows ? (
+        <MetricsExecutiveKpiMatrix
+          title={`${contractor} Metrics`}
+          subtitle="Contractor performance first, with regional benchmark context inside each KPI."
+          rows={[
+            {
+              label: `${contractor} Total`,
+              subtitle: "Recomputed contractor aggregate across covered orgs.",
+              items: payload.executive_strip?.base?.items ?? [],
+            },
+            ...bpOwnerOrgKpiRows.map((row) => ({
+              label: `${contractor} • ${row.org_label}`,
+              subtitle: "Contractor performance inside this region.",
+              items: row.items,
+            })),
+          ]}
+        />
+      ) : (
+        <MetricsExecutiveKpiStrip
+          title={regionKpiTitle(payload)}
+          items={payload.executive_strip?.base?.items ?? []}
+          comparisonItems={scopedExecutiveItems}
+          comparisonTitle={
+            controls.reports_to_person_id
+              ? "Your Team Comparison"
+              : "Affiliate Comparison"
+          }
+          comparisonSubtitle="Scoped comparison against total org baseline."
+        />
+      )}
 
       <MetricsRiskStrip
         items={payload.risk_strip ?? []}
@@ -197,14 +246,14 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
       />
 
       <MetricsInspectableTeamPerformanceTable
-        columns={payload.team_table.columns.map((c) => ({
-          kpi_key: c.kpi_key,
-          label: c.label,
-          report_order: c.report_order,
+        columns={payload.team_table.columns.map((column) => ({
+          kpi_key: column.kpi_key,
+          label: column.label,
+          report_order: column.report_order,
         }))}
         rows={scopedRows}
         range={payload.filters.active_range}
-        classType={"NSR"}
+        classType="NSR"
       />
     </div>
   );
