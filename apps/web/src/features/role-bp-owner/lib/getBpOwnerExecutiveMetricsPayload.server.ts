@@ -1,13 +1,13 @@
 // path: apps/web/src/features/role-bp-owner/lib/getBpOwnerExecutiveMetricsPayload.server.ts
 
 import { buildMetricsSurfacePayload } from "@/shared/server/metrics/buildMetricsSurfacePayload.server";
+import buildExecutiveAggregateStrip from "@/shared/server/metrics/executive/buildExecutiveAggregateStrip.server";
 import type {
   MetricsRangeKey,
   MetricsSurfacePayload,
   MetricsSurfaceTeamRow,
 } from "@/shared/types/metrics/surfacePayload";
 import { resolveBpOwnerScope } from "./resolveBpOwnerScope.server";
-import buildExecutiveAggregateStrip from "@/shared/server/metrics/executive/buildExecutiveAggregateStrip.server";
 
 type BpOwnerProfileKey = "NSR" | "SMART";
 
@@ -171,6 +171,10 @@ function orgLabelFromPayload(payload: MetricsSurfacePayload, fallbackOrgId: stri
   );
 }
 
+function orgComparisonScopeCode(payload: MetricsSurfacePayload) {
+  return clean(payload.executive_strip?.runtime?.comparison_scope_code) || "ORG";
+}
+
 function tieBreakerValue(row: MetricsSurfaceTeamRow) {
   return (
     numeric(getRowRaw(row, "tie_breaker_value")) ??
@@ -303,7 +307,12 @@ export async function getBpOwnerExecutiveMetricsPayload(
     bpOwnerOrgKpiRows.push({
       pc_org_id: orgId,
       org_label: orgLabelFromPayload(payload, orgId),
-      items: payload.executive_strip?.base?.items ?? [],
+      items: buildExecutiveAggregateStrip({
+        payloads: [payload],
+        eligible_tech_ids: scopedTechIds,
+        support: bpScope.contractor_name ?? "Contractor",
+        comparison_scope_code: orgComparisonScopeCode(payload),
+      }),
     });
   }
 
@@ -333,7 +342,7 @@ export async function getBpOwnerExecutiveMetricsPayload(
     comparison_scope_code: "JCM",
   });
 
-    return {
+  return {
     ...basePayload,
     bp_owner_org_kpi_rows: bpOwnerOrgKpiRows,
     executive_strip: {
