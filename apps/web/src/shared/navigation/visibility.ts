@@ -1,76 +1,83 @@
 // path: apps/web/src/shared/navigation/visibility.ts
 
 import type {
-    AppRole,
-    NavigationItemDefinition,
-    NavigationPermissionKey,
+  AppRole,
+  NavigationItemDefinition,
+  NavigationPermissionKey,
 } from "./types";
 
 function normalizePermissions(permissions: string[] | undefined) {
-    return new Set((permissions ?? []).map((permission) => permission.trim()));
+  return new Set((permissions ?? []).map((permission) => permission.trim()));
 }
 
 function hasAnyPermission(args: {
-    permissionSet: Set<string>;
-    permissions?: NavigationPermissionKey[];
+  permissionSet: Set<string>;
+  permissions?: NavigationPermissionKey[];
 }) {
-    if (!args.permissions?.length) return false;
-    return args.permissions.some((permission) => args.permissionSet.has(permission));
+  if (!args.permissions?.length) return false;
+  return args.permissions.some((permission) => args.permissionSet.has(permission));
 }
 
 function hasAllPermissions(args: {
-    permissionSet: Set<string>;
-    permissions?: NavigationPermissionKey[];
+  permissionSet: Set<string>;
+  permissions?: NavigationPermissionKey[];
 }) {
-    if (!args.permissions?.length) return true;
-    return args.permissions.every((permission) => args.permissionSet.has(permission));
+  if (!args.permissions?.length) return true;
+  return args.permissions.every((permission) => args.permissionSet.has(permission));
 }
 
 export function isNavigationItemVisible(args: {
-    item: NavigationItemDefinition;
-    role: AppRole;
-    isOwner?: boolean;
-    isAdmin?: boolean;
-    permissions?: string[];
+  item: NavigationItemDefinition;
+  role: AppRole;
+  isOwner?: boolean;
+  isAdmin?: boolean;
+  permissions?: string[];
 }) {
-    const { item, role, isOwner, isAdmin, permissions } = args;
+  const { item, role, isOwner, isAdmin, permissions } = args;
 
-    if (item.visibility === "hidden") return false;
+  if (item.visibility === "hidden") return false;
 
-    if (isOwner || isAdmin || role === "APP_OWNER" || role === "ADMIN") {
-        return true;
-    }
+  const isPowerUser =
+    Boolean(isOwner) || Boolean(isAdmin) || role === "APP_OWNER" || role === "ADMIN";
 
-    const permissionSet = normalizePermissions(permissions);
+  const permissionSet = normalizePermissions(permissions);
+  const isDefaultForRole = Boolean(item.defaultRoles?.includes(role));
 
-    const isDefaultForRole = Boolean(item.defaultRoles?.includes(role));
-
-    const exposedByGrant = hasAnyPermission({
-        permissionSet,
-        permissions: item.exposeWhenPermissions,
+  const exposedByGrant =
+    isPowerUser ||
+    hasAnyPermission({
+      permissionSet,
+      permissions: item.exposeWhenPermissions,
     });
 
-    const passesAnyRequired = item.requireAnyPermission?.length
-        ? hasAnyPermission({
-            permissionSet,
-            permissions: item.requireAnyPermission,
-        })
-        : true;
-
-    const passesAllRequired = hasAllPermissions({
-        permissionSet,
-        permissions: item.requireAllPermissions,
+  const passesAnyRequired =
+    isPowerUser ||
+    !item.requireAnyPermission?.length ||
+    hasAnyPermission({
+      permissionSet,
+      permissions: item.requireAnyPermission,
     });
 
-    if (!passesAnyRequired || !passesAllRequired) return false;
+  const passesAllRequired =
+    isPowerUser ||
+    hasAllPermissions({
+      permissionSet,
+      permissions: item.requireAllPermissions,
+    });
 
-    if (item.visibility === "default") {
-        return isDefaultForRole || exposedByGrant;
+  if (!passesAnyRequired || !passesAllRequired) return false;
+
+  if (item.visibility === "default") {
+    if (item.defaultRoles?.length) {
+      return isDefaultForRole;
     }
 
-    if (item.visibility === "grant") {
-        return exposedByGrant;
-    }
+    return exposedByGrant;
+  }
 
-    return false;
+  if (item.visibility === "grant") {
+    return exposedByGrant;
+  }
+
+  return false;
 }

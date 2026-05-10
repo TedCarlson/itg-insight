@@ -11,21 +11,21 @@ export function buildMobileFooterItems(navItems: ResolvedNavigationItem[]) {
   const home =
     find("tech_home") ??
     find("bp_owner_overview") ??
-    find("company_supervisor") ??
-    find("company_manager") ??
+    find("director_executive") ??
     find("home");
 
   const metrics =
     find("tech_metrics") ??
     find("bp_owner_metrics") ??
-    find("bp_supervisor_metrics") ??
-    find("metrics");
+    find("company_manager_metrics") ??
+    find("company_supervisor_metrics") ??
+    find("bp_supervisor_metrics");
 
   const workforce =
     find("bp_owner_workforce") ??
-    find("workforce") ??
-    find("company_supervisor") ??
-    find("company_manager");
+    find("company_manager_workforce") ??
+    find("company_supervisor_workforce") ??
+    find("director_workforce");
 
   const dispatch = find("dispatch_console");
 

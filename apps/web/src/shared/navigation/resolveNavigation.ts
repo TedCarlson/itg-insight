@@ -16,8 +16,7 @@ function isActivePath(pathname: string, href: string) {
 }
 
 function normalizeRole(role: AppRole): AppRole {
-  if (!role) return "UNKNOWN";
-  return role;
+  return role || "UNKNOWN";
 }
 
 function workspaceHomeForRole(role: AppRole) {
@@ -37,10 +36,10 @@ function workspaceHomeForRole(role: AppRole) {
       return "/bp-supervisor/metrics";
 
     case "ITG_SUPERVISOR":
-      return "/company-supervisor";
+      return "/company-supervisor/metrics";
 
     case "COMPANY_MANAGER":
-      return "/company-manager";
+      return "/company-manager/metrics";
 
     case "TECH":
       return "/tech";
@@ -102,7 +101,12 @@ function shouldShowLobSwitch(args: ResolveNavigationInput) {
 }
 
 function shouldShowAdmin(args: ResolveNavigationInput) {
-  return Boolean(args.isOwner || args.isAdmin || args.role === "APP_OWNER" || args.role === "ADMIN");
+  return Boolean(
+    args.isOwner ||
+      args.isAdmin ||
+      args.role === "APP_OWNER" ||
+      args.role === "ADMIN"
+  );
 }
 
 export function resolveNavigation(input: ResolveNavigationInput): ResolvedNavigation {

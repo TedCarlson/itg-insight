@@ -61,9 +61,6 @@ export function resolveNavigationRole(args: {
 }): AppRole {
   if (args.lob === "LOCATE") return "UNKNOWN";
 
-  if (args.isOwner) return "APP_OWNER";
-  if (args.isAdmin) return "ADMIN";
-
   if (args.pathname === "/director" || args.pathname.startsWith("/director/")) {
     return "DIRECTOR";
   }
@@ -102,7 +99,7 @@ export function resolveNavigationRole(args: {
   }
 
   if (args.pathname === "/admin" || args.pathname.startsWith("/admin/")) {
-    return "ADMIN";
+    return args.isOwner ? "APP_OWNER" : "ADMIN";
   }
 
   if (args.shellRoleHint && args.shellRoleHint !== "UNKNOWN") {
@@ -112,6 +109,9 @@ export function resolveNavigationRole(args: {
   if (args.persistedRole && args.persistedRole !== "UNKNOWN") {
     return args.persistedRole;
   }
+
+  if (args.isOwner) return "APP_OWNER";
+  if (args.isAdmin) return "ADMIN";
 
   return "UNKNOWN";
 }
