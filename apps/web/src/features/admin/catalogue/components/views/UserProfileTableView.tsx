@@ -3,41 +3,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/Card";
-import { TextInput } from "@/components/ui/TextInput";
-import { EmptyState } from "@/components/ui/EmptyState";
+
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Notice } from "@/components/ui/Notice";
+import { TextInput } from "@/components/ui/TextInput";
 import { useToast } from "@/components/ui/Toast";
 import { useUserProfileAdmin } from "../../hooks/useUserProfileAdmin";
-
-type PersonSearchRow = {
-  person_id: string;
-  full_name: string;
-  emails: string | null;
-  active: boolean;
-  role?: string | null;
-  co_code?: string | null;
-  co_ref_id?: string | null;
-};
-
-type PcOrgOption = {
-  pc_org_id: string;
-  pc_org_name: string | null;
-};
-
-function cls(...parts: Array<string | false | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
-
-function fmtTs(value: string | null) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
+import UserProfileEditorPanel from "../user-profile/UserProfileEditorPanel";
+import UserProfileRowsTable from "../user-profile/UserProfileRowsTable";
+import type {
+  PcOrgOption,
+  PersonSearchRow,
+  UserProfileRow,
+} from "../user-profile/userProfileTypes";
 
 export function UserProfileTableView() {
   const toast = useToast();
@@ -57,7 +35,11 @@ export function UserProfileTableView() {
     saveProfile,
   } = useUserProfileAdmin({ pageSize: 25 });
 
-  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const rows = useMemo(
+    () => ((data?.rows ?? []) as UserProfileRow[]),
+    [data]
+  );
+
   const totalRows = data?.page.totalRows ?? 0;
   const canPrev = pageIndex > 0;
   const canNext = (pageIndex + 1) * pageSize < totalRows;
@@ -150,14 +132,14 @@ export function UserProfileTableView() {
     setPersonLoading(true);
 
     try {
-      const sp = new URLSearchParams();
+      const params = new URLSearchParams();
 
       if (personSearch.trim()) {
-        sp.set("q", personSearch.trim());
+        params.set("q", personSearch.trim());
       }
 
       const res = await fetch(
-        `/api/admin/catalogue/user_profile/person-search?${sp.toString()}`,
+        `/api/admin/catalogue/user_profile/person-search?${params.toString()}`,
         { method: "GET" }
       );
 
@@ -243,7 +225,7 @@ export function UserProfileTableView() {
           <div className="w-[280px]">
             <TextInput
               value={q}
-              onChange={(event: any) => setQ(event.target.value)}
+              onChange={(event) => setQ(event.target.value)}
               placeholder="Search auth id, email, person, org…"
             />
           </div>
@@ -266,405 +248,42 @@ export function UserProfileTableView() {
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,0.95fr)]">
-        <div>
-          {!loading && rows.length === 0 ? (
-            <EmptyState
-              title="No profiles found"
-              message="Try adjusting your search."
-              compact
-            />
-          ) : (
-            <div
-              className="overflow-auto rounded border"
-              style={{ borderColor: "var(--to-border)" }}
-            >
-              <table className="w-full text-sm">
-                <thead className="bg-[var(--to-surface-2)]">
-                  <tr className="text-left">
-                    <th className="px-3 py-2 whitespace-nowrap">
-                      Email / Auth
-                    </th>
-                    <th className="px-3 py-2 whitespace-nowrap">
-                      Core Person
-                    </th>
-                    <th className="px-3 py-2 whitespace-nowrap">Status</th>
-                    <th className="px-3 py-2 whitespace-nowrap">
-                      Selected Org
-                    </th>
-                    <th className="px-3 py-2 whitespace-nowrap">Admin</th>
-                  </tr>
-                </thead>
+        <UserProfileRowsTable
+          rows={rows}
+          loading={loading}
+          selectedAuthUserId={selected?.auth_user_id ?? null}
+          pageIndex={pageIndex}
+          pageSize={pageSize}
+          totalRows={totalRows}
+          canPrev={canPrev}
+          canNext={canNext}
+          onSelect={setSelectedAuthUserId}
+          onPageIndexChange={setPageIndex}
+          onPageSizeChange={setPageSize}
+        />
 
-                <tbody>
-                  {rows.map((row, index) => {
-                    const active =
-                      selected?.auth_user_id === row.auth_user_id;
-
-                    return (
-                      <tr
-                        key={row.auth_user_id}
-                        className={cls(
-                          index % 2 === 1
-                            ? "bg-[var(--to-surface)]"
-                            : "bg-[var(--to-surface-soft)]",
-                          active && "ring-2 ring-[var(--to-focus)]"
-                        )}
-                      >
-                        <td className="px-3 py-2 align-top">
-                          <button
-                            type="button"
-                            className="w-full text-left"
-                            onClick={() =>
-                              setSelectedAuthUserId(row.auth_user_id)
-                            }
-                          >
-                            <div className="font-medium">
-                              {row.email ?? "—"}
-                            </div>
-                            <div className="font-mono text-[11px] text-[var(--to-ink-muted)]">
-                              {row.auth_user_id}
-                            </div>
-                          </button>
-                        </td>
-
-                        <td className="px-3 py-2 align-top">
-                          <div>{row.core_person_full_name ?? "—"}</div>
-                          <div className="font-mono text-[11px] text-[var(--to-ink-muted)]">
-                            {row.core_person_id ?? "—"}
-                          </div>
-                          {row.legacy_person_id ? (
-                            <div className="mt-1 text-[10px] text-[var(--to-ink-muted)]">
-                              Legacy: {row.legacy_person_id}
-                            </div>
-                          ) : null}
-                        </td>
-
-                        <td className="px-3 py-2 align-top">
-                          <Badge
-                            variant={
-                              row.status === "active"
-                                ? "success"
-                                : row.status === "inactive"
-                                  ? "warning"
-                                  : "neutral"
-                            }
-                          >
-                            {row.status ?? "—"}
-                          </Badge>
-                        </td>
-
-                        <td className="px-3 py-2 align-top">
-                          <div>{row.selected_pc_org_name ?? "—"}</div>
-                          <div className="font-mono text-[11px] text-[var(--to-ink-muted)]">
-                            {row.selected_pc_org_id ?? "—"}
-                          </div>
-                        </td>
-
-                        <td className="px-3 py-2 align-top">
-                          {row.is_admin ? "Yes" : "No"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-[var(--to-ink-muted)]">
-              Page {(pageIndex + 1).toString()}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <select
-                value={pageSize}
-                onChange={(event) => setPageSize(Number(event.target.value))}
-                className="h-9 rounded border bg-transparent px-2 text-sm"
-                style={{ borderColor: "var(--to-border)" }}
-              >
-                {[10, 25, 50, 100].map((value) => (
-                  <option key={value} value={value}>
-                    {value}/page
-                  </option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                className="h-9 rounded border px-3 text-sm font-medium"
-                style={{ borderColor: "var(--to-border)" }}
-                onClick={() => setPageIndex(Math.max(0, pageIndex - 1))}
-                disabled={!canPrev || loading}
-              >
-                Prev
-              </button>
-
-              <button
-                type="button"
-                className="h-9 rounded border px-3 text-sm font-medium"
-                style={{ borderColor: "var(--to-border)" }}
-                onClick={() => setPageIndex(pageIndex + 1)}
-                disabled={!canNext || loading}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <Card variant="subtle" className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold">Profile editor</div>
-              <div className="mt-1 text-xs text-[var(--to-ink-muted)]">
-                Link auth profiles to core people and selected operating orgs.
-                Permissions and edge grants stay in their own admin surfaces.
-              </div>
-            </div>
-
-            <Badge variant={selected?.is_admin ? "info" : "neutral"}>
-              {selected?.is_admin ? "Admin" : "Standard"}
-            </Badge>
-          </div>
-
-          {!selected ? (
-            <div className="mt-4 text-sm text-[var(--to-ink-muted)]">
-              Select a row to edit.
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-4">
-              <div className="grid gap-2 rounded-xl border px-3 py-3" style={{ borderColor: "var(--to-border)" }}>
-                <div className="text-xs font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                  Auth Identity
-                </div>
-                <div className="grid gap-1">
-                  <div className="text-[11px] text-[var(--to-ink-muted)]">
-                    Email
-                  </div>
-                  <div className="text-sm">{selected.email ?? "—"}</div>
-                </div>
-                <div className="grid gap-1">
-                  <div className="text-[11px] text-[var(--to-ink-muted)]">
-                    Auth User ID
-                  </div>
-                  <div className="font-mono text-xs break-all text-[var(--to-ink-muted)]">
-                    {selected.auth_user_id}
-                  </div>
-                </div>
-              </div>
-
-              <label className="grid gap-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                  Status
-                </span>
-                <select
-                  value={statusDraft}
-                  onChange={(event) => setStatusDraft(event.target.value)}
-                  className="h-10 rounded-xl border bg-transparent px-3 text-sm"
-                  style={{ borderColor: "var(--to-border)" }}
-                >
-                  {[
-                    { value: "pending", label: "pending" },
-                    { value: "active", label: "active" },
-                    { value: "inactive", label: "inactive" },
-                    { value: "disabled", label: "disabled" },
-                  ].map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div
-                className="grid gap-2 rounded-xl border p-3"
-                style={{ borderColor: "var(--to-border)" }}
-              >
-                <div className="text-xs font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                  Core Person Link
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <div className="min-w-[220px] flex-1">
-                    <TextInput
-                      value={personSearch}
-                      onChange={(event: any) =>
-                        setPersonSearch(event.target.value)
-                      }
-                      placeholder="Search core person name or email…"
-                    />
-                  </div>
-
-                  <Button
-                    variant="secondary"
-                    className="h-10 px-4"
-                    onClick={() => void runPersonSearch()}
-                    disabled={personLoading}
-                  >
-                    {personLoading ? "Searching…" : "Search"}
-                  </Button>
-
-                  <Button
-                    variant="secondary"
-                    className="h-10 px-4"
-                    onClick={() => {
-                      setCorePersonIdDraft("");
-                      setPersonSearch("");
-                      setPersonResults([]);
-                    }}
-                    disabled={saving}
-                  >
-                    Clear
-                  </Button>
-                </div>
-
-                <div className="text-[11px] text-[var(--to-ink-muted)] break-all">
-                  Selected core_person_id: {corePersonIdDraft || "—"}
-                </div>
-
-                <div className="text-[11px] text-[var(--to-ink-muted)]">
-                  Current core person:{" "}
-                  {selected.core_person_full_name ??
-                    selected.person_full_name ??
-                    "—"}
-                </div>
-
-                {selected.legacy_person_id ? (
-                  <div className="text-[11px] text-[var(--to-ink-muted)] break-all">
-                    Legacy public person_id: {selected.legacy_person_id}
-                  </div>
-                ) : null}
-
-                {personResults.length > 0 ? (
-                  <div
-                    className="max-h-48 overflow-auto rounded border"
-                    style={{ borderColor: "var(--to-border)" }}
-                  >
-                    {personResults.map((person) => {
-                      const active = corePersonIdDraft === person.person_id;
-
-                      return (
-                        <button
-                          key={person.person_id}
-                          type="button"
-                          onClick={() => {
-                            setCorePersonIdDraft(person.person_id);
-                            setPersonSearch(person.full_name);
-                          }}
-                          className={cls(
-                            "flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left last:border-b-0",
-                            active
-                              ? "bg-[var(--to-row-hover)]"
-                              : "hover:bg-[var(--to-row-hover)]"
-                          )}
-                          style={{ borderColor: "var(--to-border)" }}
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">
-                              {person.full_name}
-                            </div>
-                            <div className="truncate text-[11px] text-[var(--to-ink-muted)]">
-                              {person.emails ?? "—"}
-                            </div>
-                            <div className="font-mono text-[11px] text-[var(--to-ink-muted)]">
-                              {person.person_id}
-                            </div>
-                            <div className="text-[11px] text-[var(--to-ink-muted)]">
-                              {[person.role, person.co_code]
-                                .filter(Boolean)
-                                .join(" • ") || "—"}
-                            </div>
-                          </div>
-
-                          <Badge variant={person.active ? "success" : "warning"}>
-                            {person.active ? "active" : "inactive"}
-                          </Badge>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-
-              <label className="grid gap-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                  Selected PC-Org
-                </span>
-                <select
-                  value={selectedPcOrgDraft}
-                  onChange={(event) =>
-                    setSelectedPcOrgDraft(event.target.value)
-                  }
-                  className="h-10 rounded-xl border bg-transparent px-3 text-sm"
-                  style={{ borderColor: "var(--to-border)" }}
-                  disabled={pcOrgLoading}
-                >
-                  <option value="">
-                    {pcOrgLoading ? "Loading orgs…" : "— none —"}
-                  </option>
-                  {pcOrgOptions.map((org) => (
-                    <option key={org.pc_org_id} value={org.pc_org_id}>
-                      {org.pc_org_name
-                        ? `${org.pc_org_name} (${org.pc_org_id.slice(0, 8)})`
-                        : org.pc_org_id}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="text-[11px] text-[var(--to-ink-muted)]">
-                  Current org: {selected.selected_pc_org_name ?? "—"}
-                </div>
-              </label>
-
-              <label
-                className="flex items-center gap-2 rounded-xl border px-3 py-2"
-                style={{ borderColor: "var(--to-border)" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={isAdminDraft}
-                  onChange={(event) => setIsAdminDraft(event.target.checked)}
-                />
-                <span className="text-sm">App admin</span>
-              </label>
-
-              <div
-                className="grid gap-1 rounded-xl border px-3 py-3"
-                style={{ borderColor: "var(--to-border)" }}
-              >
-                <div className="text-xs font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                  Audit
-                </div>
-                <div className="text-sm text-[var(--to-ink-muted)]">
-                  Created: {fmtTs(selected.created_at)}
-                </div>
-                <div className="text-sm text-[var(--to-ink-muted)]">
-                  Updated: {fmtTs(selected.updated_at)}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  className="h-10 px-4"
-                  onClick={() => void onSave()}
-                  disabled={saving}
-                >
-                  {saving ? "Saving…" : "Save profile"}
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  className="h-10 px-4"
-                  onClick={resetDrafts}
-                  disabled={saving}
-                >
-                  Reset
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
+        <UserProfileEditorPanel
+          selected={selected}
+          saving={saving}
+          statusDraft={statusDraft}
+          corePersonIdDraft={corePersonIdDraft}
+          selectedPcOrgDraft={selectedPcOrgDraft}
+          isAdminDraft={isAdminDraft}
+          personSearch={personSearch}
+          personResults={personResults}
+          personLoading={personLoading}
+          pcOrgOptions={pcOrgOptions}
+          pcOrgLoading={pcOrgLoading}
+          setStatusDraft={setStatusDraft}
+          setCorePersonIdDraft={setCorePersonIdDraft}
+          setSelectedPcOrgDraft={setSelectedPcOrgDraft}
+          setIsAdminDraft={setIsAdminDraft}
+          setPersonSearch={setPersonSearch}
+          setPersonResults={setPersonResults}
+          runPersonSearch={() => void runPersonSearch()}
+          onSave={() => void onSave()}
+          resetDrafts={resetDrafts}
+        />
       </div>
     </div>
   );
