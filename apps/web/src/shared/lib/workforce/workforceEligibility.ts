@@ -18,6 +18,15 @@ export function isActiveWorkforceRow(row: WorkforceRow, today: string) {
   return true;
 }
 
+export function isActiveFieldOrTravelWorkforceRow(
+  row: WorkforceRow,
+  today: string
+) {
+  if (!isActiveWorkforceRow(row, today)) return false;
+
+  return row.seat_type === "FIELD" || row.seat_type === "TRAVEL";
+}
+
 export function isMetricsEligibleWorkforceWindow(args: {
   start_date: DateLike;
   end_date: DateLike;

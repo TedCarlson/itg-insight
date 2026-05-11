@@ -4,28 +4,47 @@ import {
   getActivePeopleOnboardingRows,
   loadPeopleOnboardingRows,
 } from "@/shared/server/people/loadPeopleOnboardingRows.server";
+import { supabaseServer } from "@/shared/data/supabase/server";
 import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforceSourceRows.server";
 import type {
   ExecutiveArtifactCard,
   ExecutiveDimensionPayload,
 } from "@/shared/types/executive/executiveSuite";
+import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
+import type { WorkforceSourceRow } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
 
 const DIRECTOR_WORKFORCE_HREF = "/director/executive?dimension=workforce";
+const CONTRIBUTING_LEADERSHIP_TECH_IDS = new Set(["7109"]);
+
+type AffiliationLikeRow = {
+  affiliation_id?: string | null;
+  affiliation?: string | null;
+};
 
 function normalize(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function titleCase(value: string): string {
-  return value
-    .toLowerCase()
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+async function loadAffiliationOptions(): Promise<WorkforceAffiliationOption[]> {
+  const sb = await supabaseServer();
+
+  const { data, error } = await sb.rpc("workforce_affiliation_options");
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []) as WorkforceAffiliationOption[];
 }
 
-function affiliationLabel(row: { affiliation?: string | null }): string {
+function affiliationLabel(
+  row: AffiliationLikeRow,
+  affiliations: WorkforceAffiliationOption[]
+): string {
+  const byId = affiliations.find(
+    (option) => option.affiliation_id === row.affiliation_id
+  );
+
+  if (byId?.affiliation_label) return byId.affiliation_label;
+
   return normalize(row.affiliation) || "Unknown";
 }
 
@@ -43,6 +62,7 @@ function isW2Affiliation(label: string): boolean {
     value === "ITG" ||
     value === "W2" ||
     value === "EMPLOYEE" ||
+    value === "IN HOUSE" ||
     value.includes("INTEGRATED TECH") ||
     value.includes("INTERNAL")
   );
@@ -50,12 +70,73 @@ function isW2Affiliation(label: string): boolean {
 
 function isBpAffiliation(label: string): boolean {
   const value = label.toUpperCase();
-
   return !isW2Affiliation(value) && value !== "UNKNOWN";
 }
 
 function isTrainingSeat(row: { role_type?: string | null }): boolean {
   return normalize(row.role_type).toUpperCase() === "TRAINING";
+}
+
+function isLeadershipTitle(row: WorkforceSourceRow): boolean {
+  const title = normalize(row.position_title).toLowerCase();
+
+  return (
+    title.includes("supervisor") ||
+    title.includes("manager") ||
+    title.includes("owner") ||
+    title.includes("lead") ||
+    title.includes("director")
+  );
+}
+
+function hasDerivedFieldContribution(row: WorkforceSourceRow): boolean {
+  const techId = normalize(row.tech_id);
+  return techId ? CONTRIBUTING_LEADERSHIP_TECH_IDS.has(techId) : false;
+}
+
+function isExhibitEligibleWorker(row: WorkforceSourceRow): boolean {
+  const roleType = normalize(row.role_type).toUpperCase();
+  const title = normalize(row.position_title).toLowerCase();
+
+  if (!row.is_active) return false;
+  if (roleType === "SUPPORT" || roleType === "FMLA") return false;
+
+  if (hasDerivedFieldContribution(row)) return true;
+
+  if (
+    roleType === "LEADERSHIP" ||
+    title.includes("supervisor") ||
+    title.includes("manager") ||
+    title.includes("owner") ||
+    title.includes("lead") ||
+    title.includes("director")
+  ) {
+    return false;
+  }
+
+  return (
+    roleType === "FIELD" ||
+    roleType === "TRAVEL" ||
+    title.includes("technician") ||
+    title.includes("field")
+  );
+}
+
+function dedupeWorkers(rows: WorkforceSourceRow[]): WorkforceSourceRow[] {
+  const byKey = new Map<string, WorkforceSourceRow>();
+
+  for (const row of rows) {
+    const key =
+      normalize(row.tech_id) ||
+      normalize(row.person_id) ||
+      normalize(row.assignment_id);
+
+    if (!key || byKey.has(key)) continue;
+
+    byKey.set(key, row);
+  }
+
+  return Array.from(byKey.values());
 }
 
 function percent(part: number, total: number): string {
@@ -78,7 +159,7 @@ function countCards(
   }
 ): ExecutiveArtifactCard[] {
   return [...map.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => a[0].localeCompare(b[0]))
     .slice(0, args.limit)
     .map(([label, count]) => {
       const onboarding = args.onboardingCounts?.get(label) ?? 0;
@@ -105,7 +186,7 @@ export async function buildWorkforceExecutiveDimension(args: {
   pc_org_id: string;
   as_of_date: string;
 }): Promise<ExecutiveDimensionPayload> {
-  const [rows, onboardingRows] = await Promise.all([
+  const [rows, onboardingRows, affiliations] = await Promise.all([
     loadWorkforceSourceRows({
       pc_org_id: args.pc_org_id,
       as_of_date: args.as_of_date,
@@ -114,24 +195,28 @@ export async function buildWorkforceExecutiveDimension(args: {
       pc_org_id: args.pc_org_id,
       limit: 500,
     }),
+    loadAffiliationOptions(),
   ]);
 
-  const activeRows = rows.filter((row) => row.is_active);
+  const activeRows = rows.filter((row) => {
+    if (!row.is_active) return false;
+    if (row.end_date && row.end_date <= args.as_of_date) return false;
 
-  const techRows = activeRows.filter(
-    (row) =>
-      !isTrainingSeat(row) &&
-      (row.is_field || row.is_travel_tech)
+    return true;
+  });
+
+  const techRows = dedupeWorkers(
+    activeRows.filter((row) => isExhibitEligibleWorker(row))
   );
 
-  const trainingRows = activeRows.filter(isTrainingSeat);
+  const trainingRows = dedupeWorkers(activeRows.filter(isTrainingSeat));
 
   const w2Rows = techRows.filter((row) =>
-    isW2Affiliation(affiliationLabel(row))
+    isW2Affiliation(affiliationLabel(row, affiliations))
   );
 
   const bpRows = techRows.filter((row) =>
-    isBpAffiliation(affiliationLabel(row))
+    isBpAffiliation(affiliationLabel(row, affiliations))
   );
 
   const activeOnboardingRows = getActivePeopleOnboardingRows(onboardingRows);
@@ -145,11 +230,11 @@ export async function buildWorkforceExecutiveDimension(args: {
   let w2TrainingCount = 0;
 
   for (const row of bpRows) {
-    increment(bpCounts, titleCase(affiliationLabel(row)));
+    increment(bpCounts, affiliationLabel(row, affiliations));
   }
 
   for (const row of activeOnboardingRows) {
-    const label = titleCase(affiliationLabel(row));
+    const label = affiliationLabel(row, affiliations);
 
     if (isW2Affiliation(label)) {
       w2OnboardingCount += 1;
@@ -159,7 +244,7 @@ export async function buildWorkforceExecutiveDimension(args: {
   }
 
   for (const row of trainingRows) {
-    const label = titleCase(affiliationLabel(row));
+    const label = affiliationLabel(row, affiliations);
 
     if (isW2Affiliation(label)) {
       w2TrainingCount += 1;
@@ -169,7 +254,7 @@ export async function buildWorkforceExecutiveDimension(args: {
   }
 
   for (const row of techRows) {
-    increment(officeCounts, titleCase(officeLabel(row)));
+    increment(officeCounts, officeLabel(row));
   }
 
   const totalHc = techRows.length;
@@ -193,11 +278,8 @@ export async function buildWorkforceExecutiveDimension(args: {
             key: "total_hc",
             label: "Total HC",
             value: String(totalHc),
-            helper: "active field + travel technicians",
-            meta: {
-              section: "total_strip",
-              hc: totalHc,
-            },
+            helper: "Exhibit-equivalent active contributors",
+            meta: { section: "total_strip", hc: totalHc },
           },
           {
             key: "w2_hc",

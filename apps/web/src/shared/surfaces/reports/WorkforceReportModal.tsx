@@ -21,14 +21,51 @@ function csvEscape(value: unknown) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function isUnassignedSupervisor(row: WorkforceRow) {
+  const reportsTo = String(row.reports_to_name ?? "").trim();
+  return !reportsTo || reportsTo.toLowerCase() === "unassigned";
+}
+
+function isLeadershipAboveManager(row: WorkforceRow) {
+  const title = String(row.position_title ?? "").trim().toLowerCase();
+
+  return (
+    row.seat_type === "LEADERSHIP" &&
+    (title === "director" ||
+      title === "regional director" ||
+      title === "senior director" ||
+      title === "vp" ||
+      title === "vice president")
+  );
+}
+
+function shouldIncludeReportRow(row: WorkforceRow) {
+  if (isUnassignedSupervisor(row) && isLeadershipAboveManager(row)) {
+    return false;
+  }
+
+  return true;
+}
+
+function displayTechId(row: WorkforceRow) {
+  const techId = String(row.tech_id ?? "").trim();
+
+  if (!techId) return row.position_title ?? "—";
+  if (techId.startsWith("UNASSIGNED-")) return row.position_title ?? "—";
+
+  return techId;
+}
+
 function buildCsv(rows: WorkforceRow[]) {
+  const reportRows = rows.filter(shouldIncludeReportRow);
+
   const output = [
     ["Supervisor", "Person", "Tech ID", "Role", "Seat"],
 
-    ...rows.map((row) => [
+    ...reportRows.map((row) => [
       row.reports_to_name ?? "Unassigned",
       row.display_name ?? "—",
-      row.tech_id ?? "—",
+      displayTechId(row),
       row.position_title ?? "—",
       row.seat_type ?? "—",
     ]),
@@ -46,10 +83,15 @@ export function WorkforceReportModal({
 }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
 
+  const reportRows = useMemo(
+    () => rows.filter(shouldIncludeReportRow),
+    [rows]
+  );
+
   const grouped = useMemo(() => {
     const map = new Map<string, WorkforceRow[]>();
 
-    for (const row of rows) {
+    for (const row of reportRows) {
       const supervisor =
         row.reports_to_name && row.reports_to_name !== "Unassigned"
           ? row.reports_to_name
@@ -62,10 +104,12 @@ export function WorkforceReportModal({
       map.get(supervisor)!.push(row);
     }
 
-    return Array.from(map.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0])
-    );
-  }, [rows]);
+    return Array.from(map.entries()).sort((a, b) => {
+      if (a[0] === "Unassigned") return 1;
+      if (b[0] === "Unassigned") return -1;
+      return a[0].localeCompare(b[0]);
+    });
+  }, [reportRows]);
 
   if (!open) return null;
 
@@ -75,12 +119,10 @@ export function WorkforceReportModal({
     });
 
     const url = URL.createObjectURL(blob);
-
     const anchor = document.createElement("a");
 
     anchor.href = url;
     anchor.download = `Workforce Report - ${regionLabel} - ${reportMonthLabel}.csv`;
-
     anchor.click();
 
     URL.revokeObjectURL(url);
@@ -88,7 +130,6 @@ export function WorkforceReportModal({
 
   function printPdf() {
     const html = printRef.current?.innerHTML ?? "";
-
     const win = window.open("", "_blank");
 
     if (!win) return;
@@ -97,7 +138,6 @@ export function WorkforceReportModal({
       <html>
         <head>
           <title>Workforce Report - ${regionLabel} - ${reportMonthLabel}</title>
-
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -223,7 +263,7 @@ export function WorkforceReportModal({
 
           <div className="subhead">{reportMonthLabel}</div>
 
-          {rows.length === 0 ? (
+          {reportRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               No workforce data found.
             </div>
@@ -253,15 +293,13 @@ export function WorkforceReportModal({
 
                   <tbody>
                     {team.map((row) => (
-                      <tr
-                        key={`${row.assignment_id}:${row.person_id}`}
-                      >
+                      <tr key={`${row.assignment_id}:${row.person_id}`}>
                         <td className="border px-2 py-1 truncate">
                           {row.display_name ?? "—"}
                         </td>
 
                         <td className="border px-2 py-1">
-                          {row.tech_id ?? "—"}
+                          {displayTechId(row)}
                         </td>
 
                         <td className="border px-2 py-1">

@@ -26,15 +26,44 @@ type ExhibitLine = {
   contractor: number;
 };
 
-function isTechnician(row: WorkforceRow) {
-  const title = String(row.position_title ?? "").toLowerCase();
+const CONTRIBUTING_LEADERSHIP_TECH_IDS = new Set(["7109"]);
+
+function normalize(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function isLeadershipTitle(row: WorkforceRow) {
+  const title = normalize(row.position_title).toLowerCase();
 
   return (
-    row.is_active &&
-    row.seat_type !== "LEADERSHIP" &&
-    row.seat_type !== "SUPPORT" &&
-    row.seat_type !== "FMLA" &&
-    (row.seat_type === "DROP_BURY" || title.includes("technician"))
+    title.includes("supervisor") ||
+    title.includes("manager") ||
+    title.includes("owner") ||
+    title.includes("lead") ||
+    title.includes("director")
+  );
+}
+
+function hasDerivedFieldContribution(row: WorkforceRow) {
+  const techId = normalize(row.tech_id);
+  return techId ? CONTRIBUTING_LEADERSHIP_TECH_IDS.has(techId) : false;
+}
+
+function isTechnician(row: WorkforceRow) {
+  const title = normalize(row.position_title).toLowerCase();
+
+  if (!row.is_active) return false;
+  if (row.seat_type === "SUPPORT" || row.seat_type === "FMLA") return false;
+
+  if (hasDerivedFieldContribution(row)) return true;
+
+  if (row.seat_type === "LEADERSHIP" || isLeadershipTitle(row)) return false;
+
+  return (
+    row.seat_type === "FIELD" ||
+    row.seat_type === "TRAVEL" ||
+    row.seat_type === "DROP_BURY" ||
+    title.includes("technician")
   );
 }
 
@@ -49,11 +78,31 @@ function getAffiliationMeta(
   row: WorkforceRow,
   affiliations: WorkforceAffiliationOption[]
 ) {
-  return affiliations.find(
-    (option) =>
+  const rowLabel = normalize(row.affiliation);
+  const rowLabelUpper = rowLabel.toUpperCase();
+
+  return affiliations.find((option) => {
+    const optionLabel = normalize(option.affiliation_label);
+    const optionCode = normalize(option.affiliation_code);
+
+    return (
       option.affiliation_id === row.affiliation_id ||
-      option.affiliation_label === row.affiliation ||
-      option.affiliation_code === row.affiliation
+      optionLabel === rowLabel ||
+      optionCode.toUpperCase() === rowLabelUpper
+    );
+  });
+}
+
+function getAffiliationLabel(
+  row: WorkforceRow,
+  affiliations: WorkforceAffiliationOption[]
+): string {
+  const meta = getAffiliationMeta(row, affiliations);
+
+  return (
+    normalize(meta?.affiliation_label) ||
+    normalize(row.affiliation) ||
+    "Unassigned"
   );
 }
 
@@ -62,7 +111,7 @@ function getWorkerClass(
   affiliations: WorkforceAffiliationOption[]
 ): WorkerClass {
   const meta = getAffiliationMeta(row, affiliations);
-  const label = String(row.affiliation ?? "").toLowerCase();
+  const label = getAffiliationLabel(row, affiliations).toLowerCase();
 
   if (meta?.affiliation_type === "COMPANY") return "W2";
   if (label.includes("integrated tech group") || label === "itg") return "W2";
@@ -80,8 +129,8 @@ function buildExhibitRows(
     const type: ExhibitType = isMduDrop(row) ? "MDU / DROP" : "FULFILLMENT";
     const workerClass = getWorkerClass(row, affiliations);
     const meta = getAffiliationMeta(row, affiliations);
-    const area = meta?.affiliation_label ?? row.affiliation ?? "Unassigned";
-    const affiliationKey = row.affiliation_id ?? area;
+    const area = getAffiliationLabel(row, affiliations);
+    const affiliationKey = meta?.affiliation_id ?? row.affiliation_id ?? area;
     const key = `${type}::${workerClass}::${affiliationKey}`;
 
     const existing =
@@ -277,7 +326,7 @@ export default function ExhibitModal({
                 const showType = !previous || previous.type !== row.type;
 
                 return (
-                  <tr key={`${row.type}-${row.area}`}>
+                  <tr key={`${row.type}-${row.workerClass}-${row.area}`}>
                     <td className="border px-3 py-2">
                       {showType ? row.type : ""}
                     </td>
@@ -289,7 +338,7 @@ export default function ExhibitModal({
                       {displayCount(row.contractor)}
                     </td>
                     <td className="border px-3 py-2 text-right">
-                      
+                      {displayCount(row.w2 + row.contractor)}
                     </td>
                   </tr>
                 );

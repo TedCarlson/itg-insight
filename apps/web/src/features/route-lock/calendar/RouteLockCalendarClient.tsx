@@ -38,13 +38,20 @@ type Day = {
   bptrl_count?: number | null;
 };
 
-type UnitMode = "routes" | "hours" | "units";
 type DayState = "planned" | "built" | "actual";
-type LockVerdict = "MET" | "MISS" | "NA";
+type LockVerdict = "MEETS" | "MISSES" | "MET" | "MISSED" | "NA";
+type NetTone = "met" | "near" | "miss" | "muted";
+
+const POINTS_PER_ROUTE = 96;
 
 function weekdayShort(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+}
+
+function isWeekStart(iso: string): boolean {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.getUTCDay() === 0;
 }
 
 function n(v: unknown): number | null {
@@ -79,8 +86,8 @@ function fmtPct(v: number | null): string {
   return `${Math.round(v * 10) / 10}%`;
 }
 
-function safePct(num: number, den: number | null): number | null {
-  if (!den) return null;
+function safePct(num: number | null, den: number | null): number | null {
+  if (num === null || !den) return null;
   const p = (num / den) * 100;
   if (!Number.isFinite(p)) return null;
   return Math.round(p * 10) / 10;
@@ -98,51 +105,75 @@ function stateLabel(state: DayState): string {
   return "Planned";
 }
 
-function multiplier(mode: UnitMode): number {
-  if (mode === "hours") return 8;
-  if (mode === "units") return 96;
-  return 1;
+function valueLabel(state: DayState): string {
+  if (state === "actual") return "Actual";
+  if (state === "built") return "Built";
+  return "Planned";
 }
 
-function quotaForMode(d: Day, mode: UnitMode): number | null {
-  if (mode === "routes") return n(d.quota_routes);
-  if (mode === "hours") return n(d.quota_hours);
+function quotaPointsForDay(d: Day): number | null {
   return n(d.quota_units) ?? (n(d.quota_hours) === null ? null : count(d.quota_hours) * 12);
 }
 
-function deltaTone(delta: number | null) {
-  if (delta === null || delta === 0) return "text-[var(--to-ink-muted)]";
-  if (delta > 0) return "text-[rgba(16,185,129,0.95)]";
-  return "text-[rgba(239,68,68,0.95)]";
+function isNearRoutes(lockEligible: number | null, quotaRoutes: number | null): boolean {
+  if (lockEligible === null || quotaRoutes === null || quotaRoutes <= 0) return false;
+  return lockEligible < quotaRoutes && lockEligible >= quotaRoutes * 0.9;
+}
+
+function routeNetTone(lockEligible: number | null, quotaRoutes: number | null): NetTone {
+  if (lockEligible === null || quotaRoutes === null) return "muted";
+  if (lockEligible >= quotaRoutes) return "met";
+  if (isNearRoutes(lockEligible, quotaRoutes)) return "near";
+  return "miss";
+}
+
+function pointNetTone(args: {
+  lockEligible: number | null;
+  quotaRoutes: number | null;
+  phasePoints: number | null;
+  quotaPoints: number | null;
+}): NetTone {
+  const { lockEligible, quotaRoutes, phasePoints, quotaPoints } = args;
+
+  if (phasePoints === null || quotaPoints === null) return "muted";
+  if (phasePoints >= quotaPoints && isNearRoutes(lockEligible, quotaRoutes)) return "met";
+  if (phasePoints >= quotaPoints) return "near";
+  return "miss";
+}
+
+function netToneClass(tone: NetTone): string {
+  if (tone === "met") return "text-[rgba(16,185,129,0.95)]";
+  if (tone === "near") return "text-[rgba(245,158,11,0.95)]";
+  if (tone === "miss") return "text-[rgba(239,68,68,0.95)]";
+  return "text-[var(--to-ink-muted)]";
 }
 
 function verdictTone(verdict: LockVerdict) {
-  if (verdict === "MET") return "text-[rgba(16,185,129,0.95)]";
-  if (verdict === "MISS") return "text-[rgba(239,68,68,0.95)]";
+  if (verdict === "MEETS" || verdict === "MET") return "text-[rgba(16,185,129,0.95)]";
+  if (verdict === "MISSES" || verdict === "MISSED") return "text-[rgba(239,68,68,0.95)]";
   return "text-[var(--to-ink-muted)]";
 }
 
 function computeVerdict(args: {
-  lockRoutes: number | null;
+  state: DayState;
+  lockEligible: number | null;
   quotaRoutes: number | null;
-  actualUnits: number | null;
-  quotaUnits: number | null;
+  phasePoints: number | null;
+  quotaPoints: number | null;
 }): LockVerdict {
-  const { lockRoutes, quotaRoutes, actualUnits, quotaUnits } = args;
+  const { state, lockEligible, quotaRoutes, phasePoints, quotaPoints } = args;
 
-  if (quotaRoutes === null || lockRoutes === null) return "NA";
-  if (lockRoutes >= quotaRoutes) return "MET";
+  if (quotaRoutes === null || lockEligible === null) return "NA";
 
-  if (
-    lockRoutes >= quotaRoutes * 0.9 &&
-    quotaUnits !== null &&
-    actualUnits !== null &&
-    actualUnits >= quotaUnits
-  ) {
-    return "MET";
-  }
+  const success =
+    lockEligible >= quotaRoutes ||
+    (isNearRoutes(lockEligible, quotaRoutes) &&
+      quotaPoints !== null &&
+      phasePoints !== null &&
+      phasePoints >= quotaPoints);
 
-  return "MISS";
+  if (state === "actual") return success ? "MET" : "MISSED";
+  return success ? "MEETS" : "MISSES";
 }
 
 export function RouteLockCalendarClient(props: {
@@ -153,14 +184,12 @@ export function RouteLockCalendarClient(props: {
   currentHref?: string | null;
   nextHref?: string | null;
 }) {
-  const [mode, setMode] = useState<UnitMode>("routes");
+  const [showBreakout, setShowBreakout] = useState(false);
 
   const fiscalLabel =
     props.fiscal.label ?? `Fiscal ${props.fiscal.start_date} → ${props.fiscal.end_date}`;
 
   const rows = useMemo(() => {
-    const m = multiplier(mode);
-
     return props.days.map((d) => {
       const state = stateForDay(d);
 
@@ -171,78 +200,93 @@ export function RouteLockCalendarClient(props: {
       const bptrl = count(d.bptrl_count);
 
       const quotaRoutes = n(d.quota_routes);
-      const quota = quotaForMode(d, mode);
-      const quotaUnits =
-        n(d.quota_units) ??
-        (n(d.quota_hours) === null ? null : count(d.quota_hours) * 12);
+      const quotaPoints = quotaPointsForDay(d);
 
-      const plannedFieldRoutes = count(d.planned_field_count ?? d.scheduled_routes);
-      const plannedTravelRoutes = count(d.planned_travel_count);
-      const plannedTotalRoutes = plannedFieldRoutes + plannedTravelRoutes;
+      const plannedEligible = count(d.planned_field_count ?? d.scheduled_routes);
+      const plannedIneligible = count(d.planned_travel_count);
+      const plannedRun = plannedEligible + plannedIneligible;
 
-      const plannedLockRoutes = plannedFieldRoutes;
-      const plannedRunRoutes = plannedTotalRoutes;
-
-      const builtLockRoutes = work + bplow + prjt;
-      const builtRunRoutes = work + bplow + prjt + trvl + bptrl;
+      const builtEligible = work + bplow + prjt;
+      const builtIneligible = trvl + bptrl;
+      const builtRun = builtEligible + builtIneligible;
 
       const actualTechs = n(d.actual_techs);
-      const actualLockRoutes =
+      const actualEligible =
         actualTechs === null ? null : actualTechs - trvl - bptrl + bplow + prjt;
-      const actualRunRoutes =
-        actualTechs === null ? null : actualTechs + bplow + prjt;
+      const actualIneligible = actualTechs === null ? null : trvl + bptrl;
+      const actualRun = actualTechs === null ? null : actualTechs + bplow + prjt;
 
-      const activeLockRoutes =
+      const lockEligible =
+        state === "actual" ? actualEligible : state === "built" ? builtEligible : plannedEligible;
+
+      const lockIneligible =
         state === "actual"
-          ? actualLockRoutes
+          ? actualIneligible
           : state === "built"
-            ? builtLockRoutes
-            : plannedLockRoutes;
+            ? builtIneligible
+            : plannedIneligible;
 
-      const activeRunRoutes =
+      const totalRun = state === "actual" ? actualRun : state === "built" ? builtRun : plannedRun;
+
+      const phasePoints =
         state === "actual"
-          ? actualRunRoutes
-          : state === "built"
-            ? builtRunRoutes
-            : plannedRunRoutes;
+          ? n(d.actual_units)
+          : lockEligible === null
+            ? null
+            : lockEligible * POINTS_PER_ROUTE;
 
-      const activeLock = activeLockRoutes === null ? null : activeLockRoutes * m;
-      const activeRun = activeRunRoutes === null ? null : activeRunRoutes * m;
+      const routeNet =
+        quotaRoutes === null || lockEligible === null ? null : lockEligible - quotaRoutes;
 
-      const net = quota === null || activeLock === null ? null : activeLock - quota;
-      const runRatePct = safePct(activeRun ?? activeLock ?? 0, quota);
+      const pointsNet =
+        quotaPoints === null || phasePoints === null ? null : phasePoints - quotaPoints;
+
+      const lockRunRate = safePct(lockEligible, quotaRoutes);
+      const totalRunRate = safePct(totalRun, quotaRoutes);
 
       const verdict = computeVerdict({
-        lockRoutes: activeLockRoutes,
+        state,
+        lockEligible,
         quotaRoutes,
-        actualUnits: state === "actual" ? n(d.actual_units) : null,
-        quotaUnits,
+        phasePoints,
+        quotaPoints,
       });
 
       return {
         day: d,
         state,
-        quota,
-        plannedLock: plannedLockRoutes * m,
-        plannedTravel: plannedTravelRoutes * m,
-        plannedRun: plannedRunRoutes * m,
-        builtLock: builtLockRoutes * m,
-        builtRun: builtRunRoutes * m,
-        actualLock: actualLockRoutes === null ? null : actualLockRoutes * m,
-        actualRun: actualRunRoutes === null ? null : actualRunRoutes * m,
-        activeLock,
-        activeRun,
-        net,
-        runRatePct,
+
+        quotaRoutes,
+        lockEligible,
+        lockIneligible,
+        totalRun,
+
+        quotaPoints,
+        phasePoints,
+
+        routeNet,
+        pointsNet,
+        routeTone: routeNetTone(lockEligible, quotaRoutes),
+        pointTone: pointNetTone({
+          lockEligible,
+          quotaRoutes,
+          phasePoints,
+          quotaPoints,
+        }),
+
+        lockRunRate,
+        totalRunRate,
+
         work,
         bplow,
         prjt,
         trvl,
         bptrl,
+
         verdict,
       };
     });
-  }, [props.days, mode]);
+  }, [props.days]);
 
   return (
     <div className="space-y-4">
@@ -256,15 +300,13 @@ export function RouteLockCalendarClient(props: {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="to-input h-8 text-xs"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as UnitMode)}
+            <button
+              type="button"
+              className="to-btn to-btn--secondary h-8 px-3 text-xs"
+              onClick={() => setShowBreakout((v) => !v)}
             >
-              <option value="routes">Routes</option>
-              <option value="hours">Hours</option>
-              <option value="units">Points</option>
-            </select>
+              {showBreakout ? "Hide Breakout" : "Show Breakout"}
+            </button>
 
             {props.prevHref ? (
               <Link href={props.prevHref} className="to-btn to-btn--secondary h-8 px-3 text-xs">
@@ -290,34 +332,88 @@ export function RouteLockCalendarClient(props: {
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <div className="max-h-[620px] overflow-y-auto">
-            <table className="min-w-[1540px] table-fixed border-collapse text-sm">
+            <table
+              className={[
+                "table-fixed border-collapse text-sm",
+                showBreakout ? "min-w-[1560px]" : "min-w-[1120px]",
+              ].join(" ")}
+            >
               <thead className="sticky top-0 z-10 bg-background text-xs text-[var(--to-ink-muted)] shadow-sm">
                 <tr>
+                  <th rowSpan={2} className="w-[150px] border-b border-r border-[var(--to-border)] bg-background px-3 py-3 text-left">
+                    Date
+                  </th>
+                  <th rowSpan={2} className="w-[82px] border-b border-r border-[var(--to-border)] bg-background px-3 py-3 text-left">
+                    Phase
+                  </th>
+
+                  <th colSpan={4} className="border-b border-r border-[var(--to-border)] bg-background px-3 py-2 text-center">
+                    Routes
+                  </th>
+
+                  <th colSpan={2} className="border-b border-r border-[var(--to-border)] bg-background px-3 py-2 text-center">
+                    Points
+                  </th>
+
+                  {showBreakout ? (
+                    <th colSpan={5} className="border-b border-r border-[var(--to-border)] bg-background px-3 py-2 text-center">
+                      Breakout
+                    </th>
+                  ) : null}
+
+                  <th colSpan={2} className="border-b border-r border-[var(--to-border)] bg-background px-3 py-2 text-center">
+                    Net
+                  </th>
+
+                  <th colSpan={3} className="border-b border-[var(--to-border)] bg-background px-3 py-2 text-center">
+                    Solution
+                  </th>
+                </tr>
+
+                <tr>
                   {[
-                    ["Date", "w-[150px] text-left"],
-                    ["State", "w-[82px] text-left"],
-                    ["Quota", "w-[76px] text-right border-r"],
-                    ["Plan Lock", "w-[88px] text-right"],
-                    ["Plan Travel", "w-[92px] text-right"],
-                    ["Plan Run", "w-[84px] text-right border-r"],
-                    ["Built Lock", "w-[90px] text-right"],
-                    ["Built Run", "w-[86px] text-right border-r"],
-                    ["Actual Lock", "w-[94px] text-right"],
-                    ["Actual Run", "w-[90px] text-right border-r"],
-                    ["Net", "w-[62px] text-right"],
-                    ["WORK", "w-[62px] text-right"],
-                    ["BPLOW", "w-[66px] text-right"],
-                    ["PRJT", "w-[62px] text-right"],
-                    ["TRVL", "w-[62px] text-right"],
-                    ["BPTRL", "w-[66px] text-right"],
-                    ["Run Rate", "w-[82px] text-right"],
-                    ["SV", "w-[48px] text-left"],
-                    ["Check-In", "w-[76px] text-left"],
-                    ["Lock", "w-[62px] text-left"],
-                  ].map(([label, cls]) => (
+                    ["routes-quota", "Quota", "w-[78px] text-right"],
+                    ["routes-eligible", "Eligible", "w-[88px] text-right"],
+                    ["routes-ineligible", "Ineligible", "w-[92px] text-right"],
+                    ["routes-total-run", "Total Run", "w-[88px] text-right border-r"],
+                    ["points-quota", "Quota", "w-[86px] text-right"],
+                    ["points-output", "Output", "w-[86px] text-right border-r"],
+                  ].map(([key, label, cls]) => (
                     <th
-                      key={label}
-                      className={`border-b border-[var(--to-border)] bg-background px-3 py-3 ${cls}`}
+                      key={key}
+                      className={`border-b border-[var(--to-border)] bg-background px-3 py-2 ${cls}`}
+                    >
+                      {label}
+                    </th>
+                  ))}
+
+                  {showBreakout
+                    ? [
+                      ["breakout-work", "WORK", "w-[64px] text-right"],
+                      ["breakout-bplow", "BPLOW", "w-[70px] text-right"],
+                      ["breakout-prjt", "PRJT", "w-[64px] text-right"],
+                      ["breakout-trvl", "TRVL", "w-[64px] text-right"],
+                      ["breakout-bptrl", "BPTRL", "w-[72px] text-right border-r"],
+                    ].map(([key, label, cls]) => (
+                      <th
+                        key={key}
+                        className={`border-b border-[var(--to-border)] bg-background px-3 py-2 ${cls}`}
+                      >
+                        {label}
+                      </th>
+                    ))
+                    : null}
+
+                  {[
+                    ["net-routes", "Routes", "w-[78px] text-right"],
+                    ["net-points", "Points", "w-[78px] text-right border-r"],
+                    ["solution-lock-rate", "Lock Rate", "w-[92px] text-right"],
+                    ["solution-run-rate", "Run Rate", "w-[90px] text-right"],
+                    ["solution-lock", "Lock", "w-[82px] text-left"],
+                  ].map(([key, label, cls]) => (
+                    <th
+                      key={key}
+                      className={`border-b border-[var(--to-border)] bg-background px-3 py-2 ${cls}`}
                     >
                       {label}
                     </th>
@@ -335,55 +431,87 @@ export function RouteLockCalendarClient(props: {
                       key={d.date}
                       className={[
                         "border-b hover:bg-muted/30",
+                        isWeekStart(d.date) ? "border-t-2 border-t-[rgba(59,130,246,0.28)]" : "",
                         isToday ? "bg-[rgba(59,130,246,0.07)]" : "",
                       ].join(" ")}
                     >
-                      <td className="px-3 py-2 font-medium tabular-nums">
+                      <td className="border-r px-3 py-2 font-medium tabular-nums">
                         {d.date}{" "}
                         <span className="text-[var(--to-ink-muted)]">
                           {weekdayShort(d.date)}
                         </span>
                       </td>
-                      <td className="px-3 py-2">{stateLabel(row.state)}</td>
-                      <td className="border-r px-3 py-2 text-right tabular-nums">
-                        {fmtWhole(row.quota)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmt(row.plannedLock)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.plannedTravel}</td>
-                      <td className="border-r px-3 py-2 text-right tabular-nums">
-                        {fmt(row.plannedRun)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmt(row.builtLock)}</td>
-                      <td className="border-r px-3 py-2 text-right tabular-nums">
-                        {fmt(row.builtRun)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmt(row.actualLock)}</td>
-                      <td className="border-r px-3 py-2 text-right tabular-nums">
-                        {fmt(row.actualRun)}
+
+                      <td className="border-r px-3 py-2">{stateLabel(row.state)}</td>
+
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmtWhole(row.quotaRoutes)}
                       </td>
                       <td
                         className={[
                           "px-3 py-2 text-right font-medium tabular-nums",
-                          deltaTone(row.net),
+                          row.routeTone === "miss" ? "text-[rgba(239,68,68,0.95)]" : "",
+                          row.routeTone === "near" ? "text-[rgba(245,158,11,0.95)]" : "",
+                          row.routeTone === "met" ? "text-[rgba(16,185,129,0.95)]" : "",
                         ].join(" ")}
                       >
-                        {fmtDelta(row.net)}
+                        {fmt(row.lockEligible)}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.work}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.bplow}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.prjt}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.trvl}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.bptrl}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {fmtPct(row.runRatePct)}
+                        {fmt(row.lockIneligible)}
                       </td>
-                      <td className="px-3 py-2">{d.has_sv ? "Yes" : "No"}</td>
-                      <td className="px-3 py-2">{d.has_check_in ? "Yes" : "No"}</td>
+                      <td className="border-r px-3 py-2 text-right tabular-nums">
+                        {fmt(row.totalRun)}
+                      </td>
+
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmtWhole(row.quotaPoints)}
+                      </td>
+                      <td className="border-r px-3 py-2 text-right tabular-nums">
+                        {fmtWhole(row.phasePoints)}
+                      </td>
+
+                      {showBreakout ? (
+                        <>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.work}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.bplow}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.prjt}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{row.trvl}</td>
+                          <td className="border-r px-3 py-2 text-right tabular-nums">
+                            {row.bptrl}
+                          </td>
+                        </>
+                      ) : null}
+
+                      <td
+                        className={[
+                          "px-3 py-2 text-right font-medium tabular-nums",
+                          netToneClass(row.routeTone),
+                        ].join(" ")}
+                      >
+                        {fmtDelta(row.routeNet)}
+                      </td>
+                      <td
+                        className={[
+                          "border-r px-3 py-2 text-right font-medium tabular-nums",
+                          netToneClass(row.pointTone),
+                        ].join(" ")}
+                      >
+                        {fmtDelta(row.pointsNet)}
+                      </td>
+
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmtPct(row.lockRunRate)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--to-ink-muted)]">
+                        {fmtPct(row.totalRunRate)}
+                      </td>
                       <td
                         className={[
                           "px-3 py-2 font-semibold",
                           verdictTone(row.verdict),
                         ].join(" ")}
+                        title={`${valueLabel(row.state)} lock solution`}
                       >
                         {row.verdict === "NA" ? "—" : row.verdict}
                       </td>

@@ -42,21 +42,6 @@ function statusLabel(status: ExecutiveArtifactStatus) {
   return status;
 }
 
-function dimensionHref(dimension: string) {
-  if (dimension === "workforce") return "/director/executive?dimension=workforce";
-  if (dimension === "metrics") return "/director/executive?dimension=metrics";
-
-  if (
-    dimension === "routeLock" ||
-    dimension === "route-lock" ||
-    dimension === "route_lock"
-  ) {
-    return "/director/executive?dimension=route-lock";
-  }
-
-  return "/director/executive";
-}
-
 function dimensionMatchesActive(dimension: string, active: DirectorDimensionKey) {
   if (active === "overview") return true;
   if (active === "workforce") return dimension === "workforce";
@@ -182,6 +167,23 @@ function WorkforceRowGrid({
   );
 }
 
+function StaffingRow({ card }: { card: ExecutiveArtifactCard }) {
+  return (
+    <div className="grid grid-cols-[1fr_72px_96px_80px] border-t border-[var(--to-border)] px-3 py-2 text-xs">
+      <div className="font-medium">{card.label}</div>
+      <div className="text-right tabular-nums">
+        {String(card.meta?.hc ?? card.value)}
+      </div>
+      <div className="text-right tabular-nums">
+        {String(card.meta?.onboarding ?? 0)}
+      </div>
+      <div className="text-right tabular-nums">
+        {String(card.meta?.training ?? 0)}
+      </div>
+    </div>
+  );
+}
+
 function WorkforceCompositionArtifact({
   artifact,
 }: {
@@ -218,43 +220,20 @@ function WorkforceCompositionArtifact({
             </div>
 
             {staffingCards.map((card) => (
-              <div
-                key={card.key}
-                className="grid grid-cols-[1fr_72px_96px_80px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
-              >
-                <div className="font-medium">{card.label}</div>
-                <div className="text-right tabular-nums">
-                  {String(card.meta?.hc ?? card.value)}
-                </div>
-                <div className="text-right tabular-nums">
-                  {String(card.meta?.onboarding ?? 0)}
-                </div>
-                <div className="text-right tabular-nums">
-                  {String(card.meta?.training ?? 0)}
-                </div>
-              </div>
+              <StaffingRow key={card.key} card={card} />
             ))}
 
             {bpCards.map((card, index) => (
               <div
                 key={card.key}
                 className={[
-                  "grid grid-cols-[1fr_72px_96px_80px] border-t px-3 py-2 text-xs",
+                  "border-t",
                   index === 0
                     ? "border-t-2 border-[var(--to-border)]"
                     : "border-[var(--to-border)]",
                 ].join(" ")}
               >
-                <div className="font-medium">{card.label}</div>
-                <div className="text-right tabular-nums">
-                  {String(card.meta?.hc ?? card.value)}
-                </div>
-                <div className="text-right tabular-nums">
-                  {String(card.meta?.onboarding ?? 0)}
-                </div>
-                <div className="text-right tabular-nums">
-                  {String(card.meta?.training ?? 0)}
-                </div>
+                <StaffingRow card={card} />
               </div>
             ))}
           </div>
@@ -333,36 +312,83 @@ function RouteLockSevenDayArtifact(props: {
 }) {
   const { artifact } = props;
 
+  function lockTone(lockStatus: string) {
+    if (lockStatus === "MET" || lockStatus === "MEETS") {
+      return "text-[rgba(16,185,129,0.95)]";
+    }
+
+    if (lockStatus === "MISSED" || lockStatus === "MISSES") {
+      return "text-[rgba(239,68,68,0.95)]";
+    }
+
+    return "text-[var(--to-ink-muted)]";
+  }
+
+  function eligibleTone(meta: ExecutiveArtifactCard["meta"]) {
+    const eligible = Number(meta?.eligible ?? NaN);
+    const quota = Number(meta?.quota ?? NaN);
+
+    if (!Number.isFinite(eligible) || !Number.isFinite(quota)) {
+      return "text-[var(--to-ink-muted)]";
+    }
+
+    if (eligible >= quota) return "text-[rgba(16,185,129,0.95)]";
+    if (quota > 0 && eligible >= quota * 0.9) return "text-[rgba(245,158,11,0.95)]";
+
+    return "text-[rgba(239,68,68,0.95)]";
+  }
+
   return (
     <div className="rounded-2xl border border-[var(--to-border)] p-3">
       <ArtifactHeader artifact={artifact} />
 
       {artifact.cards.length ? (
         <div className="mt-3 overflow-hidden rounded-xl border border-[var(--to-border)]">
-          <div className="grid grid-cols-[1.2fr_0.8fr_0.9fr_0.8fr] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+          <div className="grid grid-cols-[1.1fr_0.75fr_0.8fr_0.8fr_0.8fr] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
             <div>Date</div>
+            <div>Phase</div>
             <div className="text-right">Quota</div>
-            <div className="text-right">Run Rate</div>
+            <div className="text-right">Eligible</div>
             <div className="text-right">Lock</div>
           </div>
 
           {artifact.cards.map((card) => {
             const lockStatus = String(card.meta?.lock_status ?? "—");
-            const runRate = String(card.meta?.run_rate_display ?? "—");
             const quota =
               card.meta?.quota === null || card.meta?.quota === undefined
                 ? "—"
                 : String(card.meta.quota);
+            const eligible =
+              card.meta?.eligible === null || card.meta?.eligible === undefined
+                ? "—"
+                : String(card.meta.eligible);
+            const phase = String(card.meta?.phase ?? "—");
+            const isToday = card.meta?.is_today === true;
 
             return (
               <div
                 key={card.key}
-                className="grid grid-cols-[1.2fr_0.8fr_0.9fr_0.8fr] border-t border-[var(--to-border)] px-3 py-2 text-xs tabular-nums"
+                className={[
+                  "grid grid-cols-[1.1fr_0.75fr_0.8fr_0.8fr_0.8fr] border-t border-[var(--to-border)] px-3 py-2 text-xs tabular-nums",
+                  isToday ? "bg-[rgba(37,99,235,0.06)]" : "",
+                ].join(" ")}
               >
-                <div className="font-medium">{card.label}</div>
+                <div className="font-medium">
+                  {card.label}
+                  {isToday ? (
+                    <span className="ml-2 rounded-full border px-1.5 py-0.5 text-[10px] text-[var(--to-ink-muted)]">
+                      Today
+                    </span>
+                  ) : null}
+                </div>
+                <div className="text-[var(--to-ink-muted)]">{phase}</div>
                 <div className="text-right">{quota}</div>
-                <div className="text-right">{runRate}</div>
-                <div className="text-right font-semibold">{lockStatus}</div>
+                <div className={`text-right font-semibold ${eligibleTone(card.meta)}`}>
+                  {eligible}
+                </div>
+                <div className={`text-right font-semibold ${lockTone(lockStatus)}`}>
+                  {lockStatus}
+                </div>
               </div>
             );
           })}
@@ -380,7 +406,7 @@ function StandardArtifact(props: {
   artifact: ExecutiveDimensionArtifact;
   dimension: string;
 }) {
-  const { artifact, dimension } = props;
+  const { artifact } = props;
 
   return (
     <div className="rounded-2xl border border-[var(--to-border)] p-3">
@@ -458,7 +484,6 @@ export default function DirectorExecutiveSuiteClient({
 
   return (
     <div className="space-y-4">
-
       <div className="grid gap-3 md:grid-cols-3">
         {visibleDimensions.map((dimension) => (
           <Card key={dimension.dimension} className="space-y-3 p-4">
