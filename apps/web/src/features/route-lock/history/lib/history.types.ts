@@ -1,3 +1,5 @@
+// path: apps/web/src/features/route-lock/history/lib/history.types.ts
+
 export type TechSearchItem = {
   assignment_id: string;
   person_id: string;
@@ -54,17 +56,43 @@ export type HistoryResponse = {
 };
 
 export type CheckInWeeklyRow = {
+  assignment_id: string;
+  
   week_start: string;
   week_end: string;
+  week_ending_saturday: string;
+  calendar_year: number;
+  calendar_week: number;
+
   tech_id: string;
   full_name: string;
   affiliation: string | null;
+
   days_worked: number;
   worked_dates: string[];
   worked_dates_label: string;
+
+  worked_date_details: {
+    shift_date: string;
+    sla_bptrl_jobs: number;
+  }[];
+
   actual_jobs: number;
   actual_units: number;
   actual_hours: number;
+
+  jobs_per_day: number;
+  units_per_day: number;
+  hours_per_day: number;
+  units_per_hour: number;
+
+  sla_bptrl_jobs: number;
+  sla_bptrl_units: number;
+  sla_bptrl_hours: number;
+
+  sla_bptrl_jobs_per_day: number;
+  sla_bptrl_units_per_day: number;
+  sla_bptrl_hours_per_day: number;
 };
 
 export type CheckInWeeklyResponse = {
@@ -80,4 +108,49 @@ export type CheckInWeeklyResponse = {
     to: string;
   };
   rows: CheckInWeeklyRow[];
+};
+
+export type CheckInDayJobRow = {
+  shift_date: string;
+  tech_id: string;
+
+  job_num: string;
+  work_order_number: string | null;
+
+  job_type: string | null;
+  job_units: number;
+
+  start_time: string | null;
+  cp_time: string | null;
+
+  job_duration: number;
+
+  is_sla_bptrl: boolean;
+  source_tech_last_name: string | null;
+
+  between_job_minutes: number | null;
+};
+
+export type CheckInDayResponse = {
+  ok: true;
+
+  tech: {
+    assignment_id: string;
+    tech_id: string;
+    full_name: string;
+    affiliation: string | null;
+  };
+
+  shift_date: string;
+
+  summary: {
+    total_jobs: number;
+    total_units: number;
+    total_hours: number;
+    sla_jobs: number;
+    avg_units_per_job: number;
+    avg_minutes_between_jobs: number | null;
+  };
+
+  rows: CheckInDayJobRow[];
 };

@@ -1,4 +1,4 @@
-// path: apps/web/src/app/api/route-lock/history/check-in-weekly/route.ts
+// path: apps/web/src/app/api/route-lock/history/check-in-day/route.ts
 
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -6,7 +6,7 @@ import { requireAccessPass } from "@/shared/access/requireAccessPass";
 import { requireModule } from "@/shared/access/access";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
-import { getTechCheckInWeeklyHistory } from "@/shared/server/route-lock/check-in/checkInWeeklyHistoryService.server";
+import { getTechCheckInDayHistory } from "@/shared/server/route-lock/check-in/checkInDayHistoryService.server";
 
 export const runtime = "nodejs";
 
@@ -73,12 +73,11 @@ export async function GET(req: NextRequest) {
       return json(guard.status, { ok: false, error: guard.error });
     }
 
-    const result = await getTechCheckInWeeklyHistory({
+    const result = await getTechCheckInDayHistory({
       admin: supabaseAdmin(),
       pcOrgId: guard.pcOrgId,
       assignmentId: req.nextUrl.searchParams.get("assignment_id"),
-      from: req.nextUrl.searchParams.get("from"),
-      to: req.nextUrl.searchParams.get("to"),
+      shiftDate: req.nextUrl.searchParams.get("shift_date"),
     });
 
     return json(200, result);

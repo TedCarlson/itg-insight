@@ -1,3 +1,5 @@
+// path: apps/web/src/features/route-lock/history/hooks/useTechHistoryData.ts
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -30,6 +32,17 @@ export function useTechHistoryData(props: {
 
       setCheckInBusy(false);
       setCheckInError(null);
+      setCheckIn(null);
+      return;
+    }
+
+    if (!selectedTech.assignment_id) {
+      setHistoryBusy(false);
+      setHistoryError("Selected technician is missing assignment_id.");
+      setHistory(null);
+
+      setCheckInBusy(false);
+      setCheckInError("Selected technician is missing assignment_id.");
       setCheckIn(null);
       return;
     }
