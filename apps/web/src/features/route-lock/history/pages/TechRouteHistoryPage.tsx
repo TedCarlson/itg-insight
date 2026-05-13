@@ -13,6 +13,16 @@ import { useTechHistoryData } from "../hooks/useTechHistoryData";
 
 import type { TechSearchItem } from "../lib/history.types";
 
+type Props = {
+  shellRole?: "BP_OWNER";
+  apiBasePath?: string;
+  searchApiBasePath?: string;
+};
+
+type TechSearchItemWithBpAccess = TechSearchItem & {
+  is_bp_affiliate?: boolean;
+};
+
 function toDateOnly(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -35,13 +45,30 @@ function weekStartFromSaturday(weekEndingSaturday: string) {
   return addDays(weekEndingSaturday, -6);
 }
 
-export default function TechRouteHistoryPage() {
+function isBpOwnerBlockedSelection(args: {
+  shellRole?: "BP_OWNER";
+  selectedTech: TechSearchItem | null;
+}) {
+  if (args.shellRole !== "BP_OWNER") return false;
+  if (!args.selectedTech) return false;
+
+  const selected = args.selectedTech as TechSearchItemWithBpAccess;
+
+  return selected.is_bp_affiliate !== true;
+}
+
+export default function TechRouteHistoryPage(props: Props) {
   const defaultWeekEnding = lastCompletedSaturday();
 
   const [techQuery, setTechQuery] = useState("");
-  const [fromDate, setFromDate] = useState(weekStartFromSaturday(defaultWeekEnding));
+  const [fromDate, setFromDate] = useState(
+    weekStartFromSaturday(defaultWeekEnding),
+  );
   const [toDate, setToDate] = useState(defaultWeekEnding);
   const [selectedTech, setSelectedTech] = useState<TechSearchItem | null>(null);
+
+  const apiBasePath = props.apiBasePath ?? "/api/route-lock/history";
+  const searchApiBasePath = props.searchApiBasePath ?? apiBasePath;
 
   const {
     canSearch,
@@ -52,23 +79,43 @@ export default function TechRouteHistoryPage() {
     setSearchError,
     searchItems,
     setSearchItems,
-  } = useTechHistorySearch(techQuery);
+  } = useTechHistorySearch(techQuery, {
+    apiBasePath: searchApiBasePath,
+  });
 
-  const { historyBusy, historyError, history, checkInBusy, checkInError, checkIn } =
-    useTechHistoryData({
-      selectedTech,
+  const blockedByBpAffiliation = isBpOwnerBlockedSelection({
+    shellRole: props.shellRole,
+    selectedTech,
+  });
+
+  const selectedTechForReport = blockedByBpAffiliation ? null : selectedTech;
+
+  const {
+    historyBusy,
+    historyError,
+    history,
+    checkInBusy,
+    checkInError,
+    checkIn,
+  } = useTechHistoryData(
+    {
+      selectedTech: selectedTechForReport,
       fromDate,
       toDate,
-    });
+    },
+    {
+      apiBasePath,
+    },
+  );
 
   const selectedTechLabel = useMemo(() => {
-    if (!selectedTech) return null;
-    return `${selectedTech.full_name} • ${selectedTech.tech_id}`;
-  }, [selectedTech]);
+    if (!selectedTechForReport) return null;
+    return `${selectedTechForReport.full_name} • ${selectedTechForReport.tech_id}`;
+  }, [selectedTechForReport]);
 
   const selectedAffiliation = useMemo(() => {
-    return checkIn?.tech?.affiliation ?? selectedTech?.co_name ?? null;
-  }, [checkIn?.tech?.affiliation, selectedTech?.co_name]);
+    return checkIn?.tech?.affiliation ?? selectedTechForReport?.co_name ?? null;
+  }, [checkIn?.tech?.affiliation, selectedTechForReport?.co_name]);
 
   function onPickTech(item: TechSearchItem) {
     setSelectedTech(item);
@@ -97,6 +144,14 @@ export default function TechRouteHistoryPage() {
         subtitle="One-week technician route and check-in review with daily production, SLA signals, and job-level drilldown."
       />
 
+      {props.shellRole ? (
+        <div
+          id="shell-role-hint"
+          data-shell-role={props.shellRole}
+          className="hidden"
+        />
+      ) : null}
+
       <div className="space-y-4">
         <HistoryFiltersCard
           techQuery={techQuery}
@@ -117,13 +172,24 @@ export default function TechRouteHistoryPage() {
           searchItems={searchItems}
         />
 
-        {historyBusy ? (
+        {blockedByBpAffiliation ? (
           <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
-            <p className="text-sm text-[var(--to-ink-muted)]">Loading route history…</p>
+            <p className="text-sm text-[var(--to-danger,#b91c1c)]">
+              Report blocked. This technician is not affiliated with your BP
+              company.
+            </p>
+          </div>
+        ) : historyBusy ? (
+          <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
+            <p className="text-sm text-[var(--to-ink-muted)]">
+              Loading route history…
+            </p>
           </div>
         ) : historyError ? (
           <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
-            <p className="text-sm text-[var(--to-danger,#b91c1c)]">{historyError}</p>
+            <p className="text-sm text-[var(--to-danger,#b91c1c)]">
+              {historyError}
+            </p>
           </div>
         ) : !selectedTech ? (
           <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
@@ -143,7 +209,9 @@ export default function TechRouteHistoryPage() {
           />
         ) : (
           <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
-            <p className="text-sm text-[var(--to-ink-muted)]">No history loaded yet.</p>
+            <p className="text-sm text-[var(--to-ink-muted)]">
+              No history loaded yet.
+            </p>
           </div>
         )}
       </div>

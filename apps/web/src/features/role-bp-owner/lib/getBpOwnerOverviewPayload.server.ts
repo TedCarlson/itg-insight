@@ -1,12 +1,19 @@
 // path: apps/web/src/features/role-bp-owner/lib/getBpOwnerOverviewPayload.server.ts
 
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
+import {
+  buildDailyScheduleStatus,
+  type ExecutiveDailyScheduleStatusPayload,
+} from "@/shared/server/executive/buildDailyScheduleStatus.server";
+
 import { resolveBpOwnerScope } from "./resolveBpOwnerScope.server";
 
 export type BpOwnerRoleBreakoutRow = {
   pc_org_id: string;
   org_label: string;
+
   active_people: number;
+
   bp_owner_count: number;
   bp_supervisor_count: number;
   tech_count: number;
@@ -24,6 +31,7 @@ export type BpOwnerOverviewPayload = {
   active_org_count: number;
 
   role_breakout_by_org: BpOwnerRoleBreakoutRow[];
+  daily_schedule_status: ExecutiveDailyScheduleStatusPayload;
 
   metrics: {
     scoped: true;
@@ -58,23 +66,27 @@ async function loadOrgLabels(pcOrgIds: string[]) {
     (data ?? []).map((row) => [
       clean((row as any).pc_org_id),
       clean((row as any).pc_org_name) || "Org",
-    ])
+    ]),
   );
 }
 
-export async function getBpOwnerOverviewPayload(): Promise<BpOwnerOverviewPayload> {
-  const resolved = await resolveBpOwnerScope();
-
-  const coveredOrgIds = resolved.covered_pc_org_ids;
-  const orgLabels = await loadOrgLabels(coveredOrgIds);
-
+function buildRoleBreakoutByOrg(args: {
+  coveredOrgIds: string[];
+  scopedAssignments: Array<{
+    pc_org_id: string | null;
+    position_title: string | null;
+  }>;
+  orgLabels: Map<string, string>;
+}): BpOwnerRoleBreakoutRow[] {
   const breakoutMap = new Map<string, BpOwnerRoleBreakoutRow>();
 
-  for (const orgId of coveredOrgIds) {
+  for (const orgId of args.coveredOrgIds) {
     breakoutMap.set(orgId, {
       pc_org_id: orgId,
-      org_label: orgLabels.get(orgId) ?? "Org",
+      org_label: args.orgLabels.get(orgId) ?? "Org",
+
       active_people: 0,
+
       bp_owner_count: 0,
       bp_supervisor_count: 0,
       tech_count: 0,
@@ -82,7 +94,7 @@ export async function getBpOwnerOverviewPayload(): Promise<BpOwnerOverviewPayloa
     });
   }
 
-  for (const row of resolved.scoped_assignments) {
+  for (const row of args.scopedAssignments) {
     const orgId = clean(row.pc_org_id);
     if (!orgId) continue;
 
@@ -90,8 +102,10 @@ export async function getBpOwnerOverviewPayload(): Promise<BpOwnerOverviewPayloa
       breakoutMap.get(orgId) ??
       {
         pc_org_id: orgId,
-        org_label: orgLabels.get(orgId) ?? "Org",
+        org_label: args.orgLabels.get(orgId) ?? "Org",
+
         active_people: 0,
+
         bp_owner_count: 0,
         bp_supervisor_count: 0,
         tech_count: 0,
@@ -110,9 +124,28 @@ export async function getBpOwnerOverviewPayload(): Promise<BpOwnerOverviewPayloa
     breakoutMap.set(orgId, current);
   }
 
-  const roleBreakout = [...breakoutMap.values()].sort((a, b) =>
-    a.org_label.localeCompare(b.org_label)
+  return [...breakoutMap.values()].sort((a, b) =>
+    a.org_label.localeCompare(b.org_label),
   );
+}
+
+export async function getBpOwnerOverviewPayload(): Promise<BpOwnerOverviewPayload> {
+  const resolved = await resolveBpOwnerScope();
+
+  const coveredOrgIds = resolved.covered_pc_org_ids;
+  const orgLabels = await loadOrgLabels(coveredOrgIds);
+
+  const roleBreakout = buildRoleBreakoutByOrg({
+    coveredOrgIds,
+    scopedAssignments: resolved.scoped_assignments,
+    orgLabels,
+  });
+
+  const dailyScheduleStatus = await buildDailyScheduleStatus({
+    coveredOrgIds,
+    orgLabels,
+    scopedAssignments: resolved.scoped_assignments,
+  });
 
   return {
     contractor_id: resolved.contractor_id,
@@ -125,6 +158,7 @@ export async function getBpOwnerOverviewPayload(): Promise<BpOwnerOverviewPayloa
     active_org_count: coveredOrgIds.length,
 
     role_breakout_by_org: roleBreakout,
+    daily_schedule_status: dailyScheduleStatus,
 
     metrics: {
       scoped: true,

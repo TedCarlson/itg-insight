@@ -9,12 +9,23 @@ import type {
   TechSearchItem,
 } from "../lib/history.types";
 
-export function useTechHistoryData(props: {
-  selectedTech: TechSearchItem | null;
-  fromDate: string;
-  toDate: string;
-}) {
+type Options = {
+  apiBasePath?: string;
+  requireBpAffiliate?: boolean;
+};
+
+export function useTechHistoryData(
+  props: {
+    selectedTech: TechSearchItem | null;
+    fromDate: string;
+    toDate: string;
+  },
+  options?: Options,
+) {
   const { selectedTech, fromDate, toDate } = props;
+
+  const apiBasePath = options?.apiBasePath ?? "/api/route-lock/history";
+  const requireBpAffiliate = options?.requireBpAffiliate === true;
 
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -32,6 +43,17 @@ export function useTechHistoryData(props: {
 
       setCheckInBusy(false);
       setCheckInError(null);
+      setCheckIn(null);
+      return;
+    }
+
+    if (requireBpAffiliate && selectedTech.is_bp_affiliate !== true) {
+      setHistoryBusy(false);
+      setHistoryError("This technician is not affiliated with your BP company.");
+      setHistory(null);
+
+      setCheckInBusy(false);
+      setCheckInError("This technician is not affiliated with your BP company.");
       setCheckIn(null);
       return;
     }
@@ -85,7 +107,7 @@ export function useTechHistoryData(props: {
           to: toDate,
         });
 
-        const res = await fetch(`/api/route-lock/history/tech?${params.toString()}`, {
+        const res = await fetch(`${apiBasePath}/tech?${params.toString()}`, {
           method: "GET",
           signal: historyController.signal,
           cache: "no-store",
@@ -118,11 +140,14 @@ export function useTechHistoryData(props: {
           to: toDate,
         });
 
-        const res = await fetch(`/api/route-lock/history/check-in-weekly?${params.toString()}`, {
-          method: "GET",
-          signal: checkInController.signal,
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `${apiBasePath}/check-in-weekly?${params.toString()}`,
+          {
+            method: "GET",
+            signal: checkInController.signal,
+            cache: "no-store",
+          },
+        );
 
         const json = await res.json().catch(() => null);
 
@@ -147,7 +172,13 @@ export function useTechHistoryData(props: {
       historyController.abort();
       checkInController.abort();
     };
-  }, [selectedTech, fromDate, toDate]);
+  }, [
+    selectedTech,
+    fromDate,
+    toDate,
+    apiBasePath,
+    requireBpAffiliate,
+  ]);
 
   return {
     historyBusy,

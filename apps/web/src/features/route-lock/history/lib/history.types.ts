@@ -6,6 +6,7 @@ export type TechSearchItem = {
   tech_id: string;
   full_name: string;
   co_name: string | null;
+  is_bp_affiliate?: boolean;
 };
 
 export type HistoryEvent = {
@@ -185,15 +186,6 @@ export type CheckInDayResponse = {
   };
 
   shift_date: string;
-
-  summary: {
-    total_jobs: number;
-    total_units: number;
-    total_hours: number;
-    sla_jobs: number;
-    avg_units_per_job: number;
-    avg_minutes_between_jobs: number | null;
-  };
 
   rows: CheckInDayJobRow[];
 };

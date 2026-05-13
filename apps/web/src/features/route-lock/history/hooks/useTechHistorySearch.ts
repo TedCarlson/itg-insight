@@ -1,15 +1,29 @@
+// path: apps/web/src/features/route-lock/history/hooks/useTechHistorySearch.ts
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+
 import type { TechSearchItem } from "../lib/history.types";
 
-export function useTechHistorySearch(techQuery: string) {
+type Options = {
+  apiBasePath?: string;
+};
+
+export function useTechHistorySearch(
+  techQuery: string,
+  options?: Options,
+) {
+  const apiBasePath =
+    options?.apiBasePath ?? "/api/route-lock/history";
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchItems, setSearchItems] = useState<TechSearchItem[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
+
   const canSearch = techQuery.trim().length >= 1;
 
   useEffect(() => {
@@ -35,32 +49,44 @@ export function useTechHistorySearch(techQuery: string) {
           limit: "10",
         });
 
-        const res = await fetch(`/api/route-lock/history/tech-search?${params.toString()}`, {
-          method: "GET",
-          signal: controller.signal,
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `${apiBasePath}/tech-search?${params.toString()}`,
+          {
+            method: "GET",
+            signal: controller.signal,
+            cache: "no-store",
+          },
+        );
 
         const json = await res.json().catch(() => null);
 
         if (!res.ok || !json?.ok) {
-          throw new Error(String(json?.error ?? "Failed to search technicians"));
+          throw new Error(
+            String(json?.error ?? "Failed to search technicians"),
+          );
         }
 
         setSearchItems(Array.isArray(json.items) ? json.items : []);
         setSearchOpen(true);
       } catch (err: any) {
-        if (err?.name === "AbortError") return;
+        if (err?.name === "AbortError") {
+          return;
+        }
+
         setSearchItems([]);
-        setSearchError(String(err?.message ?? "Failed to search technicians"));
+        setSearchError(
+          String(err?.message ?? "Failed to search technicians"),
+        );
         setSearchOpen(true);
       } finally {
         setSearchBusy(false);
       }
     }, 250);
 
-    return () => window.clearTimeout(timer);
-  }, [techQuery, canSearch]);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [techQuery, canSearch, apiBasePath]);
 
   return {
     canSearch,
