@@ -5,6 +5,7 @@ import type { DragEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { Card } from "@/components/ui/Card";
+import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 
 type Result =
@@ -15,6 +16,11 @@ type Result =
       today: string;
       fulfillment_center_id: number;
       batch_id?: string | null;
+      fiscal_month_ids?: string[];
+      sweep_count?: number;
+      min_shift_date?: string | null;
+      max_shift_date?: string | null;
+      sweep?: unknown;
     }
   | { ok: false; error: string; hint?: string; expected?: any; received?: any; detail?: any };
 
@@ -28,6 +34,7 @@ export function UploadShiftValidationCard({
   expectedFulfillmentCenterName: string | null;
 }) {
   const router = useRouter();
+  const toast = useToast();
 
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,11 +70,41 @@ export function UploadShiftValidationCard({
       });
 
       const json = (await res.json().catch(() => null)) as Result | null;
-      setResult(json ?? { ok: false, error: "invalid response" });
+      const nextResult = json ?? { ok: false, error: "invalid response" };
+      setResult(nextResult);
 
-      if (res.ok) router.refresh();
+      if (!res.ok || !nextResult.ok) {
+        toast.push({
+          variant: "danger",
+          title: "Shift validation upload failed",
+          message: nextResult.ok ? `Upload failed (${res.status})` : nextResult.error,
+          durationMs: 3200,
+        });
+        return;
+      }
+
+      const sweepCount = Number(nextResult.sweep_count ?? nextResult.fiscal_month_ids?.length ?? 0);
+      const rangeLabel = nextResult.min_shift_date && nextResult.max_shift_date
+        ? `${nextResult.min_shift_date} → ${nextResult.max_shift_date}`
+        : `from ${nextResult.today}`;
+
+      toast.push({
+        variant: "success",
+        title: "Shift validation swept",
+        message: `Loaded ${nextResult.row_count_loaded}/${nextResult.row_count_total} rows for ${rangeLabel}. Swept ${sweepCount || 1} fiscal month${(sweepCount || 1) === 1 ? "" : "s"}.`,
+        durationMs: 4200,
+      });
+
+      router.refresh();
     } catch (e: any) {
-      setResult({ ok: false, error: String(e?.message ?? e) });
+      const message = String(e?.message ?? e);
+      setResult({ ok: false, error: message });
+      toast.push({
+        variant: "danger",
+        title: "Shift validation upload failed",
+        message,
+        durationMs: 3200,
+      });
     } finally {
       setBusy(false);
     }
@@ -101,7 +138,6 @@ export function UploadShiftValidationCard({
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      {/* Hidden input used by both cards */}
       <input
         ref={inputRef}
         type="file"
@@ -111,7 +147,6 @@ export function UploadShiftValidationCard({
         onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
       />
 
-      {/* Left card */}
       <Card>
         <div className="space-y-3">
           <div>
@@ -121,7 +156,6 @@ export function UploadShiftValidationCard({
             </div>
           </div>
 
-          {/* Guardrail banner */}
           {!uploadEnabled ? (
             <div className="rounded-lg border border-[color:var(--to-border)] bg-black/5 px-3 py-2 text-sm">
               <div className="font-medium">Uploads disabled for this org</div>
@@ -165,6 +199,9 @@ export function UploadShiftValidationCard({
                   <div className="text-[var(--to-ink-muted)]">
                     Fulfillment Center ID: {result.fulfillment_center_id} · Forward window starts: {result.today}
                   </div>
+                  <div className="text-[var(--to-ink-muted)]">
+                    Range: {result.min_shift_date ?? "—"} → {result.max_shift_date ?? "—"} · Swept fiscal months: {result.sweep_count ?? result.fiscal_month_ids?.length ?? 1}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -182,7 +219,6 @@ export function UploadShiftValidationCard({
         </div>
       </Card>
 
-      {/* Right card: drop zone */}
       <Card>
         <div className="space-y-3">
           <div>
@@ -214,7 +250,7 @@ export function UploadShiftValidationCard({
           </div>
 
           <div className="text-xs text-[var(--to-ink-muted)]">
-            After selecting a file (drop or browse), use the Upload button on the left.
+            After selecting a file, use the Upload button on the left.
           </div>
         </div>
       </Card>

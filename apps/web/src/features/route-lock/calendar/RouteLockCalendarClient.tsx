@@ -206,7 +206,7 @@ export function RouteLockCalendarClient(props: {
       const plannedIneligible = count(d.planned_travel_count);
       const plannedRun = plannedEligible + plannedIneligible;
 
-      const builtEligible = work + bplow + prjt;
+      const builtEligible = n(d.actual_techs) ?? work + bplow + prjt;
       const builtIneligible = trvl + bptrl;
       const builtRun = builtEligible + builtIneligible;
 
@@ -229,7 +229,7 @@ export function RouteLockCalendarClient(props: {
       const totalRun = state === "actual" ? actualRun : state === "built" ? builtRun : plannedRun;
 
       const phasePoints =
-        state === "actual"
+        state === "actual" || state === "built"
           ? n(d.actual_units)
           : lockEligible === null
             ? null
@@ -389,19 +389,19 @@ export function RouteLockCalendarClient(props: {
 
                   {showBreakout
                     ? [
-                      ["breakout-work", "WORK", "w-[64px] text-right"],
-                      ["breakout-bplow", "BPLOW", "w-[70px] text-right"],
-                      ["breakout-prjt", "PRJT", "w-[64px] text-right"],
-                      ["breakout-trvl", "TRVL", "w-[64px] text-right"],
-                      ["breakout-bptrl", "BPTRL", "w-[72px] text-right border-r"],
-                    ].map(([key, label, cls]) => (
-                      <th
-                        key={key}
-                        className={`border-b border-[var(--to-border)] bg-background px-3 py-2 ${cls}`}
-                      >
-                        {label}
-                      </th>
-                    ))
+                        ["breakout-work", "WORK", "w-[64px] text-right"],
+                        ["breakout-bplow", "BPLOW", "w-[70px] text-right"],
+                        ["breakout-prjt", "PRJT", "w-[64px] text-right"],
+                        ["breakout-trvl", "TRVL", "w-[64px] text-right"],
+                        ["breakout-bptrl", "BPTRL", "w-[72px] text-right border-r"],
+                      ].map(([key, label, cls]) => (
+                        <th
+                          key={key}
+                          className={`border-b border-[var(--to-border)] bg-background px-3 py-2 ${cls}`}
+                        >
+                          {label}
+                        </th>
+                      ))
                     : null}
 
                   {[

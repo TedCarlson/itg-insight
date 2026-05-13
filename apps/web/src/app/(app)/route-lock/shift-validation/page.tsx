@@ -66,7 +66,7 @@ export default async function ShiftValidationPage() {
   // Single pull: 14-day snapshot (today onward)
   const { data: rows } = await sb
     .from("shift_validation_import_v")
-    .select("shift_date, tech_id, shift_duration, target_unit, route_criteria, route_areas, office")
+    .select("shift_date, tech_id, shift_duration, work_units, target_unit, route_criteria, route_areas, office")
     .eq("pc_org_id", pc_org_id)
     .gte("shift_date", today)
     .lt("shift_date", windowEnd)

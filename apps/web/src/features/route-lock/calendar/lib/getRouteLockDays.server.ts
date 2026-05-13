@@ -45,6 +45,8 @@ export type CalendarDayRow = {
 };
 
 const DEBUG = false;
+const UNITS_PER_HOUR = 12;
+const POINTS_PER_ROUTE = 96;
 
 function n0(v: unknown): number {
   const x = Number(v);
@@ -83,6 +85,22 @@ function eachDayISO(start: string, end: string): string[] {
   }
 
   return out;
+}
+
+function unitsForShiftValidationRow(r: any): number {
+  const explicitUnits = n0(r.work_units);
+
+  if (explicitUnits > 0) {
+    return explicitUnits;
+  }
+
+  const hours = n0(r.shift_duration);
+  return hours > 0 ? hours * UNITS_PER_HOUR : 0;
+}
+
+function routeEquivalent(units: number): number {
+  if (!Number.isFinite(units) || units <= 0) return 0;
+  return units / POINTS_PER_ROUTE;
 }
 
 const resolveFiscalMonthById = cache(
@@ -333,19 +351,39 @@ async function computeShiftValidationAgg(
       trvl: number;
       bptrl: number;
       total: number;
+      builtUnits: number;
+      totalHours: number;
+      techs: Set<string>;
     }
   >
 > {
-  const { data, error } = await sb
-    .from("shift_validation_day_fact")
-    .select("shift_date,is_work,is_bplow,is_prjt,is_trvl,is_bptrl")
-    .eq("pc_org_id", pc_org_id)
-    .gte("shift_date", start)
-    .lte("shift_date", end);
+  const pageSize = 1000;
+  let from = 0;
+  let all: any[] = [];
 
-  if (error) {
-    console.warn("shift_validation_day_fact agg failed:", error.message);
-    return new Map();
+  while (true) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await sb
+      .from("shift_validation_row")
+      .select(
+        "shift_date,tech_num,is_work,is_bplow,is_prjt,is_trvl,is_bptrl,work_units,shift_duration"
+      )
+      .eq("pc_org_id", pc_org_id)
+      .gte("shift_date", start)
+      .lte("shift_date", end)
+      .range(from, to);
+
+    if (error) {
+      console.warn("shift_validation_row agg failed:", error.message);
+      return new Map();
+    }
+
+    const rows = (data ?? []) as any[];
+    all = all.concat(rows);
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
   }
 
   const byDay = new Map<
@@ -357,12 +395,20 @@ async function computeShiftValidationAgg(
       trvl: number;
       bptrl: number;
       total: number;
+      builtUnits: number;
+      totalHours: number;
+      techs: Set<string>;
     }
   >();
 
-  for (const r of (data ?? []) as any[]) {
+  for (const r of all) {
     const d = String(r.shift_date ?? "").slice(0, 10);
     if (!d) continue;
+
+    const tech = String(r.tech_num ?? "").trim();
+    const units = unitsForShiftValidationRow(r);
+    const routeEq = routeEquivalent(units);
+    const hours = n0(r.shift_duration);
 
     const cur =
       byDay.get(d) ??
@@ -373,6 +419,9 @@ async function computeShiftValidationAgg(
         trvl: 0,
         bptrl: 0,
         total: 0,
+        builtUnits: 0,
+        totalHours: 0,
+        techs: new Set<string>(),
       } satisfies {
         work: number;
         bplow: number;
@@ -380,16 +429,39 @@ async function computeShiftValidationAgg(
         trvl: number;
         bptrl: number;
         total: number;
+        builtUnits: number;
+        totalHours: number;
+        techs: Set<string>;
       });
 
-    if (r.is_work) cur.work += 1;
-    if (r.is_bplow) cur.bplow += 1;
-    if (r.is_prjt) cur.prjt += 1;
-    if (r.is_trvl) cur.trvl += 1;
-    if (r.is_bptrl) cur.bptrl += 1;
+    if (tech) cur.techs.add(tech);
+
+    if (r.is_work) {
+      cur.work += 1;
+      cur.builtUnits += units;
+    }
+
+    if (r.is_bplow) {
+      cur.bplow += 1;
+      cur.builtUnits += units;
+    }
+
+    if (r.is_prjt) {
+      cur.prjt += 1;
+      cur.builtUnits += units;
+    }
+
+    if (r.is_trvl) {
+      cur.trvl += 1;
+    }
+
+    if (r.is_bptrl) {
+      cur.bptrl += 1;
+    }
 
     if (r.is_work || r.is_bplow || r.is_prjt || r.is_trvl || r.is_bptrl) {
       cur.total += 1;
+      cur.totalHours += hours;
     }
 
     byDay.set(d, cur);
@@ -528,9 +600,9 @@ export async function getRouteLockDaysForFiscalMonth(
       trvl_count,
       bptrl_count,
 
-      actual_techs: has_check_in ? actual!.techs.size : null,
-      actual_units: has_check_in ? actual!.units : null,
-      actual_hours: has_check_in ? actual!.hours : null,
+      actual_techs: has_check_in ? actual!.techs.size : has_sv ? sv!.techs.size : null,
+      actual_units: has_check_in ? actual!.units : has_sv ? sv!.builtUnits : null,
+      actual_hours: has_check_in ? actual!.hours : has_sv ? sv!.totalHours : null,
       actual_jobs: has_check_in ? actual!.jobs : null,
     };
   });

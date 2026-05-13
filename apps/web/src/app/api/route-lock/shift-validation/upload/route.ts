@@ -145,8 +145,40 @@ function normalizeProductivity(v: any): string | null {
   return s ? s.toUpperCase() : null;
 }
 
+function numberOrNull(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(String(v).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeHeaderKey(v: string) {
+  return String(v)
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function getLoose(row: any, ...keys: string[]) {
+  const wanted = new Set(keys.map(normalizeHeaderKey));
+
+  for (const [rawKey, value] of Object.entries(row ?? {})) {
+    if (wanted.has(normalizeHeaderKey(rawKey))) return value;
+  }
+
+  return null;
+}
+
+function addNullable(a: number | null, b: number | null): number | null {
+  const aa = typeof a === "number" && Number.isFinite(a) ? a : 0;
+  const bb = typeof b === "number" && Number.isFinite(b) ? b : 0;
+  const total = aa + bb;
+  return total === 0 && a === null && b === null ? null : total;
+}
+
 function normalizeExportRow(r: any) {
-  const get = (k: string) => (k in r ? r[k] : null);
+  const get = (...keys: string[]) => getLoose(r, ...keys);
 
   const tech_num = normalizeTechNum(get("Tech #"));
   const shift_date = parseMMDDYYYY(get("Shift Date"));
@@ -160,12 +192,20 @@ function normalizeExportRow(r: any) {
   const is_bptrl = shift_type === "BPTRL";
 
   const is_work =
-
     productivity_indicator === "Y" &&
     shift_type !== "BPLOW" &&
     shift_type !== "PRJT" &&
     shift_type !== "TRVL" &&
     shift_type !== "BPTRL";
+
+  const shift_duration = durationToHours(get("Shift Duration"));
+  const work_duration = durationToHours(get("Work Duration"));
+
+  const fallbackHours = work_duration ?? shift_duration;
+  const fallbackUnits =
+    is_work && fallbackHours !== null && Number.isFinite(fallbackHours)
+      ? fallbackHours * 12
+      : null;
 
   return {
     fulfillment_center: null,
@@ -183,13 +223,13 @@ function normalizeExportRow(r: any) {
     shift_date,
     shift_start_time: timeStr(get("Shift Start Time")),
     shift_end_time: timeStr(get("Shift End Time")),
-    shift_duration: durationToHours(get("Shift Duration")),
+    shift_duration,
 
     break_start_time: timeStr(get("Break Start Time")),
     break_end_time: timeStr(get("Break End Time")),
     break_duration: durationToHours(get("Break Duration")),
 
-    work_duration: durationToHours(get("Work Duration")),
+    work_duration,
 
     skill_groups: cleanText(get("Skill Groups")),
     route_criteria: cleanText(get("Route Criteria")),
@@ -201,14 +241,53 @@ function normalizeExportRow(r: any) {
     will_not_generate_capacity: cleanText(get("Will Not Generate Capacity")),
     office: cleanText(get("Office")),
 
-    work_units: null,
-    target_unit: null,
+    work_units:
+      numberOrNull(get("Work Units")) ??
+      numberOrNull(get("Work Units (12)")) ??
+      fallbackUnits,
+
+    target_unit:
+      numberOrNull(get("Target Unit")) ??
+      numberOrNull(get("Target Unit (12)")) ??
+      fallbackUnits,
 
     is_work,
     is_bplow,
     is_prjt,
     is_trvl,
     is_bptrl,
+  };
+}
+
+function mergeExportRows(existing: any, incoming: any) {
+  return {
+    ...existing,
+
+    shift_end_time: incoming.shift_end_time ?? existing.shift_end_time,
+
+    shift_duration: addNullable(existing.shift_duration, incoming.shift_duration),
+    break_duration: addNullable(existing.break_duration, incoming.break_duration),
+    work_duration: addNullable(existing.work_duration, incoming.work_duration),
+
+    work_units: addNullable(existing.work_units, incoming.work_units),
+    target_unit: addNullable(existing.target_unit, incoming.target_unit),
+
+    skill_groups: existing.skill_groups ?? incoming.skill_groups,
+    route_criteria: existing.route_criteria ?? incoming.route_criteria,
+    shift_type: existing.shift_type ?? incoming.shift_type,
+    productivity_indicator: existing.productivity_indicator ?? incoming.productivity_indicator,
+    start_location: existing.start_location ?? incoming.start_location,
+    route_area: existing.route_area ?? incoming.route_area,
+    capacity_model: existing.capacity_model ?? incoming.capacity_model,
+    will_not_generate_capacity:
+      existing.will_not_generate_capacity ?? incoming.will_not_generate_capacity,
+    office: existing.office ?? incoming.office,
+
+    is_work: Boolean(existing.is_work || incoming.is_work),
+    is_bplow: Boolean(existing.is_bplow || incoming.is_bplow),
+    is_prjt: Boolean(existing.is_prjt || incoming.is_prjt),
+    is_trvl: Boolean(existing.is_trvl || incoming.is_trvl),
+    is_bptrl: Boolean(existing.is_bptrl || incoming.is_bptrl),
   };
 }
 
@@ -330,27 +409,6 @@ export async function POST(req: Request) {
 
     const today = todayInNY();
 
-    const { data: fm, error: fmErr } = await supabase
-      .from("fiscal_month_dim")
-      .select("fiscal_month_id,start_date,end_date")
-      .lte("start_date", today)
-      .gte("end_date", today)
-      .maybeSingle();
-
-    if (fmErr) return json(500, { ok: false, error: fmErr.message });
-
-    const fiscal_month_id = fm?.fiscal_month_id
-      ? String(fm.fiscal_month_id)
-      : null;
-
-    if (!fiscal_month_id) {
-      return json(400, {
-        ok: false,
-        error: "fiscal_month_dim not found for today",
-        today,
-      });
-    }
-
     let minDate: string | null = null;
     let maxDate: string | null = null;
 
@@ -383,17 +441,56 @@ export async function POST(req: Request) {
       if (!maxDate || n.shift_date > maxDate) maxDate = n.shift_date;
 
       const k = keyFor(n.tech_num, n.shift_date);
-      if (byKey.has(k)) duplicatesCollapsed++;
-
-      byKey.set(k, {
-        ...n,
-        pc_org_id,
-        fulfillment_center_id: fc.id,
-        fulfillment_center: fc.label,
-      });
+      if (byKey.has(k)) {
+        duplicatesCollapsed++;
+        byKey.set(k, mergeExportRows(byKey.get(k), n));
+      } else {
+        byKey.set(k, {
+          ...n,
+          pc_org_id,
+          fulfillment_center_id: fc.id,
+          fulfillment_center: fc.label,
+        });
+      }
     }
 
     const rows = Array.from(byKey.values());
+    const sweepStartDate = minDate ?? today;
+    const sweepEndDate = maxDate ?? today;
+
+    const { data: fiscalMonthsRaw, error: fmErr } = await supabase
+      .from("fiscal_month_dim")
+      .select("fiscal_month_id,start_date,end_date")
+      .lte("start_date", sweepEndDate)
+      .gte("end_date", sweepStartDate)
+      .order("start_date", { ascending: true });
+
+    if (fmErr) {
+      return json(500, {
+        ok: false,
+        error: fmErr.message,
+      });
+    }
+
+    const fiscalMonthIds = Array.from(
+      new Set(
+        (fiscalMonthsRaw ?? [])
+          .map((fmRow: any) =>
+            fmRow?.fiscal_month_id ? String(fmRow.fiscal_month_id) : null
+          )
+          .filter((v: string | null): v is string => Boolean(v))
+      )
+    );
+
+    if (!fiscalMonthIds.length) {
+      return json(400, {
+        ok: false,
+        error: "fiscal_month_dim not found for uploaded shift validation range",
+        today,
+        min_shift_date: minDate,
+        max_shift_date: maxDate,
+      });
+    }
 
     const { error: delErr } = await supabase
       .from("shift_validation_row")
@@ -435,30 +532,51 @@ export async function POST(req: Request) {
       if (insErr) return json(500, { ok: false, error: insErr.message });
     }
 
-    const { data: sweepRes, error: sweepErr } = await supabase.rpc(
-      "route_lock_sweep_month",
-      {
-        p_pc_org_id: pc_org_id,
-        p_fiscal_month_id: fiscal_month_id,
-      }
-    );
+    const sweepResults: Array<{
+      fiscal_month_id: string;
+      result: unknown;
+    }> = [];
 
-    if (sweepErr) return json(500, { ok: false, error: sweepErr.message });
+    for (const sweepFiscalMonthId of fiscalMonthIds) {
+      const { data: sweepRes, error: sweepErr } = await supabase.rpc(
+        "route_lock_sweep_month",
+        {
+          p_pc_org_id: pc_org_id,
+          p_fiscal_month_id: sweepFiscalMonthId,
+        }
+      );
+
+      if (sweepErr) {
+        return json(500, {
+          ok: false,
+          error: sweepErr.message,
+        });
+      }
+
+      sweepResults.push({
+        fiscal_month_id: sweepFiscalMonthId,
+        result: sweepRes ?? null,
+      });
+    }
 
     return json(200, {
       ok: true,
       pc_org_id,
-      fiscal_month_id,
+      fiscal_month_ids: fiscalMonthIds,
       fulfillment_center_id: fc.id,
       fulfillment_center_label: fc.label,
       filename,
       row_count_total: exportData.length,
       row_count_loaded: rowsWithBatch.length,
+      unit_rows_loaded: rowsWithBatch.filter(
+        (r: any) => r.work_units !== null || r.target_unit !== null
+      ).length,
       duplicates_collapsed: duplicatesCollapsed,
       skipped_ignored_shift_types: skippedIgnoredShiftTypes,
       today,
       batch_id: batchId,
-      sweep: sweepRes ?? null,
+      sweep_count: fiscalMonthIds.length,
+      sweep: sweepResults,
     });
   } catch (e: any) {
     return json(500, { ok: false, error: String(e?.message ?? e) });
