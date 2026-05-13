@@ -6,6 +6,7 @@ import { Fragment, useMemo } from "react";
 import type { CheckInWeekJobRow, CheckInWeeklyRow } from "../lib/history.types";
 import HistoryDailySummaryGrid from "./HistoryDailySummaryGrid";
 import { exportTechHistoryExcel } from "../lib/exportTechHistoryExcel";
+import { exportTechHistoryPdf } from "../lib/exportTechHistoryPdf";
 
 
 function formatNumber(value: number) {
@@ -149,6 +150,22 @@ export default function HistoryCheckInWeeklyCard(props: {
             className="rounded-full border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 py-1 text-xs font-medium text-[var(--to-ink)] hover:bg-[var(--to-surface)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Export Excel
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              exportTechHistoryPdf({
+                selectedTechLabel,
+                selectedAffiliation,
+                fromDate,
+                toDate,
+                rows,
+              })
+            }
+            disabled={!rows.length}
+            className="rounded-full border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 py-1 text-xs font-medium text-[var(--to-ink)] hover:bg-[var(--to-surface)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Print / PDF
           </button>
         </div>
       </div>

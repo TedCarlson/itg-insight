@@ -2,6 +2,7 @@
 
 import * as XLSX from "xlsx";
 import type { CheckInWeeklyRow } from "./history.types";
+import { buildTechHistoryExportFilename } from "./buildTechHistoryExportFilename";
 
 function formatDecimal(value: number, digits = 2) {
   return Number.isFinite(value) ? Number(value.toFixed(digits)) : 0;
@@ -29,6 +30,7 @@ export function exportTechHistoryExcel(input: {
     "SLA Jobs": row.sla_bptrl_jobs,
     "SLA Units": formatDecimal(row.sla_bptrl_units),
   }));
+
 
   const dailyRows = input.rows.flatMap((row) =>
     row.worked_date_details.map((day) => ({
