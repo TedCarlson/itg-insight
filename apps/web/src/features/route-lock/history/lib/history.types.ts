@@ -55,9 +55,53 @@ export type HistoryResponse = {
   segments: HistorySegment[];
 };
 
+export type CheckInDailySummaryRow = {
+  shift_date: string;
+  weekday_label: string;
+
+  is_scheduled: boolean;
+  is_worked: boolean;
+
+  actual_jobs: number;
+  actual_units: number;
+  actual_hours: number;
+  units_per_hour: number;
+
+  sla_bptrl_jobs: number;
+  sla_bptrl_units: number;
+  sla_bptrl_hours: number;
+
+  between_job_minutes: number;
+  avg_between_job_minutes: number | null;
+
+  signal: "OFF" | "PRODUCTION" | "SLA" | "SCHEDULED_NO_PRODUCTION" | "OFF_SCHEDULE_WORK";
+};
+
+export type CheckInWeekJobRow = {
+  shift_date: string;
+  weekday_label: string;
+  tech_id: string;
+
+  job_num: string;
+  work_order_number: string | null;
+
+  job_type: string | null;
+  job_units: number;
+
+  start_time: string | null;
+  cp_time: string | null;
+
+  job_duration: number;
+
+  is_sla_bptrl: boolean;
+  source_tech_last_name: string | null;
+
+  between_job_minutes: number | null;
+};
+
 export type CheckInWeeklyRow = {
   assignment_id: string;
-  
+
   week_start: string;
   week_end: string;
   week_ending_saturday: string;
@@ -72,10 +116,7 @@ export type CheckInWeeklyRow = {
   worked_dates: string[];
   worked_dates_label: string;
 
-  worked_date_details: {
-    shift_date: string;
-    sla_bptrl_jobs: number;
-  }[];
+  worked_date_details: CheckInDailySummaryRow[];
 
   actual_jobs: number;
   actual_units: number;
@@ -93,6 +134,8 @@ export type CheckInWeeklyRow = {
   sla_bptrl_jobs_per_day: number;
   sla_bptrl_units_per_day: number;
   sla_bptrl_hours_per_day: number;
+
+  job_rows: CheckInWeekJobRow[];
 };
 
 export type CheckInWeeklyResponse = {

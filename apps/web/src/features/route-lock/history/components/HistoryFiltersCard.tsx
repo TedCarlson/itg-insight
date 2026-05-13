@@ -1,3 +1,5 @@
+// path: apps/web/src/features/route-lock/history/components/HistoryFiltersCard.tsx
+
 "use client";
 
 import { useEffect, useRef } from "react";
@@ -22,6 +24,40 @@ type Props = {
   searchItems: TechSearchItem[];
 };
 
+function toDateOnly(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(dateOnly: string, days: number) {
+  const d = new Date(`${dateOnly}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return toDateOnly(d);
+}
+
+function weekStartFromSaturday(weekEndingSaturday: string) {
+  return addDays(weekEndingSaturday, -6);
+}
+
+function isSaturday(dateOnly: string) {
+  const d = new Date(`${dateOnly}T00:00:00`);
+  return !Number.isNaN(d.getTime()) && d.getDay() === 6;
+}
+
+function normalizeToSaturday(dateOnly: string) {
+  const d = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dateOnly;
+
+  const day = d.getDay();
+  const daysUntilSaturday = 6 - day;
+  d.setDate(d.getDate() + daysUntilSaturday);
+
+  return toDateOnly(d);
+}
+
+function formatRange(fromDate: string, toDate: string) {
+  return `${fromDate} → ${toDate}`;
+}
+
 export default function HistoryFiltersCard(props: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -37,9 +73,27 @@ export default function HistoryFiltersCard(props: Props) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [props]);
 
+  const weekEnding = props.toDate;
+  const isValidSaturday = isSaturday(weekEnding);
+
+  function applyWeekEnding(nextRaw: string) {
+    if (!nextRaw) return;
+
+    const nextSaturday = normalizeToSaturday(nextRaw);
+    props.setToDate(nextSaturday);
+    props.setFromDate(weekStartFromSaturday(nextSaturday));
+  }
+
+  function moveWeek(deltaWeeks: number) {
+    const base = isValidSaturday ? weekEnding : normalizeToSaturday(weekEnding);
+    const nextSaturday = addDays(base, deltaWeeks * 7);
+    props.setToDate(nextSaturday);
+    props.setFromDate(weekStartFromSaturday(nextSaturday));
+  }
+
   return (
     <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_260px_220px]">
         <div ref={rootRef} className="relative flex flex-col gap-1">
           <label className="text-xs font-semibold uppercase text-[var(--to-ink-muted)]">
             Tech Search
@@ -120,26 +174,42 @@ export default function HistoryFiltersCard(props: Props) {
 
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold uppercase text-[var(--to-ink-muted)]">
-            From Date
+            Week Ending Saturday
           </label>
           <input
             type="date"
-            value={props.fromDate}
-            onChange={(e) => props.setFromDate(e.target.value)}
+            value={weekEnding}
+            onChange={(e) => applyWeekEnding(e.target.value)}
             className="h-9 rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 text-sm outline-none focus:border-[rgba(59,130,246,0.65)]"
           />
+          <div className="text-[11px] text-[var(--to-ink-muted)]">
+            {isValidSaturday ? "Sunday–Saturday window" : "Auto-adjusts to Saturday"}
+          </div>
         </div>
 
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold uppercase text-[var(--to-ink-muted)]">
-            To Date
+            Week Scope
           </label>
-          <input
-            type="date"
-            value={props.toDate}
-            onChange={(e) => props.setToDate(e.target.value)}
-            className="h-9 rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 text-sm outline-none focus:border-[rgba(59,130,246,0.65)]"
-          />
+          <div className="flex h-9 items-center justify-between rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-2">
+            <button
+              type="button"
+              onClick={() => moveWeek(-1)}
+              className="rounded-md px-2 py-1 text-xs text-[var(--to-ink)] hover:bg-[var(--to-surface)]"
+            >
+              Prev
+            </button>
+            <span className="px-2 text-center text-xs text-[var(--to-ink-muted)]">
+              {formatRange(props.fromDate, props.toDate)}
+            </span>
+            <button
+              type="button"
+              onClick={() => moveWeek(1)}
+              className="rounded-md px-2 py-1 text-xs text-[var(--to-ink)] hover:bg-[var(--to-surface)]"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>

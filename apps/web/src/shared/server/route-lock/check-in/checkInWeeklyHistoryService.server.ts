@@ -16,16 +16,16 @@ function toDateOnly(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+function addDays(dateOnly: string, days: number) {
+  const d = new Date(`${dateOnly}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return toDateOnly(d);
+}
+
 function startOfWeekSunday(dateOnly: string) {
   const d = new Date(`${dateOnly}T00:00:00`);
   const day = d.getDay();
   d.setDate(d.getDate() - day);
-  return toDateOnly(d);
-}
-
-function addDays(dateOnly: string, days: number) {
-  const d = new Date(`${dateOnly}T00:00:00`);
-  d.setDate(d.getDate() + days);
   return toDateOnly(d);
 }
 
@@ -34,6 +34,12 @@ function getCalendarWeek(dateOnly: string) {
   const yearStart = new Date(d.getFullYear(), 0, 1);
   const dayOfYear = Math.floor((d.getTime() - yearStart.getTime()) / 86400000) + 1;
   return Math.ceil((dayOfYear + yearStart.getDay()) / 7);
+}
+
+function weekdayLabel(dateOnly: string) {
+  const d = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
 }
 
 function round2(n: number) {
@@ -50,6 +56,39 @@ function notFound(message: string): never {
 
 function serverError(message: string, detail?: unknown): never {
   throw Object.assign(new Error(message), { status: 500, detail });
+}
+
+function timeToMinutes(time: string | null) {
+  if (!time) return null;
+
+  const m = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+
+  return hh * 60 + mm;
+}
+
+function betweenValuesForJobs(jobs: any[]) {
+  const sorted = [...jobs].sort((a, b) => {
+    const aStart = String(a.start_time ?? "99:99:99");
+    const bStart = String(b.start_time ?? "99:99:99");
+    return aStart.localeCompare(bStart);
+  });
+
+  return sorted.map((row, index) => {
+    const previous = index > 0 ? sorted[index - 1] : null;
+
+    const previousCp = previous ? timeToMinutes(String(previous.cp_time ?? "")) : null;
+    const currentStart = timeToMinutes(String(row.start_time ?? ""));
+
+    return previousCp !== null && currentStart !== null && currentStart >= previousCp
+      ? currentStart - previousCp
+      : null;
+  });
 }
 
 async function resolveAffiliationName(admin: any, personId: string | null) {
@@ -97,6 +136,16 @@ type Input = {
   to: string | null;
 };
 
+type FactRow = {
+  shift_date: string;
+  actual_jobs: number;
+  actual_units: number;
+  actual_hours: number;
+  sla_bptrl_jobs: number;
+  sla_bptrl_units: number;
+  sla_bptrl_hours: number;
+};
+
 export async function getTechCheckInWeeklyHistory(input: Input) {
   const assignmentIdRaw = String(input.assignmentId ?? "").trim();
   const assignmentId = asUuid(assignmentIdRaw) ?? assignmentIdRaw;
@@ -125,7 +174,7 @@ export async function getTechCheckInWeeklyHistory(input: Input) {
     (techRow.co_name ? String(techRow.co_name) : null) ??
     (await resolveAffiliationName(input.admin, personId));
 
-  const { data: factRows, error: factErr } = await input.admin
+  const { data: factRowsRaw, error: factErr } = await input.admin
     .from("check_in_day_fact")
     .select(
       [
@@ -136,7 +185,6 @@ export async function getTechCheckInWeeklyHistory(input: Input) {
         "sla_bptrl_jobs",
         "sla_bptrl_units",
         "sla_bptrl_hours",
-        "tech_id",
       ].join(",")
     )
     .eq("pc_org_id", input.pcOrgId)
@@ -147,114 +195,172 @@ export async function getTechCheckInWeeklyHistory(input: Input) {
 
   if (factErr) serverError(factErr.message);
 
-  const weekMap = new Map<
-    string,
-    {
-      assignment_id: string;
-      week_start: string;
-      week_end: string;
-      week_ending_saturday: string;
-      calendar_year: number;
-      calendar_week: number;
-      tech_id: string;
-      full_name: string;
-      affiliation: string | null;
-      days_worked: number;
-      worked_dates: string[];
-      worked_date_details: {
-        shift_date: string;
-        sla_bptrl_jobs: number;
-      }[];
-      actual_jobs: number;
-      actual_units: number;
-      actual_hours: number;
-      sla_bptrl_jobs: number;
-      sla_bptrl_units: number;
-      sla_bptrl_hours: number;
-    }
-  >();
+  const { data: jobRowsRaw, error: jobErr } = await input.admin
+    .from("check_in_job_row")
+    .select(
+      [
+        "cp_date",
+        "tech_id",
+        "job_num",
+        "work_order_number",
+        "job_type",
+        "job_units",
+        "start_time",
+        "cp_time",
+        "job_duration",
+        "is_sla_bptrl",
+        "source_tech_last_name",
+      ].join(",")
+    )
+    .eq("pc_org_id", input.pcOrgId)
+    .eq("tech_id", techId)
+    .gte("cp_date", from)
+    .lte("cp_date", to)
+    .order("cp_date", { ascending: true })
+    .order("start_time", { ascending: true, nullsFirst: false })
+    .order("cp_time", { ascending: true, nullsFirst: false });
 
-  for (const row of factRows ?? []) {
+  if (jobErr) serverError(jobErr.message);
+
+  const factsByDate = new Map<string, FactRow>();
+
+  for (const row of factRowsRaw ?? []) {
     const shiftDate = String((row as any).shift_date ?? "").trim();
     if (!shiftDate) continue;
 
-    const weekStart = startOfWeekSunday(shiftDate);
-    const weekEnd = addDays(weekStart, 6);
-    const key = weekStart;
-
-    const cur = weekMap.get(key) ?? {
-      assignment_id: String(assignmentId),
-      week_start: weekStart,
-      week_end: weekEnd,
-      week_ending_saturday: weekEnd,
-      calendar_year: Number(weekEnd.slice(0, 4)),
-      calendar_week: getCalendarWeek(weekEnd),
-      tech_id: techId,
-      full_name: String(techRow.full_name ?? ""),
-      affiliation: derivedAffiliation,
-      days_worked: 0,
-      worked_dates: [],
-      worked_date_details: [],
-      actual_jobs: 0,
-      actual_units: 0,
-      actual_hours: 0,
-      sla_bptrl_jobs: 0,
-      sla_bptrl_units: 0,
-      sla_bptrl_hours: 0,
-    };
-
-    const actualJobs = Number((row as any).actual_jobs ?? 0) || 0;
-    const actualUnits = Number((row as any).actual_units ?? 0) || 0;
-    const actualHours = Number((row as any).actual_hours ?? 0) || 0;
-    const slaJobs = Number((row as any).sla_bptrl_jobs ?? 0) || 0;
-    const slaUnits = Number((row as any).sla_bptrl_units ?? 0) || 0;
-    const slaHours = Number((row as any).sla_bptrl_hours ?? 0) || 0;
-
-    cur.days_worked += 1;
-    cur.worked_dates.push(shiftDate);
-    cur.worked_date_details.push({
+    factsByDate.set(shiftDate, {
       shift_date: shiftDate,
-      sla_bptrl_jobs: slaJobs,
+      actual_jobs: Number((row as any).actual_jobs ?? 0) || 0,
+      actual_units: Number((row as any).actual_units ?? 0) || 0,
+      actual_hours: Number((row as any).actual_hours ?? 0) || 0,
+      sla_bptrl_jobs: Number((row as any).sla_bptrl_jobs ?? 0) || 0,
+      sla_bptrl_units: Number((row as any).sla_bptrl_units ?? 0) || 0,
+      sla_bptrl_hours: Number((row as any).sla_bptrl_hours ?? 0) || 0,
     });
-
-    cur.actual_jobs += actualJobs;
-    cur.actual_units += actualUnits;
-    cur.actual_hours += actualHours;
-    cur.sla_bptrl_jobs += slaJobs;
-    cur.sla_bptrl_units += slaUnits;
-    cur.sla_bptrl_hours += slaHours;
-
-    weekMap.set(key, cur);
   }
 
-  const rows = Array.from(weekMap.values())
-    .sort((a, b) => a.week_start.localeCompare(b.week_start))
-    .map((row) => {
-      const days = row.days_worked || 0;
-      const hours = row.actual_hours || 0;
+  const jobsByDate = new Map<string, any[]>();
 
-      return {
-        ...row,
-        worked_dates_label: row.worked_dates.join(", "),
-        jobs_per_day: days > 0 ? round2(row.actual_jobs / days) : 0,
-        units_per_day: days > 0 ? round2(row.actual_units / days) : 0,
-        hours_per_day: days > 0 ? round2(row.actual_hours / days) : 0,
-        units_per_hour: hours > 0 ? round2(row.actual_units / hours) : 0,
-        sla_bptrl_jobs_per_day: days > 0 ? round2(row.sla_bptrl_jobs / days) : 0,
-        sla_bptrl_units_per_day: days > 0 ? round2(row.sla_bptrl_units / days) : 0,
-        sla_bptrl_hours_per_day: days > 0 ? round2(row.sla_bptrl_hours / days) : 0,
-      };
+  for (const row of jobRowsRaw ?? []) {
+    const shiftDate = String((row as any).cp_date ?? "").trim();
+    if (!shiftDate) continue;
+
+    const list = jobsByDate.get(shiftDate) ?? [];
+    list.push(row);
+    jobsByDate.set(shiftDate, list);
+  }
+
+  const weekStart = startOfWeekSunday(from);
+  const weekEnd = addDays(weekStart, 6);
+
+  const daySummaries = Array.from({ length: 7 }).map((_, index) => {
+    const shiftDate = addDays(weekStart, index);
+    const fact = factsByDate.get(shiftDate);
+    const jobs = jobsByDate.get(shiftDate) ?? [];
+
+    const betweenValues = betweenValuesForJobs(jobs).filter(
+      (value): value is number => typeof value === "number" && Number.isFinite(value)
+    );
+
+    const betweenTotal = betweenValues.reduce((sum, value) => sum + value, 0);
+    const avgBetween = betweenValues.length > 0 ? round2(betweenTotal / betweenValues.length) : null;
+
+    const actualJobs = fact?.actual_jobs ?? 0;
+    const actualUnits = fact?.actual_units ?? 0;
+    const actualHours = fact?.actual_hours ?? 0;
+    const slaJobs = fact?.sla_bptrl_jobs ?? 0;
+
+    return {
+      shift_date: shiftDate,
+      weekday_label: weekdayLabel(shiftDate),
+      is_scheduled: actualJobs > 0,
+      is_worked: actualJobs > 0,
+      actual_jobs: actualJobs,
+      actual_units: actualUnits,
+      actual_hours: actualHours,
+      units_per_hour: actualHours > 0 ? round2(actualUnits / actualHours) : 0,
+      sla_bptrl_jobs: slaJobs,
+      sla_bptrl_units: fact?.sla_bptrl_units ?? 0,
+      sla_bptrl_hours: fact?.sla_bptrl_hours ?? 0,
+      between_job_minutes: betweenTotal,
+      avg_between_job_minutes: avgBetween,
+      signal: slaJobs > 0 ? "SLA" : actualJobs > 0 ? "PRODUCTION" : "OFF",
+    };
+  });
+
+  const jobRows = Array.from(jobsByDate.entries()).flatMap(([shiftDate, jobs]) => {
+    const sorted = [...jobs].sort((a, b) => {
+      const aStart = String(a.start_time ?? "99:99:99");
+      const bStart = String(b.start_time ?? "99:99:99");
+      return aStart.localeCompare(bStart);
     });
+
+    const betweenValues = betweenValuesForJobs(sorted);
+
+    return sorted.map((row, index) => ({
+      shift_date: shiftDate,
+      weekday_label: weekdayLabel(shiftDate),
+      tech_id: String(row.tech_id ?? techId),
+      job_num: String(row.job_num ?? ""),
+      work_order_number: row.work_order_number ? String(row.work_order_number) : null,
+      job_type: row.job_type ? String(row.job_type) : null,
+      job_units: Number(row.job_units ?? 0) || 0,
+      start_time: row.start_time ? String(row.start_time) : null,
+      cp_time: row.cp_time ? String(row.cp_time) : null,
+      job_duration: Number(row.job_duration ?? 0) || 0,
+      is_sla_bptrl: Boolean(row.is_sla_bptrl),
+      source_tech_last_name: row.source_tech_last_name ? String(row.source_tech_last_name) : null,
+      between_job_minutes: betweenValues[index] ?? null,
+    }));
+  });
+
+  const actualJobs = daySummaries.reduce((sum, row) => sum + row.actual_jobs, 0);
+  const actualUnits = daySummaries.reduce((sum, row) => sum + row.actual_units, 0);
+  const actualHours = daySummaries.reduce((sum, row) => sum + row.actual_hours, 0);
+  const slaJobs = daySummaries.reduce((sum, row) => sum + row.sla_bptrl_jobs, 0);
+  const slaUnits = daySummaries.reduce((sum, row) => sum + row.sla_bptrl_units, 0);
+  const slaHours = daySummaries.reduce((sum, row) => sum + row.sla_bptrl_hours, 0);
+  const workedDates = daySummaries.filter((row) => row.actual_jobs > 0).map((row) => row.shift_date);
+
+  const row = {
+    assignment_id: String(assignmentId),
+    week_start: weekStart,
+    week_end: weekEnd,
+    week_ending_saturday: weekEnd,
+    calendar_year: Number(weekEnd.slice(0, 4)),
+    calendar_week: getCalendarWeek(weekEnd),
+    tech_id: techId,
+    full_name: String(techRow.full_name ?? ""),
+    affiliation: derivedAffiliation,
+    days_worked: workedDates.length,
+    worked_dates: workedDates,
+    worked_dates_label: workedDates.join(", "),
+    worked_date_details: daySummaries,
+    actual_jobs: actualJobs,
+    actual_units: actualUnits,
+    actual_hours: actualHours,
+    jobs_per_day: workedDates.length > 0 ? round2(actualJobs / workedDates.length) : 0,
+    units_per_day: workedDates.length > 0 ? round2(actualUnits / workedDates.length) : 0,
+    hours_per_day: workedDates.length > 0 ? round2(actualHours / workedDates.length) : 0,
+    units_per_hour: actualHours > 0 ? round2(actualUnits / actualHours) : 0,
+    sla_bptrl_jobs: slaJobs,
+    sla_bptrl_units: slaUnits,
+    sla_bptrl_hours: slaHours,
+    sla_bptrl_jobs_per_day: workedDates.length > 0 ? round2(slaJobs / workedDates.length) : 0,
+    sla_bptrl_units_per_day: workedDates.length > 0 ? round2(slaUnits / workedDates.length) : 0,
+    sla_bptrl_hours_per_day: workedDates.length > 0 ? round2(slaHours / workedDates.length) : 0,
+    job_rows: jobRows,
+  };
 
   return {
     ok: true,
     tech: {
-      assignment_id: assignmentId,
+      assignment_id: String(assignmentId),
       tech_id: techId,
       full_name: String(techRow.full_name ?? ""),
       affiliation: derivedAffiliation,
     },
     window: { from, to },
-    rows,
+    rows: [row],
   };
 }
