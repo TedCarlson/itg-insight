@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 type DirectorWorkspaceKey =
   | "overview"
   | "workforce"
+  | "people"
   | "metrics"
   | "route-lock";
 
@@ -29,6 +30,11 @@ const ITEMS: Item[] = [
     href: "/director/workforce",
   },
   {
+    key: "people",
+    label: "People",
+    href: "/director/people",
+  },
+  {
     key: "metrics",
     label: "Metrics",
     href: "/director/metrics",
@@ -45,6 +51,10 @@ function normalizePath(pathname: string): DirectorWorkspaceKey {
 
   if (value.startsWith("/director/workforce")) {
     return "workforce";
+  }
+
+  if (value.startsWith("/director/people")) {
+    return "people";
   }
 
   if (value.startsWith("/director/metrics")) {
