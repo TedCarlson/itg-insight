@@ -126,6 +126,7 @@ export async function getTechCheckInDayHistory(input: Input) {
         "work_order_number",
         "job_type",
         "job_units",
+        "resolution_code",
         "start_time",
         "cp_time",
         "job_duration",
@@ -167,6 +168,7 @@ export async function getTechCheckInDayHistory(input: Input) {
 
       job_type: row.job_type ? String(row.job_type) : null,
       job_units: Number(row.job_units ?? 0) || 0,
+      resolution_code: row.resolution_code ? String(row.resolution_code) : null,
 
       start_time: row.start_time ? String(row.start_time) : null,
       cp_time: row.cp_time ? String(row.cp_time) : null,

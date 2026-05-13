@@ -98,6 +98,7 @@ export type CheckInWeekJobRow = {
   source_tech_last_name: string | null;
 
   between_job_minutes: number | null;
+  resolution_code: string | null;
 };
 
 export type CheckInWeeklyRow = {
@@ -163,6 +164,7 @@ export type CheckInDayJobRow = {
 
   job_type: string | null;
   job_units: number;
+  resolution_code: string | null;
 
   start_time: string | null;
   cp_time: string | null;

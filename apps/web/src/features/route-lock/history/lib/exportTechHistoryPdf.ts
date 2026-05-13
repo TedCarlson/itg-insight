@@ -77,6 +77,7 @@ function jobRows(row: CheckInWeeklyRow) {
           <td>${escapeHtml(job.work_order_number ?? "")}</td>
           <td>${escapeHtml(job.job_type ?? "")}</td>
           <td class="num">${formatDecimal(job.job_units)}</td>
+          <td>${escapeHtml(job.resolution_code ?? "")}</td>
           <td>${escapeHtml(job.start_time ?? "—")}</td>
           <td>${escapeHtml(job.cp_time ?? "—")}</td>
           <td class="num">${formatHoursMinutes(job.job_duration)}</td>
@@ -110,8 +111,8 @@ export function exportTechHistoryPdf(input: {
         fullName: primary.full_name,
         fromDate: input.fromDate,
         toDate: input.toDate,
-        extension: "xlsx",
-    }); 
+        extension: "pdf",
+    });
 
     const title = "Tech Route History";
     const techLabel = input.selectedTechLabel ?? primary.full_name;
@@ -252,6 +253,7 @@ export function exportTechHistoryPdf(input: {
           <th>Work Order</th>
           <th>Type</th>
           <th>Units</th>
+          <th>Resolution</th>
           <th>Start</th>
           <th>End</th>
           <th>Duration</th>

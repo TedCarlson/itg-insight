@@ -8,7 +8,6 @@ import HistoryDailySummaryGrid from "./HistoryDailySummaryGrid";
 import { exportTechHistoryExcel } from "../lib/exportTechHistoryExcel";
 import { exportTechHistoryPdf } from "../lib/exportTechHistoryPdf";
 
-
 function formatNumber(value: number) {
   return Number.isFinite(value) ? value.toLocaleString() : "0";
 }
@@ -25,7 +24,9 @@ function formatWorkedDate(dateOnly: string) {
   const d = new Date(`${dateOnly}T00:00:00`);
   if (Number.isNaN(d.getTime())) return dateOnly;
 
-  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+  }).format(d);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
 
@@ -80,11 +81,6 @@ function jobSignal(job: CheckInWeekJobRow) {
   }
 
   return <span className="text-[var(--to-ink-muted)]">BAU</span>;
-}
-
-function isFirstJobForDate(jobs: CheckInWeekJobRow[], index: number) {
-  if (index === 0) return true;
-  return jobs[index - 1]?.shift_date !== jobs[index]?.shift_date;
 }
 
 export default function HistoryCheckInWeeklyCard(props: {
@@ -151,6 +147,7 @@ export default function HistoryCheckInWeeklyCard(props: {
           >
             Export Excel
           </button>
+
           <button
             type="button"
             onClick={() =>
@@ -295,6 +292,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                       <th className="border-b px-3 py-2 text-left">Job #</th>
                       <th className="border-b px-3 py-2 text-left">Type</th>
                       <th className="border-b px-3 py-2 text-right">Units</th>
+                      <th className="border-b px-3 py-2 text-left">Res Code</th>
                       <th className="border-b px-3 py-2 text-left">Start</th>
                       <th className="border-b px-3 py-2 text-left">End</th>
                       <th className="border-b px-3 py-2 text-right">Duration</th>
@@ -311,7 +309,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                         <Fragment key={`${job.shift_date}:${job.job_num}:${job.start_time ?? index}`}>
                           {isFirstForDate ? (
                             <tr key={`${job.shift_date}:divider`}>
-                              <td colSpan={9} className="bg-[var(--to-surface-2)] px-3 py-2">
+                              <td colSpan={10} className="bg-[var(--to-surface-2)] px-3 py-2">
                                 <div className="flex items-center gap-3">
                                   <div className="h-px flex-1 bg-[var(--to-border)]" />
                                   <div className="rounded-full border border-[var(--to-border)] bg-[var(--to-surface)] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
@@ -330,6 +328,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                             <td className="border-b px-3 py-2">{job.job_num}</td>
                             <td className="border-b px-3 py-2">{job.job_type ?? "—"}</td>
                             <td className="border-b px-3 py-2 text-right">{formatDecimal(job.job_units)}</td>
+                            <td className="border-b px-3 py-2">{job.resolution_code ?? "—"}</td>
                             <td className="border-b px-3 py-2">{job.start_time ?? "—"}</td>
                             <td className="border-b px-3 py-2">{job.cp_time ?? "—"}</td>
                             <td className="border-b px-3 py-2 text-right">

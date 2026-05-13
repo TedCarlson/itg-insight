@@ -57,6 +57,7 @@ export function exportTechHistoryExcel(input: {
       "Work Order": job.work_order_number ?? "",
       Type: job.job_type ?? "",
       Units: formatDecimal(job.job_units),
+      "Resolution Code": job.resolution_code ?? "",
       Start: job.start_time ?? "",
       End: job.cp_time ?? "",
       Duration: formatDecimal(job.job_duration),
@@ -74,13 +75,15 @@ export function exportTechHistoryExcel(input: {
   XLSX.utils.book_append_sheet(wb, dailySheet, "Daily Summary");
   XLSX.utils.book_append_sheet(wb, jobsSheet, "Job Detail");
 
-  const safeTech =
-    (input.selectedTechLabel ?? "tech")
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "_")
-      .slice(0, 50) || "tech";
+  const primary = input.rows[0] ?? null;
 
-  const filename = `tech_route_history_${safeTech}_${input.fromDate}_to_${input.toDate}.xlsx`;
+  const filename = buildTechHistoryExportFilename({
+    techId: primary?.tech_id,
+    fullName: primary?.full_name,
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+    extension: "xlsx",
+  });
 
   XLSX.writeFile(wb, filename);
 }
