@@ -2,10 +2,11 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { CheckInWeekJobRow, CheckInWeeklyRow } from "../lib/history.types";
 import HistoryDailySummaryGrid from "./HistoryDailySummaryGrid";
 import { exportTechHistoryExcel } from "../lib/exportTechHistoryExcel";
+
 
 function formatNumber(value: number) {
   return Number.isFinite(value) ? value.toLocaleString() : "0";
@@ -290,7 +291,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                         index === 0 || primaryRow.job_rows[index - 1]?.shift_date !== job.shift_date;
 
                       return (
-                        <>
+                        <Fragment key={`${job.shift_date}:${job.job_num}:${job.start_time ?? index}`}>
                           {isFirstForDate ? (
                             <tr key={`${job.shift_date}:divider`}>
                               <td colSpan={9} className="bg-[var(--to-surface-2)] px-3 py-2">
@@ -322,7 +323,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                             </td>
                             <td className="border-b px-3 py-2">{jobSignal(job)}</td>
                           </tr>
-                        </>
+                        </Fragment>
                       );
                     })}
                   </tbody>
