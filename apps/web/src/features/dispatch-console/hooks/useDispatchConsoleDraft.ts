@@ -34,11 +34,22 @@ function mutateMessagePrefix(prevType: EntryType, nextType: EntryType, curMessag
   return msg;
 }
 
+function routeIdForTech(row: WorkforceRow | null) {
+  return norm(row?.planned_route_id);
+}
+
+function routeNameForTech(row: WorkforceRow | null) {
+  return norm(row?.planned_route_name);
+}
+
 export function useDispatchConsoleDraft(args: DraftArgs) {
   const { selectedTech } = args;
 
   const [entryType, setEntryType] = useState<EntryType | null>(null);
   const [message, setMessage] = useState("");
+
+  const [techMoveToRouteId, setTechMoveToRouteId] = useState<string>("");
+  const [techMoveToRouteName, setTechMoveToRouteName] = useState<string>("");
 
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
@@ -50,21 +61,37 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
   const effectiveAssignmentId = editing ? (editingAssignmentId ?? null) : (args.selectedAssignmentId ?? null);
   const typeLocked = editing && editingIsNote;
 
+  const resetTechMoveDestination = useCallback(() => {
+    setTechMoveToRouteId("");
+    setTechMoveToRouteName("");
+  }, []);
+
   const onSelectAssignment = useCallback(
     (aid: string | null) => {
       args.setSelectedAssignmentId(aid);
       lastAutoDraftRef.current = "";
+      resetTechMoveDestination();
+
       if (!editing) {
         setEntryType(null);
         setMessage("");
       }
     },
-    [args, editing]
+    [args, editing, resetTechMoveDestination]
   );
+
+  const setTechMoveDestination = useCallback((routeId: string, routeName: string) => {
+    setTechMoveToRouteId(norm(routeId));
+    setTechMoveToRouteName(norm(routeName));
+  }, []);
 
   const setEntryTypeWithDraftMutation = useCallback(
     (nextType: EntryType) => {
       if (typeLocked) return;
+
+      if (nextType !== "TECH_MOVE") {
+        resetTechMoveDestination();
+      }
 
       setEntryType((prev) => {
         if (editing) {
@@ -93,18 +120,19 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
         return nextType;
       });
     },
-    [typeLocked, editing, selectedTech, message]
+    [typeLocked, resetTechMoveDestination, editing, selectedTech, message]
   );
 
   const clearDraft = useCallback(() => {
     setMessage("");
     lastAutoDraftRef.current = "";
     setEntryType(null);
+    resetTechMoveDestination();
     args.setSelectedAssignmentId(null);
     setEditingLogId(null);
     setEditingAssignmentId(null);
     setEditingIsNote(false);
-  }, [args]);
+  }, [args, resetTechMoveDestination]);
 
   const cancelEdit = useCallback(() => {
     setEditingLogId(null);
@@ -113,21 +141,33 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     setMessage("");
     lastAutoDraftRef.current = "";
     setEntryType(null);
-  }, []);
+    resetTechMoveDestination();
+  }, [resetTechMoveDestination]);
 
-  const beginEdit = useCallback((row: LogRow) => {
-    setEditingLogId(row.dispatch_console_log_id);
+  const beginEdit = useCallback(
+    (row: LogRow) => {
+      setEditingLogId(row.dispatch_console_log_id);
 
-    const aid = norm(row.assignment_id);
-    setEditingAssignmentId(aid ? aid : null);
+      const aid = norm(row.assignment_id);
+      setEditingAssignmentId(aid ? aid : null);
 
-    const isNote = row.event_type === "NOTE";
-    setEditingIsNote(isNote);
+      const isNote = row.event_type === "NOTE";
+      setEditingIsNote(isNote);
 
-    setEntryType(isNote ? "NOTE" : row.event_type);
-    setMessage(row.message ?? "");
-    lastAutoDraftRef.current = "";
-  }, []);
+      setEntryType(isNote ? "NOTE" : row.event_type);
+      setMessage(row.message ?? "");
+
+      const meta = row.meta ?? {};
+      setTechMoveToRouteId(norm(meta.to_route_id));
+      setTechMoveToRouteName(norm(meta.to_route_name));
+
+      lastAutoDraftRef.current = "";
+    },
+    []
+  );
+
+  const techMoveFromRouteId = routeIdForTech(selectedTech);
+  const techMoveFromRouteName = routeNameForTech(selectedTech);
 
   const canSubmit = useMemo(() => {
     const hasMsg = norm(message).length > 0;
@@ -136,9 +176,13 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     if (editing && editingIsNote) return true;
     if (!entryType) return false;
 
+    if (entryType === "TECH_MOVE") {
+      return Boolean(effectiveAssignmentId && techMoveToRouteId);
+    }
+
     if (entryType !== "NOTE") return Boolean(effectiveAssignmentId);
     return true;
-  }, [message, entryType, effectiveAssignmentId, editing, editingIsNote]);
+  }, [message, entryType, effectiveAssignmentId, editing, editingIsNote, techMoveToRouteId]);
 
   return {
     selectedAssignmentId: args.selectedAssignmentId,
@@ -148,6 +192,12 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
     setEntryType: setEntryTypeWithDraftMutation,
     message,
     setMessage,
+
+    techMoveFromRouteId,
+    techMoveFromRouteName,
+    techMoveToRouteId,
+    techMoveToRouteName,
+    setTechMoveDestination,
 
     editingLogId,
     editingAssignmentId,

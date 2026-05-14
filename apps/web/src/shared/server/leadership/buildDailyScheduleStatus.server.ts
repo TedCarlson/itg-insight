@@ -1,6 +1,10 @@
-// path: apps/web/src/shared/server/executive/buildDailyScheduleStatus.server.ts
+// path: apps/web/src/shared/server/leadership/buildDailyScheduleStatus.server.ts
 
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
+import {
+  getDispatchDayFact,
+  loadDispatchDayFactLookup,
+} from "@/shared/server/dispatch/loadDispatchDayFacts.server";
 
 export type ExecutiveDailyScheduleScopeRow = {
   assignment_id: string | null;
@@ -133,6 +137,12 @@ export async function buildDailyScheduleStatus(
   const scheduledByOrg = new Map<string, Set<string>>();
   const svByOrg = new Map<string, Set<string>>();
 
+  const dispatchDayFactLookup = await loadDispatchDayFactLookup({
+    pcOrgIds: args.coveredOrgIds,
+    startDate: today,
+    endDate: today,
+  });
+
   if (assignmentIds.length) {
     const { data, error } = await admin
       .from("schedule_day_fact")
@@ -189,6 +199,10 @@ export async function buildDailyScheduleStatus(
       const hc = hcByOrg.get(orgId) ?? 0;
       const scheduled = scheduledByOrg.get(orgId)?.size ?? 0;
       const sv = svByOrg.get(orgId)?.size ?? 0;
+      const dispatchFacts = getDispatchDayFact(dispatchDayFactLookup, {
+        pc_org_id: orgId,
+        shift_date: today,
+      });
 
       return {
         pc_org_id: orgId,
@@ -199,7 +213,7 @@ export async function buildDailyScheduleStatus(
         sv,
         util_pct: pct(sv || scheduled, hc),
 
-        call_outs: null,
+        call_outs: dispatchFacts?.call_out_count ?? 0,
       };
     })
     .sort((a, b) => a.org_label.localeCompare(b.org_label));
@@ -210,6 +224,10 @@ export async function buildDailyScheduleStatus(
     0,
   );
   const totalSv = rowsByOrg.reduce((sum, row) => sum + row.sv, 0);
+  const totalCallOuts = rowsByOrg.reduce(
+    (sum, row) => sum + (row.call_outs ?? 0),
+    0,
+  );
 
   return {
     today_iso: today,
@@ -219,7 +237,7 @@ export async function buildDailyScheduleStatus(
     total_sv: totalSv,
     total_util_pct: pct(totalSv || totalScheduled, totalHc),
 
-    call_outs: null,
+    call_outs: totalCallOuts,
 
     rows_by_org: rowsByOrg,
   };

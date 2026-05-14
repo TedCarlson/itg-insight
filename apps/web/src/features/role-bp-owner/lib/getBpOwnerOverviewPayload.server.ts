@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import {
   buildDailyScheduleStatus,
   type ExecutiveDailyScheduleStatusPayload,
-} from "@/shared/server/executive/buildDailyScheduleStatus.server";
+} from "@/shared/server/leadership/buildDailyScheduleStatus.server";
 
 import { resolveBpOwnerScope } from "./resolveBpOwnerScope.server";
 

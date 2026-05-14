@@ -1,3 +1,5 @@
+// path: apps/web/src/features/dispatch-console/page.tsx
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -10,13 +12,76 @@ import { useOrg } from "@/state/org";
 import { useSession } from "@/state/session";
 import { todayInNY } from "@/features/route-lock/calendar/lib/fiscalMonth";
 
-import type { EntryType, EventType, WorkforceRow, WorkforceTab, LogRow } from "./lib/types";
+import type {
+  DispatchRouteOption,
+  EntryType,
+  EventType,
+  WorkforceRow,
+  WorkforceTab,
+  LogRow,
+} from "./lib/types";
 import { EVENT_ORDER } from "./lib/labels";
 
 import { useDispatchConsoleData } from "./hooks/useDispatchConsoleData";
 import { useDispatchConsoleDraft } from "./hooks/useDispatchConsoleDraft";
 
 import { WorkforcePanel } from "./components/WorkforcePanel";
+
+function norm(v: unknown) {
+  return String(v ?? "").trim();
+}
+
+function buildRouteOptions(rows: WorkforceRow[]): DispatchRouteOption[] {
+  const byRoute = new Map<string, DispatchRouteOption>();
+
+  for (const row of rows) {
+    const routeId = norm(row.planned_route_id);
+    const routeName = norm(row.planned_route_name);
+
+    if (!routeId && !routeName) continue;
+
+    const key = routeId || routeName;
+    const existing =
+      byRoute.get(key) ??
+      ({
+        route_id: routeId,
+        route_name: routeName || routeId,
+        tech_count: 0,
+        tech_labels: [],
+      } satisfies DispatchRouteOption);
+
+    existing.tech_count += 1;
+
+    const techLabel = `${norm(row.full_name) || "Tech"}${norm(row.tech_id) ? ` (${norm(row.tech_id)})` : ""}`;
+    if (techLabel && existing.tech_labels.length < 3) {
+      existing.tech_labels.push(techLabel);
+    }
+
+    byRoute.set(key, existing);
+  }
+
+  return Array.from(byRoute.values()).sort((a, b) => a.route_name.localeCompare(b.route_name));
+}
+
+function buildTechMoveMeta(args: {
+  selectedTech: WorkforceRow;
+  toRouteId: string;
+  toRouteName: string;
+}) {
+  const fromRouteId = norm(args.selectedTech.planned_route_id) || null;
+  const fromRouteName = norm(args.selectedTech.planned_route_name) || null;
+  const toRouteId = norm(args.toRouteId) || null;
+  const toRouteName = norm(args.toRouteName) || null;
+
+  return {
+    from_route_id: fromRouteId,
+    from_route_name: fromRouteName,
+    to_route_id: toRouteId,
+    to_route_name: toRouteName,
+    schedule_action_status: "PENDING",
+    schedule_action_type: "TECH_MOVE_BASELINE_UPDATE",
+  };
+}
 
 export default function DispatchConsolePage() {
   const { selectedOrgId } = useOrg();
@@ -94,6 +159,11 @@ export default function DispatchConsolePage() {
   const finalNotScheduledRows = useMemo(
     () => notScheduled.filter((row) => !promotedAssignmentIds.has(row.assignment_id)),
     [notScheduled, promotedAssignmentIds]
+  );
+
+  const routeOptions = useMemo(
+    () => buildRouteOptions([...scheduledRows, ...finalNotScheduledRows]),
+    [scheduledRows, finalNotScheduledRows]
   );
 
   const selectedTech: WorkforceRow | null = useMemo(() => {
@@ -192,7 +262,25 @@ export default function DispatchConsolePage() {
       return;
     }
 
+    if (draft.entryType === "TECH_MOVE" && !norm(draft.techMoveToRouteId)) {
+      toast.push({
+        title: "Dispatch Console",
+        message: "Choose the destination route for this tech move.",
+        variant: "warning",
+      });
+      return;
+    }
+
     try {
+      const techMoveMeta =
+        draft.entryType === "TECH_MOVE"
+          ? buildTechMoveMeta({
+              selectedTech,
+              toRouteId: draft.techMoveToRouteId,
+              toRouteName: draft.techMoveToRouteName,
+            })
+          : null;
+
       const res = await fetch("/api/dispatch-console/log", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -206,6 +294,7 @@ export default function DispatchConsolePage() {
             source: "dispatch_console_row_drawer",
             tech_id: selectedTech.tech_id ?? null,
             full_name: selectedTech.full_name ?? null,
+            ...(techMoveMeta ?? {}),
           },
         }),
       });
@@ -307,10 +396,16 @@ export default function DispatchConsolePage() {
         chipsByAssignment={chipsByAssignment}
         workforceTabForSelectedRow={selectedRowTab}
         selectedTech={selectedTech}
+        routeOptions={routeOptions}
         entryType={draft.entryType}
         setEntryType={draft.setEntryType}
         message={draft.message}
         setMessage={draft.setMessage}
+        techMoveFromRouteId={draft.techMoveFromRouteId}
+        techMoveFromRouteName={draft.techMoveFromRouteName}
+        techMoveToRouteId={draft.techMoveToRouteId}
+        techMoveToRouteName={draft.techMoveToRouteName}
+        setTechMoveDestination={draft.setTechMoveDestination}
         editing={draft.editing}
         canSubmit={draft.canSubmit}
         onSubmit={submit}

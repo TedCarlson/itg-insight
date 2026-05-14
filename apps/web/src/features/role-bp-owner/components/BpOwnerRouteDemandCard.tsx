@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import type {
   ExecutiveDailyScheduleStatusOrgRow,
   ExecutiveDailyScheduleStatusPayload,
-} from "@/shared/server/executive/buildDailyScheduleStatus.server";
+} from "@/shared/server/leadership/buildDailyScheduleStatus.server";
 
 type Props = {
   status: ExecutiveDailyScheduleStatusPayload;

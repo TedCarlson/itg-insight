@@ -1,11 +1,16 @@
-// RUN THIS
-// Create (or replace) the entire file:
 // apps/web/src/features/dispatch-console/lib/types.ts
 
 export type EventType = "ALL" | "CALL_OUT" | "ADD_IN" | "BP_LOW" | "INCIDENT" | "NOTE" | "TECH_MOVE";
 export type EntryType = Exclude<EventType, "ALL">;
 
 export type WorkforceTab = "SCHEDULED" | "NOT_SCHEDULED";
+
+export type DispatchRouteOption = {
+  route_id: string;
+  route_name: string;
+  tech_count: number;
+  tech_labels: string[];
+};
 
 export type WorkforceRow = {
   pc_org_id: string;
@@ -66,7 +71,6 @@ export type LogRow = {
   pc_org_id: string;
   shift_date: string;
 
-  // NOTE entries may be org-level (no assignment)
   assignment_id: string | null;
   person_id: string | null;
   tech_id: string | null;
@@ -75,6 +79,9 @@ export type LogRow = {
   event_type: EntryType;
   capacity_delta_routes: number;
   message: string;
+  tags?: unknown;
+  meta?: Record<string, unknown> | null;
+
   created_at: string;
   created_by_user_id: string;
 

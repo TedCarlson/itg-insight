@@ -1,20 +1,37 @@
+// Path: apps/web/src/features/dispatch-console/components/DispatchInlineRowDrawer.tsx
+
 "use client";
 
 import { Button } from "@/components/ui/Button";
 import { TextInput } from "@/components/ui/TextInput";
 
-import type { EntryType, LogRow, WorkforceRow, WorkforceTab } from "../lib/types";
+import type { DispatchRouteOption, EntryType, LogRow, WorkforceRow, WorkforceTab } from "../lib/types";
 import { labelForEvent } from "../lib/labels";
+
+function optionLabel(opt: DispatchRouteOption) {
+  const techPreview = opt.tech_labels.length ? ` · ${opt.tech_labels.join(", ")}` : "";
+  return `${opt.route_name}${opt.tech_count ? ` · ${opt.tech_count} tech${opt.tech_count === 1 ? "" : "s"}` : ""}${techPreview}`;
+}
 
 export function DispatchInlineRowDrawer(props: {
   workforceTab: WorkforceTab;
   tech: WorkforceRow;
+
+  routeOptions: DispatchRouteOption[];
 
   entryType: EntryType | null;
   setEntryType: (v: EntryType) => void;
 
   message: string;
   setMessage: (v: string) => void;
+
+  techMoveFromRouteId: string;
+  techMoveFromRouteName: string;
+
+  techMoveToRouteId: string;
+  techMoveToRouteName: string;
+
+  setTechMoveDestination: (routeId: string, routeName: string) => void;
 
   editing: boolean;
   canSubmit: boolean;
@@ -46,6 +63,7 @@ export function DispatchInlineRowDrawer(props: {
 
   const options = props.workforceTab === "NOT_SCHEDULED" ? entryOptionsNotScheduled : entryOptionsScheduled;
   const inputDisabled = !props.editing && !props.entryType;
+  const showTechMoveControls = props.entryType === "TECH_MOVE" && !props.editing;
 
   return (
     <div
@@ -83,6 +101,48 @@ export function DispatchInlineRowDrawer(props: {
           {props.editing ? "Cancel" : "Clear"}
         </Button>
       </div>
+
+      {showTechMoveControls ? (
+        <div
+          className="mt-3 grid gap-3 rounded-lg border bg-[var(--to-surface)] p-3 md:grid-cols-[1fr_1fr]"
+          style={{ borderColor: "var(--to-border)" }}
+        >
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--to-ink-muted)]">
+              From route
+            </div>
+            <div className="mt-1 rounded-lg border bg-[var(--to-surface-2)] px-3 py-2 text-sm" style={{ borderColor: "var(--to-border)" }}>
+              {props.techMoveFromRouteName || props.techMoveFromRouteId || "No current route"}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--to-ink-muted)]">
+              To route
+            </div>
+            <select
+              className="mt-1 h-10 w-full rounded-lg border bg-[var(--to-surface)] px-3 text-sm text-[var(--to-ink)] outline-none"
+              style={{ borderColor: "var(--to-border)" }}
+              value={props.techMoveToRouteId}
+              onChange={(e) => {
+                const routeId = e.target.value;
+                const opt = props.routeOptions.find((r) => r.route_id === routeId);
+                props.setTechMoveDestination(routeId, opt?.route_name ?? "");
+              }}
+            >
+              <option value="">Choose destination route…</option>
+              {props.routeOptions.map((opt) => (
+                <option key={opt.route_id || opt.route_name} value={opt.route_id}>
+                  {optionLabel(opt)}
+                </option>
+              ))}
+            </select>
+            <div className="mt-1 text-xs text-[var(--to-ink-muted)]">
+              This will log the move and mark schedule baseline work as pending.
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-3 max-w-[980px]">
         <div

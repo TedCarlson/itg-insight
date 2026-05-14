@@ -2,18 +2,24 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { requireAccessPass } from "@/shared/access/requireAccessPass";
 import { requireModule } from "@/shared/access/access";
-
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 export const runtime = "nodejs";
 
 type EventType = "CALL_OUT" | "ADD_IN" | "BP_LOW" | "INCIDENT" | "NOTE" | "TECH_MOVE";
 
+type RollupRow = {
+  assignment_id: string | null;
+  event_type: EventType;
+  count: number;
+  capacity_delta_total: number;
+};
+
 function isISODate(d: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
 }
 
-function jsonError(status: number, payload: any) {
+function jsonError(status: number, payload: unknown) {
   return NextResponse.json(payload, { status });
 }
 
@@ -33,10 +39,7 @@ export async function GET(req: NextRequest) {
     const pc_org_id = req.nextUrl.searchParams.get("pc_org_id") ?? "";
     const shift_date = req.nextUrl.searchParams.get("shift_date") ?? "";
 
-    if (!pc_org_id) {
-      return jsonError(400, { ok: false, error: "missing_pc_org_id" });
-    }
-
+    if (!pc_org_id) return jsonError(400, { ok: false, error: "missing_pc_org_id" });
     if (!shift_date || !isISODate(shift_date)) {
       return jsonError(400, { ok: false, error: "invalid_shift_date" });
     }
@@ -46,53 +49,70 @@ export async function GET(req: NextRequest) {
 
     const admin = supabaseAdmin();
 
-    const res = await admin
+    const { data, error } = await admin
       .from("dispatch_console_log")
-      .select("event_type, capacity_delta_routes")
+      .select("assignment_id,event_type,capacity_delta_routes")
       .eq("pc_org_id", pc_org_id)
       .eq("shift_date", shift_date);
 
-    if (res.error) {
-      return jsonError(400, { ok: false, error: "rollup_fetch_failed", supabase: res.error });
+    if (error) {
+      return jsonError(400, {
+        ok: false,
+        error: "rollup_fetch_failed",
+        details: error,
+      });
     }
 
-    const rows = res.data ?? [];
+    const byAssignmentEvent = new Map<string, RollupRow>();
 
-    let call_out = 0;
-    let add_in = 0;
-    let bp_low = 0;
-    let incident = 0;
-    let tech_move = 0;
-    let notes = 0;
-    let capacity_delta_total = 0;
+    const rollup = {
+      call_out: 0,
+      add_in: 0,
+      bp_low: 0,
+      incident: 0,
+      tech_move: 0,
+      notes: 0,
+      capacity_delta_total: 0,
+    };
 
-    for (const r of rows) {
-      const t = r.event_type as EventType;
+    for (const row of data ?? []) {
+      const assignmentId = String((row as any).assignment_id ?? "").trim();
+      const eventType = String((row as any).event_type ?? "") as EventType;
+      const delta = Number((row as any).capacity_delta_routes ?? 0);
 
-      if (t === "CALL_OUT") call_out++;
-      if (t === "ADD_IN") add_in++;
-      if (t === "BP_LOW") bp_low++;
-      if (t === "INCIDENT") incident++;
-      if (t === "TECH_MOVE") tech_move++;
-      if (t === "NOTE") notes++;
+      if (eventType === "CALL_OUT") rollup.call_out += 1;
+      if (eventType === "ADD_IN") rollup.add_in += 1;
+      if (eventType === "BP_LOW") rollup.bp_low += 1;
+      if (eventType === "INCIDENT") rollup.incident += 1;
+      if (eventType === "TECH_MOVE") rollup.tech_move += 1;
+      if (eventType === "NOTE") rollup.notes += 1;
 
-      capacity_delta_total += Number(r.capacity_delta_routes ?? 0);
+      rollup.capacity_delta_total += Number.isFinite(delta) ? delta : 0;
+
+      if (!assignmentId) continue;
+
+      const key = `${assignmentId}:${eventType}`;
+      const existing =
+        byAssignmentEvent.get(key) ??
+        ({
+          assignment_id: assignmentId,
+          event_type: eventType,
+          count: 0,
+          capacity_delta_total: 0,
+        } satisfies RollupRow);
+
+      existing.count += 1;
+      existing.capacity_delta_total += Number.isFinite(delta) ? delta : 0;
+      byAssignmentEvent.set(key, existing);
     }
 
     return NextResponse.json(
       {
         ok: true,
-        rollup: {
-          call_out,
-          add_in,
-          bp_low,
-          incident,
-          tech_move,
-          notes,
-          capacity_delta_total,
-        },
+        rows: Array.from(byAssignmentEvent.values()),
+        rollup,
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (err) {
     return asAccessError(err);

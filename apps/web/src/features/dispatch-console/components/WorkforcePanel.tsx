@@ -4,7 +4,14 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TextInput } from "@/components/ui/TextInput";
 
-import type { DaySummary, EntryType, LogRow, WorkforceRow, WorkforceTab } from "../lib/types";
+import type {
+  DaySummary,
+  DispatchRouteOption,
+  EntryType,
+  LogRow,
+  WorkforceRow,
+  WorkforceTab,
+} from "../lib/types";
 import { labelForEvent, routeLabel, chipClassForEvent } from "../lib/labels";
 import { DispatchInlineRowDrawer } from "./DispatchInlineRowDrawer";
 
@@ -113,12 +120,25 @@ export function WorkforcePanel(props: {
   workforceTabForSelectedRow: WorkforceTab;
   selectedTech: WorkforceRow | null;
 
+  routeOptions: DispatchRouteOption[];
+
   entryType: EntryType | null;
   setEntryType: (v: EntryType) => void;
+
   message: string;
   setMessage: (v: string) => void;
+
+  techMoveFromRouteId: string;
+  techMoveFromRouteName: string;
+
+  techMoveToRouteId: string;
+  techMoveToRouteName: string;
+
+  setTechMoveDestination: (routeId: string, routeName: string) => void;
+
   editing: boolean;
   canSubmit: boolean;
+
   onSubmit: () => void;
   onClearOrCancel: () => void;
 
@@ -178,10 +198,16 @@ export function WorkforcePanel(props: {
             <DispatchInlineRowDrawer
               workforceTab={workforceTab}
               tech={props.selectedTech}
+              routeOptions={props.routeOptions}
               entryType={props.entryType}
               setEntryType={props.setEntryType}
               message={props.message}
               setMessage={props.setMessage}
+              techMoveFromRouteId={props.techMoveFromRouteId}
+              techMoveFromRouteName={props.techMoveFromRouteName}
+              techMoveToRouteId={props.techMoveToRouteId}
+              techMoveToRouteName={props.techMoveToRouteName}
+              setTechMoveDestination={props.setTechMoveDestination}
               editing={props.editing}
               canSubmit={props.canSubmit}
               onSubmit={props.onSubmit}
