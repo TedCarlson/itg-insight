@@ -6,7 +6,6 @@ import { createServerClient } from "@supabase/ssr";
 
 import CoreNav from "@/components/CoreNav";
 import AppChrome from "@/components/AppChrome";
-import TechRouteGate from "@/components/TechRouteGate";
 import { OrgProvider } from "@/state/org";
 import { SessionProvider } from "@/state/session";
 import { AccessProvider } from "@/state/access";
@@ -47,7 +46,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       if (fromRow) lob = fromRow;
     }
   } catch {
-    // swallow — do not block rendering
+    // Do not block app rendering if optional context lookup fails.
   }
 
   return (
@@ -55,12 +54,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <SessionProvider>
         <OrgProvider lob={lob}>
           <AccessProvider>
-            <TechRouteGate>
-              <div className="min-h-screen">
-                <CoreNav lob={lob} />
-                <AppChrome>{children}</AppChrome>
-              </div>
-            </TechRouteGate>
+            <div className="min-h-screen">
+              <CoreNav lob={lob} />
+              <AppChrome>{children}</AppChrome>
+            </div>
           </AccessProvider>
         </OrgProvider>
       </SessionProvider>

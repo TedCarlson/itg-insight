@@ -25,6 +25,7 @@ function isApiPath(pathname: string) {
 const ALLOWED_NEXT_PREFIXES = [
   "/",
   "/home",
+  "/welcome",
   "/admin",
   "/org",
   "/access",
@@ -102,12 +103,10 @@ export async function middleware(req: NextRequest) {
     },
   });
 
-  // ✅ IMPORTANT: hydrate session FIRST so PostgREST calls carry a JWT
   const { data: sessionData } = await supabase.auth.getSession();
   const session = sessionData?.session ?? null;
   const user = session?.user ?? null;
 
-  // ---- Not signed in ----
   if (!user) {
     if (isApiPath(pathname)) {
       return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -119,7 +118,6 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // ---- Signed in ----
   if (pathname.startsWith("/login")) {
     const dest = safeNextFromQuery(req, OWNER_LANDING);
     const redirectUrl = req.nextUrl.clone();
@@ -128,7 +126,6 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // Owner bypass (break-glass)
   let isOwner = false;
   try {
     const { data } = await supabase.rpc("is_owner");
@@ -137,10 +134,12 @@ export async function middleware(req: NextRequest) {
     isOwner = false;
   }
 
+  let shouldCheckWelcome = false;
+
   if (!isOwner) {
     const { data: profile, error: profileErr } = await supabase
       .from("user_profile")
-      .select("status")
+      .select("status, person_id, core_person_id")
       .eq("auth_user_id", user.id)
       .maybeSingle();
 
@@ -164,6 +163,28 @@ export async function middleware(req: NextRequest) {
 
       const redirectUrl = req.nextUrl.clone();
       redirectUrl.pathname = "/access";
+      redirectUrl.search = "";
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    shouldCheckWelcome = Boolean(profile.core_person_id ?? profile.person_id);
+  }
+
+  if (
+    shouldCheckWelcome &&
+    !isApiPath(pathname) &&
+    !pathname.startsWith("/welcome") &&
+    !pathname.startsWith("/access")
+  ) {
+    const { data: facts, error: factsErr } = await supabase
+      .from("app_access_session_fact")
+      .select("session_fact_id")
+      .eq("auth_user_id", user.id)
+      .limit(1);
+
+    if (!factsErr && (!Array.isArray(facts) || facts.length === 0)) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/welcome";
       redirectUrl.search = "";
       return NextResponse.redirect(redirectUrl);
     }
