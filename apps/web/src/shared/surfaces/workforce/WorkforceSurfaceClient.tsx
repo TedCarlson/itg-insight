@@ -138,6 +138,14 @@ function buildProcessingRow(
 
     mobile: null,
     email: null,
+
+    app_access_status: "missing_email",
+    auth_user_id: null,
+    invite_email: null,
+    invite_last_sent_at: null,
+    invite_accepted_at: null,
+    profile_person_id: null,
+
     nt_login: null,
     csg: null,
 
@@ -166,6 +174,67 @@ function buildProcessingRow(
       .join(" ")
       .toLowerCase(),
   };
+}
+
+
+function appAccessLabel(row: WorkforceRow) {
+  if (row.app_access_status === "active") return "In App";
+  if (row.app_access_status === "invited_pending") return "Invite Sent";
+  if (row.app_access_status === "invite_available") return "Invite";
+  if (row.app_access_status === "profile_mismatch") return "Needs Admin Fix";
+  return "No Email";
+}
+
+function appAccessDotClass(row: WorkforceRow) {
+  if (row.app_access_status === "active") return "bg-[var(--to-success)]";
+  if (row.app_access_status === "invited_pending") return "bg-[var(--to-warning)]";
+  if (row.app_access_status === "invite_available") return "bg-[var(--to-info)]";
+  if (row.app_access_status === "profile_mismatch") return "bg-[var(--to-danger)]";
+  return "bg-muted-foreground";
+}
+
+function appAccessBadgeClass(row: WorkforceRow) {
+  if (row.app_access_status === "active") {
+    return "border-[var(--to-success)] bg-[color-mix(in_oklab,var(--to-success)_10%,white)]";
+  }
+
+  if (row.app_access_status === "invited_pending") {
+    return "border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_10%,white)]";
+  }
+
+  if (row.app_access_status === "invite_available") {
+    return "border-[var(--to-info)] bg-[color-mix(in_oklab,var(--to-info)_10%,white)]";
+  }
+
+  if (row.app_access_status === "profile_mismatch") {
+    return "border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_10%,white)]";
+  }
+
+  return "bg-muted text-muted-foreground";
+}
+
+function canInviteToApp(row: WorkforceRow) {
+  return row.assignment_id !== "NEW" && row.app_access_status === "invite_available";
+}
+
+function appAccessHelper(row: WorkforceRow) {
+  if (row.app_access_status === "active") {
+    return row.invite_accepted_at ? `First login: ${row.invite_accepted_at}` : "User has logged in.";
+  }
+
+  if (row.app_access_status === "invited_pending") {
+    return row.invite_last_sent_at ? `Last invite: ${row.invite_last_sent_at}` : "Invite sent; waiting on first login.";
+  }
+
+  if (row.app_access_status === "invite_available") {
+    return row.email ? `Ready to invite ${row.email}.` : "Ready to invite.";
+  }
+
+  if (row.app_access_status === "profile_mismatch") {
+    return "App user/profile linkage needs Admin People repair before inviting.";
+  }
+
+  return "Add a valid email to the person record before inviting.";
 }
 
 function buildReportsToOptions(args: {
@@ -248,6 +317,8 @@ export function WorkforceSurfaceClient({ payload }: Props) {
   const [draft, setDraft] = useState<WorkforceDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
   const [stagedPerson, setStagedPerson] =
     useState<WorkforcePersonSearchRow | null>(null);
@@ -339,6 +410,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
     setSelected(row);
     setDraft(buildDraft(row));
     setSaveError(null);
+    setInviteError(null);
   }
 
   function closeDrawer() {
@@ -346,6 +418,8 @@ export function WorkforceSurfaceClient({ payload }: Props) {
     setDraft(null);
     setSaveError(null);
     setSaving(false);
+    setInviteSending(false);
+    setInviteError(null);
   }
 
   function resolveAffiliationLabel(row: WorkforceRow) {
@@ -375,6 +449,45 @@ export function WorkforceSurfaceClient({ payload }: Props) {
       seat_type: "FIELD",
       start_date: null,
     });
+  }
+
+  async function inviteSelectedToApp() {
+    if (!selected || !canInviteToApp(selected)) return;
+
+    setInviteSending(true);
+    setInviteError(null);
+
+    const response = await fetch("/api/workforce/app-access/invite", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assignment_id: selected.assignment_id,
+      }),
+    });
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setInviteSending(false);
+      setInviteError(result?.error ?? "Unable to send invite.");
+      return;
+    }
+
+    setSelected({
+      ...selected,
+      app_access_status: result?.app_access_status ?? "invited_pending",
+      auth_user_id: result?.auth_user_id ?? selected.auth_user_id,
+      invite_email: result?.invite_email ?? selected.email,
+      invite_last_sent_at:
+        result?.invite_last_sent_at ?? selected.invite_last_sent_at,
+      invite_accepted_at:
+        result?.invite_accepted_at ?? selected.invite_accepted_at,
+    });
+
+    setInviteSending(false);
+    router.refresh();
   }
 
   async function endAssignment() {
@@ -533,6 +646,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
                   <th className="px-3 py-3 text-left">Office</th>
                   <th className="px-3 py-3 text-left">Reports To</th>
                   <th className="px-3 py-3 text-left">Affiliation</th>
+                  <th className="px-3 py-3 text-left">App</th>
                   <th className="px-3 py-3 text-left">Seat</th>
                 </tr>
               </thead>
@@ -577,6 +691,23 @@ export function WorkforceSurfaceClient({ payload }: Props) {
                     </td>
 
                     <td className="px-3 py-3">{resolveAffiliationLabel(row)}</td>
+
+                    <td className="px-3 py-3">
+                      <span
+                        className={[
+                          "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]",
+                          appAccessBadgeClass(row),
+                        ].join(" ")}
+                      >
+                        <span
+                          className={[
+                            "h-1.5 w-1.5 rounded-full",
+                            appAccessDotClass(row),
+                          ].join(" ")}
+                        />
+                        {appAccessLabel(row)}
+                      </span>
+                    </td>
 
                     <td className="px-3 py-3">
                       <span
@@ -649,6 +780,65 @@ export function WorkforceSurfaceClient({ payload }: Props) {
               <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-xs leading-5">
                 {quickCopyText(selected, selectedAffiliationLabel)}
               </pre>
+            </div>
+
+            <div className="mt-4 rounded-2xl border p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold">App Access</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {appAccessHelper(selected)}
+                  </div>
+                </div>
+
+                <span
+                  className={[
+                    "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px]",
+                    appAccessBadgeClass(selected),
+                  ].join(" ")}
+                >
+                  <span
+                    className={[
+                      "h-1.5 w-1.5 rounded-full",
+                      appAccessDotClass(selected),
+                    ].join(" ")}
+                  />
+                  {appAccessLabel(selected)}
+                </span>
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">Email</dt>
+                  <dd>{selected.email ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Last Invite</dt>
+                  <dd>{selected.invite_last_sent_at ?? "—"}</dd>
+                </div>
+              </dl>
+
+              {inviteError ? (
+                <div className="mt-3 rounded-xl border border-[var(--to-danger)] bg-[color-mix(in_oklab,var(--to-danger)_8%,white)] p-3 text-xs">
+                  {inviteError}
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={inviteSelectedToApp}
+                  disabled={!canInviteToApp(selected) || inviteSending}
+                  className={[
+                    "rounded-xl border px-3 py-2 text-sm",
+                    canInviteToApp(selected) && !inviteSending
+                      ? "border-[var(--to-accent)] bg-[color-mix(in_oklab,var(--to-accent)_12%,white)]"
+                      : "bg-muted text-muted-foreground",
+                  ].join(" ")}
+                >
+                  {inviteSending ? "Sending…" : "Invite to App"}
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 rounded-2xl border p-4">

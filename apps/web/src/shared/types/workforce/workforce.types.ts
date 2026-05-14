@@ -18,6 +18,13 @@ export type WorkforceScheduleDay = {
   state: "WORKING" | "OFF" | "UNKNOWN";
 };
 
+export type WorkforceAppAccessStatus =
+  | "missing_email"
+  | "invite_available"
+  | "invited_pending"
+  | "active"
+  | "profile_mismatch";
+
 export type WorkforceRow = {
   assignment_id: string;
   person_id: string;
@@ -46,6 +53,14 @@ export type WorkforceRow = {
 
   mobile: string | null;
   email: string | null;
+
+  app_access_status: WorkforceAppAccessStatus;
+  auth_user_id: string | null;
+  invite_email: string | null;
+  invite_last_sent_at: string | null;
+  invite_accepted_at: string | null;
+  profile_person_id: string | null;
+
   nt_login: string | null;
   csg: string | null;
 

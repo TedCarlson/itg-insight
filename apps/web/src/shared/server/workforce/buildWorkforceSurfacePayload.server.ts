@@ -1,5 +1,6 @@
 // path: apps/web/src/shared/server/workforce/buildWorkforceSurfacePayload.server.ts
 
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { buildDisplayName } from "./buildDisplayName";
 import type {
@@ -7,6 +8,7 @@ import type {
   WorkforceSurfacePayload,
 } from "@/shared/types/workforce/surfacePayload";
 import type {
+  WorkforceAppAccessStatus,
   WorkforceRow,
   WorkforceScheduleDay,
   WorkforceSeatType,
@@ -200,6 +202,14 @@ function toWorkforceRow(row: WorkforceSourceRow): WorkforceRow {
 
     mobile: clean(row.mobile),
     email: clean(row.email),
+
+    app_access_status: clean(row.email) ? "invite_available" : "missing_email",
+    auth_user_id: null,
+    invite_email: null,
+    invite_last_sent_at: null,
+    invite_accepted_at: null,
+    profile_person_id: null,
+
     nt_login: clean(row.nt_login),
     csg: clean(row.csg),
 
@@ -274,6 +284,152 @@ async function loadAffiliationOptions() {
     affiliation_code: row.affiliation_code,
     affiliation_label: row.affiliation_label,
   }));
+}
+
+type WorkforceProfileRow = {
+  auth_user_id: string | null;
+  person_id: string | null;
+  status: string | null;
+};
+
+type WorkforceInviteLogRow = {
+  person_id: string | null;
+  assignment_id: string | null;
+  email: string | null;
+  invited_at: string | null;
+};
+
+type AuthState = {
+  last_sign_in_at: string | null;
+};
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  );
+
+  return results;
+}
+
+function hasValidEmail(value: string | null | undefined) {
+  const email = clean(value);
+  return Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+}
+
+function resolveAppAccessStatus(args: {
+  rowEmail: string | null;
+  rowPersonId: string;
+  profile: WorkforceProfileRow | null;
+  invite: WorkforceInviteLogRow | null;
+  auth: AuthState | null;
+}): WorkforceAppAccessStatus {
+  if (!hasValidEmail(args.rowEmail)) return "missing_email";
+
+  const profilePersonId = clean(args.profile?.person_id);
+  const authUserId = clean(args.profile?.auth_user_id);
+
+  if (authUserId && profilePersonId && profilePersonId !== args.rowPersonId) {
+    return "profile_mismatch";
+  }
+
+  if (authUserId && args.auth?.last_sign_in_at) return "active";
+  if (authUserId || args.invite?.invited_at) return "invited_pending";
+
+  return "invite_available";
+}
+
+async function enrichRowsWithAppAccess(rows: WorkforceRow[]): Promise<WorkforceRow[]> {
+  const personIds = Array.from(
+    new Set(rows.map((row) => clean(row.person_id)).filter(Boolean) as string[])
+  );
+
+  if (personIds.length === 0) return rows;
+
+  const admin = supabaseAdmin();
+
+  const [{ data: profiles, error: profileErr }, { data: invites, error: inviteErr }] =
+    await Promise.all([
+      admin
+        .from("user_profile")
+        .select("auth_user_id, person_id, status")
+        .in("person_id", personIds),
+      admin
+        .from("roster_invite_log")
+        .select("person_id, assignment_id, email, invited_at")
+        .in("person_id", personIds)
+        .order("invited_at", { ascending: false }),
+    ]);
+
+  if (profileErr) throw new Error(profileErr.message);
+  if (inviteErr) throw new Error(inviteErr.message);
+
+  const profileByPersonId = new Map<string, WorkforceProfileRow>();
+  for (const profile of (profiles ?? []) as WorkforceProfileRow[]) {
+    const personId = clean(profile.person_id);
+    if (!personId || profileByPersonId.has(personId)) continue;
+    profileByPersonId.set(personId, profile);
+  }
+
+  const inviteByPersonId = new Map<string, WorkforceInviteLogRow>();
+  for (const invite of (invites ?? []) as WorkforceInviteLogRow[]) {
+    const personId = clean(invite.person_id);
+    if (!personId || inviteByPersonId.has(personId)) continue;
+    inviteByPersonId.set(personId, invite);
+  }
+
+  const authIds = Array.from(
+    new Set(
+      Array.from(profileByPersonId.values())
+        .map((profile) => clean(profile.auth_user_id))
+        .filter(Boolean) as string[]
+    )
+  );
+
+  const authById = new Map<string, AuthState>();
+  await mapLimit(authIds, 10, async (authUserId) => {
+    const { data, error } = await admin.auth.admin.getUserById(authUserId);
+    authById.set(authUserId, {
+      last_sign_in_at: error ? null : data?.user?.last_sign_in_at ?? null,
+    });
+  });
+
+  return rows.map((row) => {
+    const profile = profileByPersonId.get(row.person_id) ?? null;
+    const invite = inviteByPersonId.get(row.person_id) ?? null;
+    const authUserId = clean(profile?.auth_user_id);
+    const auth = authUserId ? authById.get(authUserId) ?? null : null;
+    const status = resolveAppAccessStatus({
+      rowEmail: row.email,
+      rowPersonId: row.person_id,
+      profile,
+      invite,
+      auth,
+    });
+
+    return {
+      ...row,
+      app_access_status: status,
+      auth_user_id: authUserId,
+      invite_email: clean(invite?.email) ?? row.email,
+      invite_last_sent_at: clean(invite?.invited_at),
+      invite_accepted_at: clean(auth?.last_sign_in_at),
+      profile_person_id: clean(profile?.person_id),
+    };
+  });
 }
 
 function buildOfficeOptions(rows: WorkforceRow[]) {
@@ -351,11 +507,11 @@ export async function buildWorkforceSurfacePayload(args: {
 }): Promise<WorkforceSurfacePayload> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const rows = (args.rows ?? [])
-
-    .map(toWorkforceRow)
-
-    .filter((row) => isActiveWorkforceRow(row, today));
+  const rows = await enrichRowsWithAppAccess(
+    (args.rows ?? [])
+      .map(toWorkforceRow)
+      .filter((row) => isActiveWorkforceRow(row, today))
+  );
 
   const field = rows.filter((row) => row.seat_type === "FIELD").length;
   const leadership = rows.filter(

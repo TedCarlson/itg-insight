@@ -102,6 +102,10 @@ export function resolveNavigationRole(args: {
     return args.isOwner ? "APP_OWNER" : "ADMIN";
   }
 
+  // Power users must not be demoted by /home shell hints or persisted scoped roles.
+  if (args.isOwner) return "APP_OWNER";
+  if (args.isAdmin) return "ADMIN";
+
   if (args.shellRoleHint && args.shellRoleHint !== "UNKNOWN") {
     return args.shellRoleHint;
   }
@@ -109,9 +113,6 @@ export function resolveNavigationRole(args: {
   if (args.persistedRole && args.persistedRole !== "UNKNOWN") {
     return args.persistedRole;
   }
-
-  if (args.isOwner) return "APP_OWNER";
-  if (args.isAdmin) return "ADMIN";
 
   return "UNKNOWN";
 }

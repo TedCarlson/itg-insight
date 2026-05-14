@@ -9,7 +9,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     href: "/home",
     icon: "home",
     visibility: "default",
-    defaultRoles: ["APP_OWNER", "ADMIN"],
+    defaultRoles: ["APP_OWNER", "ADMIN", "COMPANY_MANAGER", "ITG_SUPERVISOR"],
     sortOrder: 10,
   },
 
@@ -210,7 +210,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     href: "/roster",
     icon: "people",
     visibility: "default",
-    defaultRoles: ["APP_OWNER", "ADMIN"],
+    defaultRoles: ["APP_OWNER", "ADMIN", "COMPANY_MANAGER", "ITG_SUPERVISOR"],
     exposeWhenPermissions: ["roster_manage"],
     sortOrder: 800,
   },
