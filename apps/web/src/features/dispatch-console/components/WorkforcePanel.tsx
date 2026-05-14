@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TextInput } from "@/components/ui/TextInput";
@@ -8,6 +10,7 @@ import type {
   DaySummary,
   DispatchRouteOption,
   EntryType,
+  EventType,
   LogRow,
   WorkforceRow,
   WorkforceTab,
@@ -19,14 +22,19 @@ function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-function fmtSummaryChip(label: string) {
+function SummaryChip(props: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <span
-      className="rounded-full border px-2 py-0.5 text-[11px]"
-      style={{ borderColor: "var(--to-border)", background: "var(--to-surface)" }}
+    <button
+      type="button"
+      onClick={props.onClick}
+      className="rounded-full border px-2 py-0.5 text-[11px] transition hover:bg-[var(--to-row-hover)]"
+      style={{
+        borderColor: props.active ? "var(--to-focus)" : "var(--to-border)",
+        background: props.active ? "var(--to-row-hover)" : "var(--to-surface)",
+      }}
     >
-      {label}
-    </span>
+      {props.label}
+    </button>
   );
 }
 
@@ -67,7 +75,7 @@ function WorkforceRowButton(props: {
       onClick={props.onClick}
       className={cls(
         "w-full rounded-xl border px-3 py-2 text-left transition",
-        props.active ? "ring-2 ring-[var(--to-focus)] bg-[var(--to-row-hover)]" : "hover:bg-[var(--to-row-hover)]"
+        props.active ? "ring-2 ring-[var(--to-focus)] bg-[var(--to-row-hover)]" : "hover:bg-[var(--to-row-hover)]",
       )}
       style={{ borderColor: "var(--to-border)" }}
     >
@@ -108,6 +116,8 @@ export function WorkforcePanel(props: {
   setRouteQuery: (v: string) => void;
 
   summary: DaySummary | null;
+  logFilter: EventType;
+  setLogFilter: (v: EventType) => void;
 
   scheduledRows: WorkforceRow[];
   notScheduledRows: WorkforceRow[];
@@ -153,6 +163,14 @@ export function WorkforcePanel(props: {
   const qName = props.nameQuery.trim().toLowerCase();
   const qRoute = props.routeQuery.trim().toLowerCase();
 
+  const techMoveCount = useMemo(() => {
+    let count = 0;
+    for (const chips of props.chipsByAssignment.values()) {
+      if (chips.includes("TECH_MOVE")) count += 1;
+    }
+    return count;
+  }, [props.chipsByAssignment]);
+
   const matchesFilters = (r: WorkforceRow) => {
     if (qName) {
       const name = (r.full_name ?? "").toLowerCase();
@@ -172,6 +190,11 @@ export function WorkforcePanel(props: {
       } else if (!routeName.includes(qRoute) && !routeId.includes(qRoute) && !routeDisplay.includes(qRoute)) {
         return false;
       }
+    }
+
+    if (props.logFilter !== "ALL") {
+      const chips = props.chipsByAssignment.get(r.assignment_id) ?? [];
+      if (!chips.includes(props.logFilter as EntryType)) return false;
     }
 
     return true;
@@ -258,12 +281,46 @@ export function WorkforcePanel(props: {
 
         {props.summary ? (
           <div className="mt-3 flex flex-nowrap gap-2 overflow-hidden">
-            {fmtSummaryChip(`${props.summary.call_out_count} call outs`)}
-            {fmtSummaryChip(`${props.summary.add_in_count} add ins`)}
-            {fmtSummaryChip(`${props.summary.bp_low_count ?? 0} BP-low`)}
-            {fmtSummaryChip(`${props.summary.incident_count} incidents`)}
-            {fmtSummaryChip(`${props.summary.note_count} notes`)}
-            {fmtSummaryChip(`Quota ${props.summary.quota_routes_required} routes`)}
+            <SummaryChip
+              label={props.logFilter === "ALL" ? "All" : "Clear filter"}
+              active={props.logFilter === "ALL"}
+              onClick={() => props.setLogFilter("ALL")}
+            />
+            <SummaryChip
+              label={`${props.summary.call_out_count} call outs`}
+              active={props.logFilter === "CALL_OUT"}
+              onClick={() => props.setLogFilter(props.logFilter === "CALL_OUT" ? "ALL" : "CALL_OUT")}
+            />
+            <SummaryChip
+              label={`${props.summary.add_in_count} add ins`}
+              active={props.logFilter === "ADD_IN"}
+              onClick={() => props.setLogFilter(props.logFilter === "ADD_IN" ? "ALL" : "ADD_IN")}
+            />
+            <SummaryChip
+              label={`${props.summary.bp_low_count ?? 0} BP-low`}
+              active={props.logFilter === "BP_LOW"}
+              onClick={() => props.setLogFilter(props.logFilter === "BP_LOW" ? "ALL" : "BP_LOW")}
+            />
+            <SummaryChip
+              label={`${props.summary.incident_count} incidents`}
+              active={props.logFilter === "INCIDENT"}
+              onClick={() => props.setLogFilter(props.logFilter === "INCIDENT" ? "ALL" : "INCIDENT")}
+            />
+            <SummaryChip
+              label={`${techMoveCount} tech moves`}
+              active={props.logFilter === "TECH_MOVE"}
+              onClick={() => props.setLogFilter(props.logFilter === "TECH_MOVE" ? "ALL" : "TECH_MOVE")}
+            />
+            <SummaryChip
+              label={`${props.summary.note_count} notes`}
+              active={props.logFilter === "NOTE"}
+              onClick={() => props.setLogFilter(props.logFilter === "NOTE" ? "ALL" : "NOTE")}
+            />
+            <SummaryChip
+              label={`Quota ${props.summary.quota_routes_required} routes`}
+              active={false}
+              onClick={() => props.setLogFilter("ALL")}
+            />
           </div>
         ) : null}
       </div>

@@ -93,7 +93,7 @@ export default function DispatchConsolePage() {
 
   const [nameQuery, setNameQuery] = useState("");
   const [routeQuery, setRouteQuery] = useState("");
-  const [logFilter] = useState<EventType>("ALL");
+  const [logFilter, setLogFilter] = useState<EventType>("ALL");
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
 
@@ -275,10 +275,10 @@ export default function DispatchConsolePage() {
       const techMoveMeta =
         draft.entryType === "TECH_MOVE"
           ? buildTechMoveMeta({
-              selectedTech,
-              toRouteId: draft.techMoveToRouteId,
-              toRouteName: draft.techMoveToRouteName,
-            })
+            selectedTech,
+            toRouteId: draft.techMoveToRouteId,
+            toRouteName: draft.techMoveToRouteName,
+          })
           : null;
 
       const res = await fetch("/api/dispatch-console/log", {
@@ -386,6 +386,8 @@ export default function DispatchConsolePage() {
         routeQuery={routeQuery}
         setRouteQuery={setRouteQuery}
         summary={summary}
+        logFilter={logFilter}
+        setLogFilter={setLogFilter}
         scheduledRows={scheduledRows}
         notScheduledRows={finalNotScheduledRows}
         selectedAssignmentId={selectedAssignmentId}
