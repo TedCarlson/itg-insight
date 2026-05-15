@@ -80,11 +80,69 @@ function orderInspectionMetrics(
     })) as InspectionMetricCell[];
 }
 
+function resolvePersonId(row: MetricsTeamRow): string | null {
+  return (
+    (row as any).person_id ??
+    (row as any).subject_person_id ??
+    row.subject_key ??
+    null
+  );
+}
+
+function buildInspectionUrl(args: {
+  row: MetricsTeamRow;
+  metric: InspectionMetricCell;
+  range?: MetricsRangeKey;
+  classType: ReportClassType;
+  context: string;
+}) {
+  const { row, metric, range, classType, context } = args;
+
+  const personId = resolvePersonId(row);
+  const techId = row.tech_id ?? null;
+
+  if (!personId || !techId || !metric.kpi_key) return null;
+
+  const params = new URLSearchParams();
+
+  params.set("person_id", personId);
+  params.set("tech_id", techId);
+  params.set("full_name", String(row.full_name ?? techId));
+  params.set("context", context || "Tech");
+  params.set("kpi_key", metric.kpi_key);
+  params.set("title", metric.label);
+  params.set("band_key", metric.band_key);
+  params.set("range", range ?? "FM");
+  params.set("class_type", classType);
+
+  if (metric.value_display != null) {
+    params.set("value_display", metric.value_display);
+  }
+
+  if (typeof metric.value === "number" && Number.isFinite(metric.value)) {
+    params.set("value", String(metric.value));
+  }
+
+  const contractorName =
+    (row as any).contractor_name ??
+    (row as any).affiliation ??
+    (row as any).affiliation_type ??
+    (row as any).co_code ??
+    null;
+
+  if (contractorName) {
+    params.set("contractor_name", String(contractorName));
+  }
+
+  return `/api/metrics/inspection?${params.toString()}`;
+}
+
 export default function MetricsInspectableTeamPerformanceTable({
   title,
   columns,
   rows,
   range,
+  classType,
   workMixTitle,
   workMixContent,
   parityTitle,
@@ -115,15 +173,40 @@ export default function MetricsInspectableTeamPerformanceTable({
       onOpenJobs={onOpenJobs}
       renderInspectionDrawer={({ open, onClose, row, column, metrics }) => {
         const orderedMetrics = orderInspectionMetrics(metrics, orderedKpiKeys);
+        const context = buildInspectionContext(row);
 
         return (
           <MetricsTechDrillDrawer
             open={open}
             onClose={onClose}
             name={String(row.full_name ?? row.tech_id)}
-            context={buildInspectionContext(row)}
+            context={context}
             metrics={orderedMetrics}
             selectedKpi={column.kpi_key}
+            loadPayload={async (kpiKey) => {
+              const metric = orderedMetrics.find((m) => m.kpi_key === kpiKey);
+              if (!metric) return null;
+
+              const url = buildInspectionUrl({
+                row,
+                metric,
+                range,
+                classType,
+                context,
+              });
+
+              if (!url) return null;
+
+              const response = await fetch(url, {
+                method: "GET",
+                headers: { Accept: "application/json" },
+              });
+
+              if (!response.ok) return null;
+
+              const data = await response.json();
+              return data?.ok ? data.payload ?? null : null;
+            }}
           />
         );
       }}

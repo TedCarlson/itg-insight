@@ -15,67 +15,73 @@ function mapRangeLabel(activeRange: MetricsRangeKey): string {
   return String(activeRange);
 }
 
+function toTnpsScore(row: any): number | null {
+  if (typeof row?.tnps_score === "number" && Number.isFinite(row.tnps_score)) {
+    return row.tnps_score;
+  }
+
+  if (typeof row?.kpi_value === "number" && Number.isFinite(row.kpi_value)) {
+    return row.kpi_value;
+  }
+
+  return aggregateTnps([
+    {
+      tnps_surveys: row?.tnps_surveys,
+      tnps_promoters: row?.tnps_promoters,
+      tnps_detractors: row?.tnps_detractors,
+    },
+  ]).tnps_score;
+}
+
+function toCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 export function buildInspectionTnps(args: {
   payload: any;
   activeRange: MetricsRangeKey;
 }): InspectionRenderModel {
-  const selectedRows = args.payload?.debug?.selected_final_rows ?? [];
-  const trend = args.payload?.debug?.trend ?? args.payload?.trend ?? [];
+  const trend = Array.isArray(args.payload?.trend)
+    ? args.payload.trend
+    : Array.isArray(args.payload?.debug?.trend)
+      ? args.payload.debug.trend
+      : Array.isArray(args.payload?.debug?.selected_final_rows)
+        ? args.payload.debug.selected_final_rows
+        : [];
 
-  const currentRows = selectedRows.slice(0, 1);
-  const previousRows = selectedRows.slice(0, 1);
-  const last3Rows = selectedRows.slice(0, 3);
-  const last12Rows = selectedRows.slice(0, 12);
+  const latestRow = trend.length ? trend[trend.length - 1] : null;
 
-  let headlineValue: string = "—";
+  const latestScore = toTnpsScore(latestRow);
+  const totalScore = fmtNum(latestScore, 2);
+  const totalSurveys = toCount(latestRow?.tnps_surveys);
+  const totalPromoters = toCount(latestRow?.tnps_promoters);
+  const totalDetractors = toCount(latestRow?.tnps_detractors);
 
-  if (args.activeRange === "FM") {
-    headlineValue = fmtNum(aggregateTnps(currentRows).tnps_score, 2);
-  } else if (args.activeRange === "PREVIOUS") {
-    headlineValue = fmtNum(aggregateTnps(previousRows).tnps_score, 2);
-  } else if (args.activeRange === "3FM") {
-    headlineValue = fmtNum(aggregateTnps(last3Rows).tnps_score, 2);
-  } else if (args.activeRange === "12FM") {
-    headlineValue = fmtNum(aggregateTnps(last12Rows).tnps_score, 2);
-  }
-
-  const totals = aggregateTnps(selectedRows);
-
-  const totalSurveys = totals.tnps_surveys ?? 0;
-  const totalPromoters = totals.tnps_promoters ?? 0;
-  const totalDetractors = totals.tnps_detractors ?? 0;
-  const totalScore = fmtNum(totals.tnps_score, 2);
-
-  const trendPoints = trend.map((row: any) => ({
-    kpi_value: row.kpi_value ?? null,
-    is_month_final: !!row.is_month_final,
-    band_color:
-      row.kpi_value != null && row.kpi_value >= 90
-        ? "#22c55e"
-        : row.kpi_value != null && row.kpi_value >= 70
-          ? "#eab308"
-          : row.kpi_value != null
-            ? "#ef4444"
-            : null,
-  }));
-
-  const periodRows = selectedRows.map((row: any) => {
-    const score = fmtNum(
-      aggregateTnps([
-        {
-          tnps_surveys: row.tnps_surveys,
-          tnps_promoters: row.tnps_promoters,
-          tnps_detractors: row.tnps_detractors,
-        },
-      ]).tnps_score,
-      2
-    );
+  const trendPoints = trend.map((row: any) => {
+    const score = toTnpsScore(row);
 
     return {
-      key: `${row.metric_date}-${row.batch_id ?? "no-batch"}`,
+      kpi_value: score,
+      is_month_final: !!row.is_month_final,
+      band_color:
+        score != null && score >= 90
+          ? "#22c55e"
+          : score != null && score >= 70
+            ? "#eab308"
+            : score != null
+              ? "#ef4444"
+              : null,
+    };
+  });
+
+  const periodRows = trend.map((row: any) => {
+    const score = toTnpsScore(row);
+
+    return {
+      key: `${row.metric_date ?? "na"}-${row.batch_id ?? "no-batch"}`,
       cells: [
         row.metric_date ?? "—",
-        score,
+        fmtNum(score, 2),
         row.tnps_surveys ?? "—",
         row.tnps_promoters ?? "—",
         row.tnps_detractors ?? "—",
@@ -86,7 +92,7 @@ export function buildInspectionTnps(args: {
   return {
     header: {
       title: "tNPS",
-      valueDisplay: headlineValue,
+      valueDisplay: totalScore,
       rangeLabel: mapRangeLabel(args.activeRange),
     },
     sentiment: {

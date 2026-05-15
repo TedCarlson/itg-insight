@@ -7,6 +7,8 @@ import type {
   MetricsRangeResolvedBatch,
 } from "@/shared/types/metrics/surfacePayload";
 
+type MetricsRangeResolveMode = "surface" | "inspection";
+
 type MetricReadyBatchRow = {
   metric_batch_id: string | null;
   metric_date: string | null;
@@ -73,6 +75,29 @@ function toResolvedBatch(row: MetricReadyBatchRow | null): MetricsRangeResolvedB
   ];
 }
 
+function toResolvedBatches(rows: MetricReadyBatchRow[]): MetricsRangeResolvedBatch[] {
+  return rows
+    .map((row) => {
+      const metricBatchId = String(row.metric_batch_id ?? "").trim();
+      const metricDate = String(row.metric_date ?? "").trim();
+
+      if (!metricBatchId || !metricDate) return null;
+
+      return {
+        metric_batch_id: metricBatchId,
+        metric_date: metricDate,
+        fiscal_end_date: row.fiscal_end_date ?? null,
+      } satisfies MetricsRangeResolvedBatch;
+    })
+    .filter((row): row is MetricsRangeResolvedBatch => row !== null)
+    .sort((a, b) => {
+      const byMetric = a.metric_date.localeCompare(b.metric_date);
+      if (byMetric !== 0) return byMetric;
+
+      return a.metric_batch_id.localeCompare(b.metric_batch_id);
+    });
+}
+
 function dedupeLatestPerFiscalMonthEnd(
   rows: MetricReadyBatchRow[]
 ): MetricsRangeResolvedBatch[] {
@@ -94,7 +119,9 @@ function dedupeLatestPerFiscalMonthEnd(
     });
   }
 
-  return [...map.values()].sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+  return [...map.values()].sort((a, b) =>
+    a.metric_date.localeCompare(b.metric_date)
+  );
 }
 
 async function loadReadyBatchesForDateWindow(args: {
@@ -169,7 +196,9 @@ async function loadLatestReadyBatchForDateWindow(args: {
 export async function resolveMetricsRangeBatchIds(args: {
   pc_org_id: string;
   range: MetricsRangeKey;
+  mode?: MetricsRangeResolveMode;
 }): Promise<MetricsRangeResolution> {
+  const mode = args.mode ?? "surface";
   const latest = await loadLatestReadyBatch(args.pc_org_id);
 
   if (!latest?.metric_date) {
@@ -188,25 +217,45 @@ export async function resolveMetricsRangeBatchIds(args: {
   let batches: MetricsRangeResolvedBatch[] = [];
 
   if (args.range === "FM") {
-    const latestCurrentBatch = await loadLatestReadyBatchForDateWindow({
-      pc_org_id: args.pc_org_id,
-      start_date: toIsoDate(currentStart),
-      end_date: toIsoDate(currentEnd),
-    });
+    if (mode === "inspection") {
+      const rows = await loadReadyBatchesForDateWindow({
+        pc_org_id: args.pc_org_id,
+        start_date: toIsoDate(currentStart),
+        end_date: toIsoDate(currentEnd),
+      });
 
-    batches = toResolvedBatch(latestCurrentBatch);
+      batches = toResolvedBatches(rows);
+    } else {
+      const latestCurrentBatch = await loadLatestReadyBatchForDateWindow({
+        pc_org_id: args.pc_org_id,
+        start_date: toIsoDate(currentStart),
+        end_date: toIsoDate(currentEnd),
+      });
+
+      batches = toResolvedBatch(latestCurrentBatch);
+    }
   } else if (args.range === "PREVIOUS") {
     const previousAnchor = addDays(currentStart, -1);
     const previousStart = fiscalMonthStart(previousAnchor);
     const previousEnd = fiscalMonthEnd(previousAnchor);
 
-    const latestPreviousBatch = await loadLatestReadyBatchForDateWindow({
-      pc_org_id: args.pc_org_id,
-      start_date: toIsoDate(previousStart),
-      end_date: toIsoDate(previousEnd),
-    });
+    if (mode === "inspection") {
+      const rows = await loadReadyBatchesForDateWindow({
+        pc_org_id: args.pc_org_id,
+        start_date: toIsoDate(previousStart),
+        end_date: toIsoDate(previousEnd),
+      });
 
-    batches = toResolvedBatch(latestPreviousBatch);
+      batches = toResolvedBatches(rows);
+    } else {
+      const latestPreviousBatch = await loadLatestReadyBatchForDateWindow({
+        pc_org_id: args.pc_org_id,
+        start_date: toIsoDate(previousStart),
+        end_date: toIsoDate(previousEnd),
+      });
+
+      batches = toResolvedBatch(latestPreviousBatch);
+    }
   } else if (args.range === "3FM") {
     const firstWeek = isFirstWeekOfFiscalMonth(anchorDate);
 
@@ -222,7 +271,10 @@ export async function resolveMetricsRangeBatchIds(args: {
       end_date: toIsoDate(rangeEnd),
     });
 
-    batches = dedupeLatestPerFiscalMonthEnd(rows);
+    batches =
+      mode === "inspection"
+        ? toResolvedBatches(rows)
+        : dedupeLatestPerFiscalMonthEnd(rows);
   } else {
     const rangeStart = fiscalMonthStart(addMonths(currentStart, -12));
     const rangeEnd = addDays(currentStart, -1);
@@ -233,7 +285,10 @@ export async function resolveMetricsRangeBatchIds(args: {
       end_date: toIsoDate(rangeEnd),
     });
 
-    batches = dedupeLatestPerFiscalMonthEnd(rows);
+    batches =
+      mode === "inspection"
+        ? toResolvedBatches(rows)
+        : dedupeLatestPerFiscalMonthEnd(rows);
   }
 
   return {

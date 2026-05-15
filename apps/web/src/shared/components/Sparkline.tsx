@@ -23,6 +23,7 @@ function formatPct1(value: number): string {
 
 export default function FtrSparkline(props: {
   values: SparkValue[];
+  monthsCount?: number | null;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [boxWidth, setBoxWidth] = useState(320);
@@ -120,6 +121,11 @@ export default function FtrSparkline(props: {
   const minDisplay = formatPct1(minRaw);
   const maxDisplay = formatPct1(maxRaw);
   const rangeDisplay = `${minDisplay}–${maxDisplay}`;
+
+  const monthsDisplay =
+    typeof props.monthsCount === "number" && Number.isFinite(props.monthsCount)
+      ? props.monthsCount
+      : points.filter((p) => p.isFinal).length;
 
   return (
     <div ref={rootRef} className="relative w-full">
@@ -221,13 +227,13 @@ export default function FtrSparkline(props: {
 
       <div className="mt-3 border-t pt-3">
         <div className="grid grid-cols-5 gap-x-3 gap-y-1">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-center text-muted-foreground">
+          <div className="text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             Current
           </div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-center text-muted-foreground">
+          <div className="text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             Updates
           </div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-center text-muted-foreground">
+          <div className="text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             Months
           </div>
           <div className="col-span-2 text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -241,7 +247,7 @@ export default function FtrSparkline(props: {
             {points.length}
           </div>
           <div className="text-center text-lg font-semibold leading-none">
-            {points.filter((p) => p.isFinal).length}
+            {monthsDisplay}
           </div>
           <div className="col-span-2 text-center text-lg font-semibold leading-none whitespace-nowrap">
             {rangeDisplay}

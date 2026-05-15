@@ -29,6 +29,7 @@ export async function getMetricPayloadSoi(
   const rangeResolution = await resolveMetricsRangeBatchIds({
     pc_org_id: scope.selected_pc_org_id,
     range: args.range,
+    mode: "inspection",
   });
 
   if (!rangeResolution.batch_ids.length) return null;

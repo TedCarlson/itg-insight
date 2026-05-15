@@ -17,9 +17,7 @@ type Props = {
   rangeLabel?: string | null;
 };
 
-export default function MetricTrendSection({
-  points,
-}: Props) {
+export default function MetricTrendSection({ points, monthsCount }: Props) {
   const sparkValues = points.map((point) => ({
     kpi_value: point.kpi_value,
     is_month_final: point.is_month_final ?? false,
@@ -28,7 +26,7 @@ export default function MetricTrendSection({
 
   return (
     <div className="rounded-2xl border bg-background px-4 py-4">
-      <Sparkline values={sparkValues} />
+      <Sparkline values={sparkValues} monthsCount={monthsCount ?? null} />
     </div>
   );
 }

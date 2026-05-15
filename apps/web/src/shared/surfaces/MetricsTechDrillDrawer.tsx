@@ -25,6 +25,7 @@ type Props = {
   context?: string | null;
   metrics: InspectionMetricCell[];
   selectedKpi: string | null;
+  loadPayload?: (kpiKey: string) => Promise<WorkforceInspectionPayload | null>;
 };
 
 export default function MetricsTechDrillDrawer({
@@ -34,17 +35,21 @@ export default function MetricsTechDrillDrawer({
   context,
   metrics,
   selectedKpi,
+  loadPayload,
 }: Props) {
   const orderedMetrics = useMemo(() => metrics, [metrics]);
 
   function resolveModel(args: {
     metric: InspectionMetricCell;
     tile: ScorecardTile;
+    payload: WorkforceInspectionPayload | null;
   }): InspectionDrawerModel | null {
-    const payload = (args.metric as any)?.inspection_payload as
-      | WorkforceInspectionPayload
-      | null
-      | undefined;
+    const payload =
+      args.payload ??
+      ((args.metric as any)?.inspection_payload as
+        | WorkforceInspectionPayload
+        | null
+        | undefined);
 
     if (!payload) return null;
 
@@ -117,6 +122,7 @@ export default function MetricsTechDrillDrawer({
       context={context}
       metrics={orderedMetrics}
       initialSelectedKpi={selectedKpi}
+      loadPayload={loadPayload}
       buildModel={resolveModel}
     />
   );
