@@ -479,6 +479,7 @@ export default function CompanyManagerScopedViewClient({ payload }: Props) {
           comparisonTitle={executiveComparisonTitle}
           comparisonSubtitle={executiveComparisonSubtitle}
           subtitle="Current stable set compared against the previous metric batch."
+          runtime={payload.executive_strip?.runtime ?? null}
         />
       ) : null}
 

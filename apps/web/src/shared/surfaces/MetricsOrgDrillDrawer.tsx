@@ -1,4 +1,4 @@
-// path: apps/web/src/shared/surfaces/MetricsTechDrillDrawer.tsx
+// path: apps/web/src/shared/surfaces/MetricsOrgDrillDrawer.tsx
 
 "use client";
 
@@ -16,32 +16,63 @@ import type {
   InspectionRenderModel,
   WorkforceInspectionPayload,
 } from "@/shared/kpis/contracts/inspectionTypes";
-import type { ScorecardTile } from "@/shared/kpis/core/scorecardTypes";
+import type { MetricsRangeKey } from "@/shared/kpis/core/types";
+
+import type {
+  MetricsExecutiveKpiItem,
+  MetricsExecutiveStripRuntimePayload,
+  MetricsScopedExecutiveKpiItem,
+} from "@/shared/types/metrics/executiveStrip";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  name: string;
-  context?: string | null;
-  metrics: InspectionMetricCell[];
-  selectedKpi: string | null;
-  loadPayload?: (kpiKey: string) => Promise<WorkforceInspectionPayload | null>;
+  kpiKey: string | null;
+  baseItems: MetricsExecutiveKpiItem[];
+  scopeItems?: MetricsScopedExecutiveKpiItem[] | null;
+  runtime: MetricsExecutiveStripRuntimePayload;
+  range?: MetricsRangeKey;
 };
 
-export default function MetricsTechDrillDrawer({
+function toInspectionMetric(item: MetricsExecutiveKpiItem): InspectionMetricCell {
+  return {
+    kpi_key: item.kpi_key,
+    label: item.label,
+    value: null,
+    value_display: item.value_display,
+    band_key: item.band_key as InspectionMetricCell["band_key"],
+  };
+}
+
+export default function MetricsOrgDrillDrawer({
   open,
   onClose,
-  name,
-  context,
-  metrics,
-  selectedKpi,
-  loadPayload,
+  kpiKey,
+  baseItems,
+  range = "FM",
 }: Props) {
-  const orderedMetrics = useMemo(() => metrics, [metrics]);
+  const metrics = useMemo(
+    () => baseItems.map(toInspectionMetric),
+    [baseItems]
+  );
+
+  async function loadPayload(
+    nextKpiKey: string
+  ): Promise<WorkforceInspectionPayload | null> {
+    const params = new URLSearchParams();
+    params.set("kpi_key", nextKpiKey);
+    params.set("range", range);
+
+    const res = await fetch(`/api/metrics/org-inspection?${params.toString()}`);
+    const json = await res.json();
+
+    if (!res.ok || !json?.ok) return null;
+
+    return json.data as WorkforceInspectionPayload | null;
+  }
 
   function resolveModel(args: {
     metric: InspectionMetricCell;
-    tile: ScorecardTile;
     payload: WorkforceInspectionPayload | null;
   }): InspectionDrawerModel | null {
     const payload =
@@ -116,10 +147,10 @@ export default function MetricsTechDrillDrawer({
     <MetricInspectionDrawer
       open={open}
       onClose={onClose}
-      name={name}
-      context={context}
-      metrics={orderedMetrics}
-      initialSelectedKpi={selectedKpi}
+      name="Organization"
+      context="Org Rollup"
+      metrics={metrics}
+      initialSelectedKpi={kpiKey}
       loadPayload={loadPayload}
       buildModel={resolveModel}
     />

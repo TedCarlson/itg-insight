@@ -1,7 +1,15 @@
 // path: apps/web/src/shared/surfaces/MetricsExecutiveKpiMatrix.tsx
 
+"use client";
+
+import { useState } from "react";
+
 import { Card } from "@/components/ui/Card";
-import type { MetricsExecutiveKpiItem } from "@/shared/types/metrics/executiveStrip";
+import MetricsOrgDrillDrawer from "@/shared/surfaces/MetricsOrgDrillDrawer";
+import type {
+  MetricsExecutiveKpiItem,
+  MetricsExecutiveStripRuntimePayload,
+} from "@/shared/types/metrics/executiveStrip";
 
 type MatrixRow = {
   label: string;
@@ -13,6 +21,12 @@ type Props = {
   title: string;
   subtitle?: string | null;
   rows: MatrixRow[];
+  runtime?: MetricsExecutiveStripRuntimePayload | null;
+};
+
+type SelectedMatrixKpi = {
+  row: MatrixRow;
+  kpiKey: string;
 };
 
 function topBarClass(bandKey: string) {
@@ -39,9 +53,19 @@ function comparisonLine(item: MetricsExecutiveKpiItem) {
   return `${item.comparison_scope_code} ${item.comparison_value_display}`;
 }
 
-function KpiTile({ item }: { item: MetricsExecutiveKpiItem }) {
+function KpiTile({
+  item,
+  onClick,
+}: {
+  item: MetricsExecutiveKpiItem;
+  onClick?: () => void;
+}) {
   return (
-    <div className="overflow-hidden rounded-lg border bg-card text-left">
+    <button
+      type="button"
+      onClick={onClick}
+      className="overflow-hidden rounded-lg border bg-card text-left transition hover:-translate-y-[1px] hover:shadow-sm"
+    >
       <div className={`h-1 w-full ${topBarClass(item.band_key)}`} />
 
       <div className="px-2 py-2">
@@ -74,59 +98,83 @@ function KpiTile({ item }: { item: MetricsExecutiveKpiItem }) {
           </div>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
 export default function MetricsExecutiveKpiMatrix(props: Props) {
+  const [selected, setSelected] = useState<SelectedMatrixKpi | null>(null);
+  const canOpenDrawer = !!props.runtime;
+
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {props.title}
+    <>
+      <Card className="p-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {props.title}
+            </div>
+
+            {props.subtitle ? (
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                {props.subtitle}
+              </div>
+            ) : null}
           </div>
 
-          {props.subtitle ? (
-            <div className="mt-1 text-[10px] text-muted-foreground">
-              {props.subtitle}
-            </div>
-          ) : null}
+          <div className="text-[10px] text-muted-foreground">
+            {props.rows.length} rows
+          </div>
         </div>
 
-        <div className="text-[10px] text-muted-foreground">
-          {props.rows.length} rows
-        </div>
-      </div>
+        <div className="overflow-x-auto rounded-xl border">
+          <div className="min-w-max divide-y">
+            {props.rows.map((row, index) => (
+              <div
+                key={`${row.label}-${index}`}
+                className="grid grid-cols-[190px_1fr] gap-3 p-3"
+              >
+                <div className="sticky left-0 z-10 bg-card/95 pr-3 backdrop-blur">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {row.label}
+                  </div>
 
-      <div className="overflow-x-auto rounded-xl border">
-        <div className="min-w-max divide-y">
-          {props.rows.map((row, index) => (
-            <div
-              key={`${row.label}-${index}`}
-              className="grid grid-cols-[190px_1fr] gap-3 p-3"
-            >
-              <div className="sticky left-0 z-10 bg-card/95 pr-3 backdrop-blur">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {row.label}
+                  {row.subtitle ? (
+                    <div className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                      {row.subtitle}
+                    </div>
+                  ) : null}
                 </div>
 
-                {row.subtitle ? (
-                  <div className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                    {row.subtitle}
-                  </div>
-                ) : null}
+                <div className="grid grid-flow-col auto-cols-[160px] gap-2">
+                  {row.items.map((item) => (
+                    <KpiTile
+                      key={item.kpi_key}
+                      item={item}
+                      onClick={
+                        canOpenDrawer
+                          ? () => setSelected({ row, kpiKey: item.kpi_key })
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
               </div>
-
-              <div className="grid grid-flow-col auto-cols-[160px] gap-2">
-                {row.items.map((item) => (
-                  <KpiTile key={item.kpi_key} item={item} />
-                ))}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+
+      {props.runtime ? (
+        <MetricsOrgDrillDrawer
+          open={!!selected}
+          onClose={() => setSelected(null)}
+          kpiKey={selected?.kpiKey ?? null}
+          baseItems={selected?.row.items ?? []}
+          scopeItems={null}
+          runtime={props.runtime}
+        />
+      ) : null}
+    </>
   );
 }

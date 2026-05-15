@@ -183,7 +183,7 @@ export default function MetricsInspectableTeamPerformanceTable({
             context={context}
             metrics={orderedMetrics}
             selectedKpi={column.kpi_key}
-            loadPayload={async (kpiKey) => {
+            loadPayload={async (kpiKey: string) => {
               const metric = orderedMetrics.find((m) => m.kpi_key === kpiKey);
               if (!metric) return null;
 

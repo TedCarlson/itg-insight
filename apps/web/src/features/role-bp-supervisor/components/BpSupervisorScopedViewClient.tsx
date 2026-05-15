@@ -225,6 +225,7 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
               items: row.items,
             })),
           ]}
+          runtime={payload.executive_strip?.runtime ?? null}
         />
       ) : (
         <MetricsExecutiveKpiStrip
@@ -237,6 +238,7 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
               : "Affiliate Comparison"
           }
           comparisonSubtitle="Scoped comparison against total org baseline."
+          runtime={payload.executive_strip?.runtime ?? null}
         />
       )}
 

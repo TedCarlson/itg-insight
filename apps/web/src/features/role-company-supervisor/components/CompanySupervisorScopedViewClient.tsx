@@ -60,9 +60,9 @@ function formatPercent(value: number | null | undefined) {
 function hasActiveExecutiveSlice(controls: MetricsControlsValue): boolean {
   return Boolean(
     controls.office_label ||
-      controls.affiliation_type ||
-      controls.contractor_name ||
-      controls.reports_to_person_id
+    controls.affiliation_type ||
+    controls.contractor_name ||
+    controls.reports_to_person_id
   );
 }
 
@@ -157,8 +157,8 @@ function buildDefaultSupervisorControls(args: {
 
   const matchedByName = repName
     ? args.supervisorOptions.find(
-        (option) => normalizeLabel(option.label) === repName
-      )
+      (option) => normalizeLabel(option.label) === repName
+    )
     : undefined;
 
   const fallbackSingle =
@@ -469,6 +469,7 @@ export default function CompanySupervisorScopedViewClient({
           comparisonTitle={executiveComparisonTitle}
           comparisonSubtitle={executiveComparisonSubtitle}
           subtitle="Current stable set compared against the previous metric batch."
+          runtime={payload.executive_strip?.runtime ?? null}
         />
       ) : null}
 

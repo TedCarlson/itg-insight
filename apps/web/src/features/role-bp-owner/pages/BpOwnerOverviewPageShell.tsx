@@ -204,6 +204,7 @@ export default async function BpOwnerOverviewPageShell() {
             title={`${contractorName} Metrics`}
             subtitle="Configured executive KPIs across contractor total and covered regions."
             rows={metricMatrixRows}
+            runtime={metricsPayload.executive_strip?.runtime ?? null}
           />
         </div>
       </div>

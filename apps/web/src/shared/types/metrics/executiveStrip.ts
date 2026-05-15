@@ -70,6 +70,10 @@ export type MetricsExecutiveRuntimeScoreRow = {
   weighted_points?: number | null;
   numerator?: number | null;
   denominator?: number | null;
+
+  metric_batch_id?: string | null;
+  metric_date?: string | null;
+  fiscal_end_date?: string | null;
 };
 
 export type MetricsExecutiveStripRuntimePayload = {
@@ -77,5 +81,9 @@ export type MetricsExecutiveStripRuntimePayload = {
   rubric_rows: MetricsExecutiveRuntimeRubricRow[];
   current_rows: MetricsExecutiveRuntimeScoreRow[];
   previous_rows: MetricsExecutiveRuntimeScoreRow[];
+
+  current_trend_rows?: MetricsExecutiveRuntimeScoreRow[];
+  previous_trend_rows?: MetricsExecutiveRuntimeScoreRow[];
+
   comparison_scope_code: string;
 };

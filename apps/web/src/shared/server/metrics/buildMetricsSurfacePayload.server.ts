@@ -115,6 +115,10 @@ function toRuntimeScoreRows(rows: any[]): MetricsExecutiveRuntimeScoreRow[] {
         typeof row.weighted_points === "number" ? row.weighted_points : null,
       numerator: typeof row.numerator === "number" ? row.numerator : null,
       denominator: typeof row.denominator === "number" ? row.denominator : null,
+
+      metric_batch_id: row.metric_batch_id ?? null,
+      metric_date: row.metric_date ?? null,
+      fiscal_end_date: row.fiscal_end_date ?? null,
     }));
 }
 
@@ -151,9 +155,16 @@ export async function buildMetricsSurfacePayload(
     range: args.range,
   });
 
+  const inspectionRangeResolution = await resolveMetricsRangeBatchIds({
+    pc_org_id: args.pc_org_id,
+    range: args.range,
+    mode: "inspection",
+  });
+
   const [
     scoreRowsRaw,
     prevScoreRowsRaw,
+    scoreTrendRowsRaw,
     compositeRowsRaw,
     workMixRowsRaw,
     workforceRowsRaw,
@@ -165,10 +176,17 @@ export async function buildMetricsSurfacePayload(
     }),
     comparisonBatchIds.length
       ? loadMetricScoreRows({
-          pc_org_id: args.pc_org_id,
-          profile_key: args.profile_key,
-          metric_batch_ids: comparisonBatchIds,
-        })
+        pc_org_id: args.pc_org_id,
+        profile_key: args.profile_key,
+        metric_batch_ids: comparisonBatchIds,
+      })
+      : [],
+    inspectionRangeResolution.batch_ids.length
+      ? loadMetricScoreRows({
+        pc_org_id: args.pc_org_id,
+        profile_key: args.profile_key,
+        metric_batch_ids: inspectionRangeResolution.batch_ids,
+      })
       : [],
     loadMetricCompositeRows({
       pc_org_id: args.pc_org_id,
@@ -454,17 +472,17 @@ export async function buildMetricsSurfacePayload(
       work_mix:
         latestWorkMixRows.length > 0
           ? {
-              total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
-              installs: latestWorkMixRows.reduce(
-                (sum, row) => sum + row.installs,
-                0
-              ),
-              tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
-              sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
-              install_pct: null,
-              tc_pct: null,
-              sro_pct: null,
-            }
+            total: latestWorkMixRows.reduce((sum, row) => sum + row.total, 0),
+            installs: latestWorkMixRows.reduce(
+              (sum, row) => sum + row.installs,
+              0
+            ),
+            tcs: latestWorkMixRows.reduce((sum, row) => sum + row.tcs, 0),
+            sros: latestWorkMixRows.reduce((sum, row) => sum + row.sros, 0),
+            install_pct: null,
+            tc_pct: null,
+            sro_pct: null,
+          }
           : null,
       parity_summary: [],
       parity_detail: [],

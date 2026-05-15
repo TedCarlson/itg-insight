@@ -81,31 +81,6 @@ export async function GET(request: NextRequest) {
 
     const sourcePayload = (payload as any)?.payload ?? null;
 
-    console.log("inspection payload deep debug", {
-      kpi_key,
-      active_range,
-      class_type,
-      has_payload: !!payload,
-      has_render_model: !!payload?.render_model,
-      metric_family: payload?.metric_family ?? null,
-      has_source_payload: !!sourcePayload,
-      source_payload_keys:
-        sourcePayload && typeof sourcePayload === "object"
-          ? Object.keys(sourcePayload)
-          : null,
-
-      payload_debug: sourcePayload?.debug ?? null,
-      trend_length: Array.isArray(sourcePayload?.trend)
-        ? sourcePayload.trend.length
-        : null,
-      trend_dates: Array.isArray(sourcePayload?.trend)
-        ? sourcePayload.trend.map((r: any) => r.metric_date)
-        : [],
-      trend_batches: Array.isArray(sourcePayload?.trend)
-        ? sourcePayload.trend.map((r: any) => r.batch_id)
-        : [],
-    });
-
     return NextResponse.json({
       ok: true,
       payload,

@@ -65,7 +65,7 @@ export async function getTotalRows(
   const admin = supabaseAdmin();
 
   let query = admin
-    .from("metrics_raw_total_row")
+    .from("metric_pc_org_total_rows_v")
     .select(
       [
         "id",
