@@ -118,11 +118,6 @@ function buildPrivilegedDestinations(
       description: "Administration and system-level controls",
     },
     {
-      label: "Roster",
-      href: "/roster",
-      description: "Org roster, assignments, and reporting structure",
-    },
-    {
       label: "Metrics",
       href: "/metrics",
       description: "Metrics reporting, uploads, and configuration",

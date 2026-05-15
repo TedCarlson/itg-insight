@@ -1,4 +1,4 @@
-// apps/web/src/lib/navigation/next.ts
+// apps/web/src/shared/lib/navigation/next.ts
 
 // Where you want users to land when "next" is missing or invalid.
 const FALLBACK = "/";
@@ -10,8 +10,6 @@ const ALLOWED_NEXT_PREFIXES = [
   "/home",
   "/admin",
   "/org",
-  "/roster",
-  "/onboard",
   "/route-lock",
   "/metrics",
   "/access", // note: disallowed below (prevents loops), but kept for parity

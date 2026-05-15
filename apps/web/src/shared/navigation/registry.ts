@@ -205,16 +205,6 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
   },
 
   {
-    key: "roster",
-    label: "Roster",
-    href: "/roster",
-    icon: "people",
-    visibility: "default",
-    defaultRoles: ["APP_OWNER", "ADMIN", "COMPANY_MANAGER", "ITG_SUPERVISOR"],
-    exposeWhenPermissions: ["roster_manage"],
-    sortOrder: 800,
-  },
-  {
     key: "admin",
     label: "Admin",
     href: "/admin",

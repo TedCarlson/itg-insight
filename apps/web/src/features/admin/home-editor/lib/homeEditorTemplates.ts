@@ -39,7 +39,7 @@ export function defaultTemplate(lob: Lob): DraftBlock[] {
         config: {
           items: [
             { label: "Daily Log", href: "/locate/daily-log", sub: "Log + review" },
-            { label: "Roster", href: "/roster", sub: "Membership + assignment" },
+            { label: "Workforce", href: "/company-manager/workforce", sub: "Staffing + assignment" },
           ],
         },
       },
@@ -81,7 +81,7 @@ export function defaultTemplate(lob: Lob): DraftBlock[] {
         items: [
           { label: "Route Lock Calendar", href: "/route-lock/calendar", sub: "Current & next fiscal month" },
           { label: "Shift Validation", href: "/route-lock/shift-validation", sub: "14-day forward window" },
-          { label: "Roster", href: "/roster", sub: "Membership + assignment" },
+          { label: "Workforce", href: "/company-manager/workforce", sub: "Staffing + assignment" },
         ],
       },
     },

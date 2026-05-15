@@ -29,8 +29,6 @@ const ALLOWED_NEXT_PREFIXES = [
   "/admin",
   "/org",
   "/access",
-  "/roster",
-  "/onboard",
   "/route-lock",
   "/metrics",
   "/locate",

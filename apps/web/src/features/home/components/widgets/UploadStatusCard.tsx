@@ -87,12 +87,6 @@ export function UploadStatusCard(props: {
 
       <div className="mt-4 grid gap-3">
         <QuickLinkTile
-          href="/roster"
-          label="Open Team Roster"
-          note="Temporary bridge into legacy roster workflow"
-        />
-
-        <QuickLinkTile
           href="/metrics/uploads"
           label="Open Metrics Uploads"
           note="Bulk TPR staging, verification, and load bridge"
