@@ -265,7 +265,7 @@ export default function CreateExceptionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl border bg-[var(--to-surface)] shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-[var(--to-surface)] shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--to-border)] px-5 py-4">
           <div>
             <div className="text-lg font-semibold text-[var(--to-ink)]">Draft Exceptions</div>
@@ -283,7 +283,7 @@ export default function CreateExceptionModal({
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold uppercase text-[var(--to-ink-muted)]">
@@ -468,7 +468,7 @@ export default function CreateExceptionModal({
           {error ? <div className="text-sm text-[var(--to-danger,#b91c1c)]">{error}</div> : null}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-[var(--to-border)] px-5 py-4">
+        <div className="shrink-0 flex items-center justify-end gap-2 border-t border-[var(--to-border)] px-5 py-4">
           <button
             type="button"
             onClick={onClose}
