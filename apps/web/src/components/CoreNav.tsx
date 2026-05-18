@@ -75,14 +75,16 @@ export default function CoreNav({ lob }: CoreNavProps) {
   const searchParams = useSearchParams();
   const fromReview = searchParams.get("from") === "review";
 
-  const { ready, signedIn, email, isOwner } = useSession();
-  const { selectedOrgId } = useOrg();
+  const { ready, signedIn, email, isOwner, isAdmin } = useSession();
+  const { selectedOrgId, orgs } = useOrg();
   const { accessPass } = useAccessPass();
   const { canManageConsole } = useOrgConsoleAccess();
 
   const shouldHideForRoute = HIDE_ON_PREFIXES.some((prefix) =>
     pathname.startsWith(prefix)
   );
+
+  const shellIsAdmin = Boolean(isOwner || isAdmin || accessPass?.is_app_owner || accessPass?.is_admin);
 
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -123,9 +125,9 @@ export default function CoreNav({ lob }: CoreNavProps) {
       shellRoleHint: hintRole,
       persistedRole,
       isOwner,
-      isAdmin: canManageConsole,
+      isAdmin: shellIsAdmin,
     });
-  }, [pathname, lob, hintRole, persistedRole, isOwner, canManageConsole]);
+  }, [pathname, lob, hintRole, persistedRole, isOwner, shellIsAdmin]);
 
   useEffect(() => {
     persistLastScopedRole(role);
@@ -138,7 +140,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
       lob,
       role,
       isOwner,
-      isAdmin: canManageConsole,
+      isAdmin: shellIsAdmin,
       permissions: accessPass?.permissions,
       selectedOrgId,
     });
@@ -147,7 +149,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
     lob,
     role,
     isOwner,
-    canManageConsole,
+    shellIsAdmin,
     accessPass?.permissions,
     selectedOrgId,
   ]);
@@ -155,6 +157,23 @@ export default function CoreNav({ lob }: CoreNavProps) {
   const grantChips = useMemo(() => {
     return buildGrantChips(accessPass?.permissions);
   }, [accessPass?.permissions]);
+
+  const selectedOrgLabel = useMemo(() => {
+    if (!selectedOrgId) return "No org selected";
+
+    const match = (orgs ?? []).find((org: any) => {
+      const id = org?.pc_org_id ?? org?.id ?? org?.org_id ?? null;
+      return String(id ?? "").trim() === String(selectedOrgId).trim();
+    }) as any | undefined;
+
+    return (
+      match?.pc_org_name ??
+      match?.org_name ??
+      match?.name ??
+      match?.display_name ??
+      selectedOrgId
+    );
+  }, [orgs, selectedOrgId]);
 
   const showFieldLogBack =
     pathname.startsWith("/field-log") && pathname !== "/field-log";
@@ -360,14 +379,31 @@ export default function CoreNav({ lob }: CoreNavProps) {
         />
       ) : null}
 
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed left-3 top-3 z-50 inline-flex h-8 w-8 items-center justify-center rounded-md border bg-background/90 shadow-sm backdrop-blur"
-        aria-label="Open navigation menu"
-      >
-        <Menu className="h-4 w-4" />
-      </button>
+      <div className="fixed inset-x-0 top-0 z-50 h-14 border-b bg-background/95 shadow-sm backdrop-blur">
+        <div className="flex h-full items-center gap-3 px-3">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-background hover:bg-muted"
+            aria-label="Open navigation menu"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+
+          <div className="min-w-0 rounded-lg border bg-background/70 px-3 py-1">
+            <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              Current org
+            </div>
+
+            <div
+              className="max-w-[280px] truncate text-sm font-bold leading-4 text-foreground"
+              title={selectedOrgLabel}
+            >
+              {selectedOrgLabel}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {open
         ? createPortal(

@@ -1,3 +1,5 @@
+// Path: apps/web/src/app/api/admin/user-access/route.ts
+
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { requireAdmin } from "@/app/api/admin/catalogue/_lib/guards";

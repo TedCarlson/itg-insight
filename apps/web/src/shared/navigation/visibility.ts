@@ -40,6 +40,10 @@ export function isNavigationItemVisible(args: {
   const isPowerUser =
     Boolean(isOwner) || Boolean(isAdmin) || role === "APP_OWNER" || role === "ADMIN";
 
+  if (item.key === "admin" && isPowerUser) {
+    return true;
+  }
+
   const permissionSet = normalizePermissions(permissions);
   const isDefaultForRole = Boolean(item.defaultRoles?.includes(role));
 

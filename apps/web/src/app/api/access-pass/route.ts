@@ -1,3 +1,5 @@
+// Path: apps/web/src/app/api/access-pass/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 

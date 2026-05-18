@@ -11,6 +11,7 @@ type SessionState = {
   userId: string | null;
   email: string | null;
   isOwner: boolean;
+  isAdmin: boolean;
 };
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -25,6 +26,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     userId: null,
     email: null,
     isOwner: false,
+    isAdmin: false,
   });
 
   // Avoid spamming is_owner RPC on token refresh
@@ -62,6 +64,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         userId: null,
         email: null,
         isOwner: false,
+        isAdmin: false,
       });
       return;
     }
@@ -87,6 +90,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       isOwnerRef.current = isOwner;
     }
 
+    let isAdmin = false;
+
+    if (userId) {
+      try {
+        const { data } = await supabase
+          .from("user_profile")
+          .select("is_admin")
+          .eq("auth_user_id", userId)
+          .maybeSingle();
+
+        isAdmin = data?.is_admin === true;
+      } catch {
+        isAdmin = false;
+      }
+    }
+
     setState({
       ready: true,
       signedIn: true,
@@ -94,6 +113,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       userId,
       email,
       isOwner,
+      isAdmin,
     });
   }
 

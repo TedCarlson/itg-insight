@@ -65,7 +65,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <div className="min-h-screen">
               <CoreNav lob={lob} />
 
-              <div className="min-h-screen flex flex-col lg:pl-72 pt-14 lg:pt-0">
+              <div className="min-h-screen flex flex-col pt-14 lg:pt-0">
                 <main className={isCatalogue ? "flex-1 px-2 py-4" : "flex-1 px-6 py-6"}>
                   {children}
                 </main>
