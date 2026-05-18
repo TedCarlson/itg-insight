@@ -32,8 +32,10 @@ function workspaceHomeForRole(role: AppRole) {
       return "/bp-owner";
 
     case "BP_SUPERVISOR":
-    case "BP_LEAD":
       return "/bp-supervisor/metrics";
+
+    case "BP_LEAD":
+      return "/bp-lead";
 
     case "ITG_SUPERVISOR":
       return "/home";
