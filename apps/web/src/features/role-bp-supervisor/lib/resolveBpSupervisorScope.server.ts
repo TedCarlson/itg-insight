@@ -195,9 +195,12 @@ export async function resolveBpSupervisorScope(): Promise<BpSupervisorScopeResul
     .filter((row) => isActiveWindow(row, today))
     .filter((row) => String(row.co_ref_id ?? "").trim() === contractorId);
 
-  const myAssignments = contractorAssignments.filter(
-    (row) => String(row.person_id ?? "").trim() === boot.person_id
-  );
+  const myAssignments = contractorAssignments.filter((row) => {
+    if (String(row.person_id ?? "").trim() !== boot.person_id) return false;
+
+    const title = String(row.position_title ?? "").trim();
+    return title === "BP Supervisor" || title === "BP Lead";
+  });
 
   const myIds = myAssignments
     .map((r) => String(r.assignment_id ?? "").trim())

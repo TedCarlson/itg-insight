@@ -3,6 +3,11 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { loadPeopleOnboardingRows } from "@/shared/server/people/loadPeopleOnboardingRows.server";
+import {
+  canViewAffiliateRows,
+  canViewFullOrgRows,
+  resolveEffectiveOrgAccess,
+} from "@/shared/server/access/resolveEffectiveOrgAccess.server";
 
 export async function GET() {
   const userClient = await supabaseServer();
@@ -40,7 +45,23 @@ export async function GET() {
       limit: 500,
     });
 
-    return NextResponse.json({ rows });
+    const effectiveScope = await resolveEffectiveOrgAccess();
+
+    if (canViewFullOrgRows(effectiveScope)) {
+      return NextResponse.json({ rows });
+    }
+
+    if (canViewAffiliateRows(effectiveScope)) {
+      const contractorId = String(effectiveScope.contractor_id ?? "").trim();
+
+      return NextResponse.json({
+        rows: rows.filter((row) => {
+          return String(row.prospecting_affiliation_id ?? "").trim() === contractorId;
+        }),
+      });
+    }
+
+    return NextResponse.json({ rows: [] });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to load onboarding rows";

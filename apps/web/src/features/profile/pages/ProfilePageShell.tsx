@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader, PageShell } from "@/components/ui/PageShell";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { resolveEffectiveOrgAccess } from "@/shared/server/access/resolveEffectiveOrgAccess.server";
 
 type AssignmentRow = {
   person_id: string | null;
@@ -358,6 +359,7 @@ export default async function ProfilePageShell() {
   );
 
   const resolved = resolveRole(assignments);
+  const effectiveScope = await resolveEffectiveOrgAccess();
 
   const selectedOrgAllowedByMembership = Boolean(
     selectedPcOrgId && membershipPcOrgIds.includes(selectedPcOrgId)
@@ -498,6 +500,10 @@ export default async function ProfilePageShell() {
                       ? "Company coverage"
                       : "No matching scope"
                 }
+              />
+              <InfoRow
+                label="Effective visibility"
+                value={effectiveScope.effective_visibility.replaceAll("_", " ")}
               />
             </div>
           </Card>
@@ -667,8 +673,8 @@ export default async function ProfilePageShell() {
             <HealthLine ok={health.activeProfile}>Profile is active</HealthLine>
             <HealthLine ok={health.person}>Core person is linked</HealthLine>
             <HealthLine ok={health.selectedOrg}>Selected org is set</HealthLine>
-            <HealthLine ok={health.selectedOrgAllowed}>
-              Selected org is in membership or company coverage
+            <HealthLine ok={effectiveScope.effective_visibility !== "NO_OPERATIONAL_SCOPE"}>
+              Selected org has assignment-driven operational scope
             </HealthLine>
             <HealthLine ok={health.assignment}>
               Active assignment found
