@@ -3,6 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/state/org";
 
+type TechSearchItem = {
+  assignment_id: string;
+  person_id: string;
+  tech_id: string;
+  full_name: string;
+  co_name: string | null;
+  affiliation_code?: string | null;
+  affiliation?: string | null;
+  position_title?: string | null;
+  schedule_baseline_month_id?: string | null;
+  fiscal_month_id?: string | null;
+};
+
 type DraftRow = {
   shift_date: string;
   exception_type: string;
@@ -66,6 +79,7 @@ function eachDayInclusive(start: string, end: string) {
     rows.push(toDateOnly(cur));
     cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
   }
+
   return rows;
 }
 
@@ -88,9 +102,11 @@ function impactTone(state: ImpactPreviewRow["state"] | null | undefined) {
   if (state === "SAFE") {
     return "border-[rgba(37,99,235,0.35)] bg-[rgba(37,99,235,0.10)] text-[rgb(29,78,216)]";
   }
+
   if (state === "RISK") {
     return "border-[rgba(220,38,38,0.35)] bg-[rgba(220,38,38,0.10)] text-[rgb(185,28,28)]";
   }
+
   return "border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.10)] text-[rgb(180,83,9)]";
 }
 
@@ -103,7 +119,11 @@ export default function CreateExceptionModal({
 }) {
   const { selectedOrgId } = useOrg();
 
-  const [techId, setTechId] = useState("");
+  const [techSearch, setTechSearch] = useState("");
+  const [techResults, setTechResults] = useState<TechSearchItem[]>([]);
+  const [selectedTech, setSelectedTech] = useState<TechSearchItem | null>(null);
+  const [techBusy, setTechBusy] = useState(false);
+
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [type, setType] = useState<(typeof TYPE_OPTIONS)[number]>("VACATION");
@@ -114,8 +134,83 @@ export default function CreateExceptionModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canBuild = techId.trim() && startDate && endDate && startDate <= endDate;
-  const canSubmit = !!selectedOrgId && techId.trim() && draftRows.length > 0 && !busy;
+  const canBuild = !!selectedTech?.tech_id && startDate && endDate && startDate <= endDate;
+  const canSubmit = !!selectedOrgId && !!selectedTech?.tech_id && draftRows.length > 0 && !busy;
+
+  useEffect(() => {
+    if (!selectedOrgId) {
+      setTechResults([]);
+      setTechBusy(false);
+      return;
+    }
+
+    const q = techSearch.trim();
+
+    if (!q || selectedTech) {
+      setTechResults([]);
+      setTechBusy(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setTechBusy(true);
+      setError(null);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("q", q);
+        params.set("limit", "12");
+
+        const res = await fetch(`/api/route-lock/exceptions/tech-search?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error ?? "Failed to search technicians"));
+        }
+
+        const items = Array.isArray(json?.items) ? json.items : [];
+
+        setTechResults(
+          items
+            .map((row: any): TechSearchItem => ({
+              assignment_id: String(row?.assignment_id ?? "").trim(),
+              person_id: String(row?.person_id ?? "").trim(),
+              tech_id: String(row?.tech_id ?? "").trim(),
+              full_name: String(row?.full_name ?? "").trim(),
+              co_name: row?.co_name == null ? null : String(row.co_name),
+              affiliation_code:
+                row?.affiliation_code == null ? null : String(row.affiliation_code),
+              affiliation: row?.affiliation == null ? null : String(row.affiliation),
+              position_title: row?.position_title == null ? null : String(row.position_title),
+              schedule_baseline_month_id:
+                row?.schedule_baseline_month_id == null
+                  ? null
+                  : String(row.schedule_baseline_month_id),
+              fiscal_month_id:
+                row?.fiscal_month_id == null ? null : String(row.fiscal_month_id),
+            }))
+            .filter((row: TechSearchItem) => row.assignment_id && row.person_id && row.tech_id)
+        );
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        setTechResults([]);
+        setError(String(err?.message ?? "Failed to search technicians"));
+      } finally {
+        if (!controller.signal.aborted) {
+          setTechBusy(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [selectedOrgId, selectedTech, techSearch]);
 
   useEffect(() => {
     if (!canBuild) {
@@ -208,10 +303,21 @@ export default function CreateExceptionModal({
     return `${draftRows.length} day${draftRows.length === 1 ? "" : "s"} drafted`;
   }, [draftRows]);
 
+  function clearSelectedTech() {
+    setSelectedTech(null);
+    setTechSearch("");
+    setTechResults([]);
+  }
+
+  function chooseTech(tech: TechSearchItem) {
+    setSelectedTech(tech);
+    setTechSearch(`${tech.tech_id} — ${tech.full_name}`);
+    setTechResults([]);
+    setError(null);
+  }
+
   function updateRow(index: number, patch: Partial<DraftRow>) {
-    setDraftRows((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
-    );
+    setDraftRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   function removeRow(index: number) {
@@ -224,7 +330,7 @@ export default function CreateExceptionModal({
   }
 
   async function submit() {
-    if (!selectedOrgId || !canSubmit) return;
+    if (!selectedOrgId || !selectedTech?.tech_id || !canSubmit) return;
 
     setBusy(true);
     setError(null);
@@ -235,7 +341,9 @@ export default function CreateExceptionModal({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           pc_org_id: selectedOrgId,
-          tech_id: techId.trim(),
+          tech_id: selectedTech.tech_id,
+          person_id: selectedTech.person_id,
+          assignment_id: selectedTech.assignment_id,
           rows: draftRows.map((row) => ({
             shift_date: row.shift_date,
             exception_type: row.exception_type,
@@ -270,7 +378,7 @@ export default function CreateExceptionModal({
           <div>
             <div className="text-lg font-semibold text-[var(--to-ink)]">Draft Exceptions</div>
             <div className="text-sm text-[var(--to-ink-muted)]">
-              Pick a date range, review the generated daily draft, then submit.
+              Pick a scheduled technician, date range, review the generated daily draft, then submit.
             </div>
           </div>
 
@@ -285,16 +393,65 @@ export default function CreateExceptionModal({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="flex flex-col gap-1">
+            <div className="relative flex flex-col gap-1 md:col-span-1">
               <label className="text-xs font-semibold uppercase text-[var(--to-ink-muted)]">
-                Tech ID
+                Technician
               </label>
+
               <input
-                value={techId}
-                onChange={(e) => setTechId(e.target.value)}
-                placeholder="e.g. 7003"
+                value={techSearch}
+                onChange={(e) => {
+                  setTechSearch(e.target.value);
+                  setSelectedTech(null);
+                }}
+                placeholder="Search tech ID or name"
                 className="h-9 rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 text-sm"
               />
+
+              {selectedTech ? (
+                <div className="mt-1 rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 py-2 text-xs">
+                  <div className="font-semibold text-[var(--to-ink)]">
+                    {selectedTech.full_name}
+                  </div>
+                  <div className="text-[var(--to-ink-muted)]">
+                    Tech ID {selectedTech.tech_id}
+                    {selectedTech.co_name ? ` · ${selectedTech.co_name}` : ""}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearSelectedTech}
+                    className="mt-1 text-[11px] font-semibold text-[rgb(29,78,216)]"
+                  >
+                    Change technician
+                  </button>
+                </div>
+              ) : techSearch.trim() ? (
+                <div className="absolute left-0 right-0 top-[62px] z-20 max-h-72 overflow-y-auto rounded-xl border border-[var(--to-border)] bg-[var(--to-surface)] shadow-lg">
+                  {techBusy ? (
+                    <div className="px-3 py-2 text-sm text-[var(--to-ink-muted)]">Searching…</div>
+                  ) : techResults.length ? (
+                    techResults.map((tech) => (
+                      <button
+                        key={`${tech.assignment_id}:${tech.person_id}:${tech.tech_id}`}
+                        type="button"
+                        onClick={() => chooseTech(tech)}
+                        className="block w-full border-b border-[var(--to-border)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--to-row-hover)]"
+                      >
+                        <div className="font-semibold text-[var(--to-ink)]">{tech.full_name}</div>
+                        <div className="text-xs text-[var(--to-ink-muted)]">
+                          Tech ID {tech.tech_id}
+                          {tech.co_name ? ` · ${tech.co_name}` : ""}
+                          {tech.position_title ? ` · ${tech.position_title}` : ""}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-sm text-[var(--to-ink-muted)]">
+                      No scheduled technicians found.
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-1">
@@ -369,20 +526,34 @@ export default function CreateExceptionModal({
 
             {!canBuild ? (
               <div className="text-sm text-[var(--to-ink-muted)]">
-                Enter tech, start date, and end date to generate the draft.
+                Select a scheduled technician, start date, and end date to generate the draft.
               </div>
             ) : draftRows.length ? (
               <div className="overflow-x-auto rounded-xl border border-[var(--to-border)] bg-[var(--to-surface)]">
                 <table className="min-w-full border-collapse text-sm">
                   <thead className="bg-[var(--to-surface-2)]">
                     <tr>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Date</th>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Day</th>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Type</th>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Schedule Δ+/-</th>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Impact</th>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Notes</th>
-                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">Action</th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Date
+                      </th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Day
+                      </th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Type
+                      </th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Schedule Δ+/-
+                      </th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Impact
+                      </th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Notes
+                      </th>
+                      <th className="border-b border-[var(--to-border)] px-3 py-2 text-left">
+                        Action
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
