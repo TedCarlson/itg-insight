@@ -3,10 +3,6 @@
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { buildWorkforceSurfacePayload } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
 import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforceSourceRows.server";
-import {
-  canViewFullOrgRows,
-  resolveEffectiveOrgAccess,
-} from "@/shared/server/access/resolveEffectiveOrgAccess.server";
 import type { WorkforceSurfacePayload } from "@/shared/types/workforce/surfacePayload";
 
 type Args = {
@@ -55,11 +51,6 @@ export async function getCompanyManagerWorkforceSurfacePayload(
   if (!scope.ok) return buildEmptyPayload();
 
   const as_of_date = String(args?.as_of_date ?? "").trim() || todayIso();
-
-  const effectiveScope = await resolveEffectiveOrgAccess();
-  if (!canViewFullOrgRows(effectiveScope)) {
-    return buildEmptyPayload();
-  }
 
   const sourceRows = await loadWorkforceSourceRows({
     pc_org_id: scope.selected_pc_org_id,

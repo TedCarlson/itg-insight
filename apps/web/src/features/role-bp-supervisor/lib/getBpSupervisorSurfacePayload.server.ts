@@ -107,22 +107,6 @@ export async function getBpSupervisorSurfacePayload(args?: {
     )
   );
 
-  if (scopedTechIds.length === 0) {
-    return {
-      ...buildEmptyPayload(activeRange),
-      header: {
-        ...buildEmptyPayload(activeRange).header,
-        role_label: resolvedScope.role_label,
-        rep_full_name: resolvedScope.rep_full_name,
-        rep_person_id: resolvedScope.rep_person_id ?? null,
-      } as MetricsSurfacePayload["header"] & {
-        rep_person_id?: string | null;
-      },
-    };
-  }
-
-  const scopedTechIdSet = new Set(scopedTechIds);
-
   const basePayload = await buildMetricsSurfacePayload({
     role_key: "BP_SUPERVISOR",
     profile_key: profileKey,
@@ -139,23 +123,14 @@ export async function getBpSupervisorSurfacePayload(args?: {
     },
   });
 
-  const scopedRows = basePayload.team_table.rows.filter((row: any) =>
-    scopedTechIdSet.has(String(row?.tech_id ?? "").trim()),
-  );
-
+  // 🔥 ONLY ADD rep_person_id FOR CLIENT DEFAULTING
   return {
     ...basePayload,
     header: {
       ...basePayload.header,
-      scope_headcount: scopedRows.length,
-      total_headcount: scopedRows.length,
       rep_person_id: resolvedScope.rep_person_id ?? null,
     } as MetricsSurfacePayload["header"] & {
       rep_person_id?: string | null;
-    },
-    team_table: {
-      ...basePayload.team_table,
-      rows: scopedRows,
     },
   };
 }

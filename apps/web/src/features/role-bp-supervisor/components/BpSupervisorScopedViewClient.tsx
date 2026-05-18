@@ -140,7 +140,8 @@ export default function BpSupervisorScopedViewClient({ payload }: Props) {
   useBpSupervisorTeamControls(allRows, controls);
 
   const scopedRows = useMemo(() => {
-    return buildScopedRows(allRows, controls);
+    const rows = buildScopedRows(allRows, controls);
+    return rows.length > 0 ? rows : allRows;
   }, [allRows, controls]);
 
   const { scopeLabel, headerModel } = useBpSupervisorHeaderScope({
