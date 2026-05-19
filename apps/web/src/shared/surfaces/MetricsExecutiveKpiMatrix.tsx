@@ -9,23 +9,28 @@ import MetricsOrgDrillDrawer from "@/shared/surfaces/MetricsOrgDrillDrawer";
 import type {
   MetricsExecutiveKpiItem,
   MetricsExecutiveStripRuntimePayload,
+  MetricsScopedExecutiveKpiItem,
 } from "@/shared/types/metrics/executiveStrip";
 
-type MatrixRow = {
+export type MetricsExecutiveKpiMatrixRow = {
   label: string;
   subtitle?: string | null;
   items: MetricsExecutiveKpiItem[];
+  comparisonItems?: MetricsScopedExecutiveKpiItem[];
+  pc_org_id?: string | null;
 };
 
 type Props = {
   title: string;
   subtitle?: string | null;
-  rows: MatrixRow[];
+  rows: MetricsExecutiveKpiMatrixRow[];
   runtime?: MetricsExecutiveStripRuntimePayload | null;
+  selectedPcOrgId?: string | null;
+  onRowSelect?: (pcOrgId: string | null) => void;
 };
 
 type SelectedMatrixKpi = {
-  row: MatrixRow;
+  row: MetricsExecutiveKpiMatrixRow;
   kpiKey: string;
 };
 
@@ -105,6 +110,7 @@ function KpiTile({
 export default function MetricsExecutiveKpiMatrix(props: Props) {
   const [selected, setSelected] = useState<SelectedMatrixKpi | null>(null);
   const canOpenDrawer = !!props.runtime;
+  const canSelectRows = typeof props.onRowSelect === "function";
 
   return (
     <>
@@ -129,38 +135,68 @@ export default function MetricsExecutiveKpiMatrix(props: Props) {
 
         <div className="overflow-x-auto rounded-xl border">
           <div className="min-w-max divide-y">
-            {props.rows.map((row, index) => (
-              <div
-                key={`${row.label}-${index}`}
-                className="grid grid-cols-[190px_1fr] gap-3 p-3"
-              >
-                <div className="sticky left-0 z-10 bg-card/95 pr-3 backdrop-blur">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {row.label}
+            {props.rows.map((row, index) => {
+              const rowOrgId = row.pc_org_id ?? null;
+              const isSelected =
+                canSelectRows &&
+                rowOrgId !== null &&
+                props.selectedPcOrgId === rowOrgId;
+
+              return (
+                <div
+                  key={`${row.label}-${index}`}
+                  className="grid grid-cols-[190px_1fr] gap-3 p-3"
+                >
+                  <div className="sticky left-0 z-10 bg-card/95 pr-3 backdrop-blur">
+                    <button
+                      type="button"
+                      disabled={!canSelectRows}
+                      onClick={() => {
+                        if (!props.onRowSelect) return;
+
+                        if (rowOrgId === null) {
+                          props.onRowSelect(null);
+                          return;
+                        }
+
+                        props.onRowSelect(
+                          props.selectedPcOrgId === rowOrgId ? null : rowOrgId,
+                        );
+                      }}
+                      className={[
+                        "block w-full rounded-md px-2 py-1 text-left transition",
+                        canSelectRows ? "hover:bg-muted/60" : "cursor-default",
+                        isSelected ? "bg-muted text-foreground" : "",
+                      ].join(" ")}
+                    >
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {row.label}
+                      </div>
+
+                      {row.subtitle ? (
+                        <div className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                          {row.subtitle}
+                        </div>
+                      ) : null}
+                    </button>
                   </div>
 
-                  {row.subtitle ? (
-                    <div className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                      {row.subtitle}
-                    </div>
-                  ) : null}
+                  <div className="grid grid-flow-col auto-cols-[160px] gap-2">
+                    {row.items.map((item) => (
+                      <KpiTile
+                        key={item.kpi_key}
+                        item={item}
+                        onClick={
+                          canOpenDrawer
+                            ? () => setSelected({ row, kpiKey: item.kpi_key })
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
                 </div>
-
-                <div className="grid grid-flow-col auto-cols-[160px] gap-2">
-                  {row.items.map((item) => (
-                    <KpiTile
-                      key={item.kpi_key}
-                      item={item}
-                      onClick={
-                        canOpenDrawer
-                          ? () => setSelected({ row, kpiKey: item.kpi_key })
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </Card>
@@ -171,7 +207,7 @@ export default function MetricsExecutiveKpiMatrix(props: Props) {
           onClose={() => setSelected(null)}
           kpiKey={selected?.kpiKey ?? null}
           baseItems={selected?.row.items ?? []}
-          scopeItems={null}
+          scopeItems={selected?.row.comparisonItems ?? null}
           runtime={props.runtime}
         />
       ) : null}

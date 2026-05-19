@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import * as XLSX from "xlsx";
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -313,6 +314,8 @@ export async function POST(req: Request) {
       },
     });
 
+    const admin = supabaseAdmin();
+
     const {
       data: { user },
       error: userErr,
@@ -538,7 +541,7 @@ export async function POST(req: Request) {
     }> = [];
 
     for (const sweepFiscalMonthId of fiscalMonthIds) {
-      const { data: sweepRes, error: sweepErr } = await supabase.rpc(
+      const { data: sweepRes, error: sweepErr } = await admin.rpc(
         "route_lock_sweep_month",
         {
           p_pc_org_id: pc_org_id,

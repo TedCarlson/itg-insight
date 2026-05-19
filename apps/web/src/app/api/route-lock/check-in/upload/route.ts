@@ -29,6 +29,20 @@ function errorPayload(error: unknown) {
   };
 }
 
+function getFiscalMonthIds(result: unknown): string[] {
+  const raw = (result as any)?.fiscal_month_ids;
+
+  if (!Array.isArray(raw)) return [];
+
+  return Array.from(
+    new Set(
+      raw
+        .map((v: unknown) => String(v))
+        .filter((v: string) => Boolean(v))
+    )
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const scope = await requireSelectedPcOrgServer();
@@ -60,7 +74,31 @@ export async function POST(req: NextRequest) {
       file,
     });
 
-    return json(200, result);
+    const fiscalMonthIds = getFiscalMonthIds(result);
+    const sweeps: Record<string, unknown> = {};
+
+    for (const fiscalMonthId of fiscalMonthIds) {
+      const { data: sweepRes, error: sweepErr } = await admin.rpc("route_lock_sweep_month", {
+        p_pc_org_id: scope.selected_pc_org_id,
+        p_fiscal_month_id: fiscalMonthId,
+      });
+
+      if (sweepErr) {
+        return json(500, {
+          ok: false,
+          error: `check-in uploaded but sweep failed for fiscal_month_id=${fiscalMonthId}: ${sweepErr.message}`,
+          result,
+        });
+      }
+
+      sweeps[fiscalMonthId] = sweepRes ?? null;
+    }
+
+    return json(200, {
+      ...(result as any),
+      sweep_count: fiscalMonthIds.length,
+      sweeps,
+    });
   } catch (error: any) {
     const status = Number(error?.status ?? 500);
     return json(status, errorPayload(error));

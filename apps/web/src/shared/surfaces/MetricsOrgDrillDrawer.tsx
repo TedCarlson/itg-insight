@@ -32,6 +32,8 @@ type Props = {
   scopeItems?: MetricsScopedExecutiveKpiItem[] | null;
   runtime: MetricsExecutiveStripRuntimePayload;
   range?: MetricsRangeKey;
+  pcOrgId?: string | null;
+  scopeType?: "AFFILIATE" | "ORG";
 };
 
 function toInspectionMetric(item: MetricsExecutiveKpiItem): InspectionMetricCell {
@@ -50,6 +52,8 @@ export default function MetricsOrgDrillDrawer({
   kpiKey,
   baseItems,
   range = "FM",
+  pcOrgId = null,
+  scopeType = "AFFILIATE",
 }: Props) {
   const metrics = useMemo(
     () => baseItems.map(toInspectionMetric),
@@ -62,6 +66,11 @@ export default function MetricsOrgDrillDrawer({
     const params = new URLSearchParams();
     params.set("kpi_key", nextKpiKey);
     params.set("range", range);
+    params.set("scope_type", scopeType);
+
+    if (pcOrgId) {
+      params.set("pc_org_id", pcOrgId);
+    }
 
     const res = await fetch(`/api/metrics/org-inspection?${params.toString()}`);
     const json = await res.json();

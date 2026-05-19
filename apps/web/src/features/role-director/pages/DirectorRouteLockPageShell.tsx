@@ -52,7 +52,7 @@ export default async function DirectorRouteLockPageShell() {
           <RouteLockSubnav />
         </div>
 
-        <RouteLockSevenDayClient days={next7} />
+        <RouteLockSevenDayClient days={next7} todayIso={today} />
       </div>
     </PageShell>
   );

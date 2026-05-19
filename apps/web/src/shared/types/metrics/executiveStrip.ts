@@ -10,10 +10,14 @@ export type MetricsExecutiveKpiItem = {
   band_key: string;
   band_label: string;
   support?: string | null;
+
   comparison_scope_code: string;
   comparison_value_display: string;
-  variance_display: string | null;
+ variance_display: string | null;
   comparison_state: MetricsExecutiveComparisonState;
+
+  pc_org_id?: string | null;
+  scope_type?: "AFFILIATE" | "ORG";
 };
 
 export type MetricsSurfaceBasePayload = {
@@ -64,21 +68,28 @@ export type MetricsExecutiveRuntimeRubricRow = {
 
 export type MetricsExecutiveRuntimeScoreRow = {
   tech_id: string;
+
   metric_key: string;
   metric_value: number | null;
+
   band_key?: string | null;
   weighted_points?: number | null;
+
   numerator?: number | null;
   denominator?: number | null;
 
   metric_batch_id?: string | null;
   metric_date?: string | null;
   fiscal_end_date?: string | null;
+
+  pc_org_id?: string | null;
 };
 
 export type MetricsExecutiveStripRuntimePayload = {
   definitions: MetricsExecutiveRuntimeDefinition[];
+
   rubric_rows: MetricsExecutiveRuntimeRubricRow[];
+
   current_rows: MetricsExecutiveRuntimeScoreRow[];
   previous_rows: MetricsExecutiveRuntimeScoreRow[];
 

@@ -206,9 +206,9 @@ export function RouteLockCalendarClient(props: {
       const plannedIneligible = count(d.planned_travel_count);
       const plannedRun = plannedEligible + plannedIneligible;
 
-      const builtEligible = n(d.actual_techs) ?? work + bplow + prjt;
+      const builtEligible = work + bplow + prjt;
       const builtIneligible = trvl + bptrl;
-      const builtRun = builtEligible + builtIneligible;
+      const builtRun = work + bplow + prjt + trvl + bptrl;
 
       const actualTechs = n(d.actual_techs);
       const actualEligible =
