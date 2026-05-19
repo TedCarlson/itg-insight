@@ -1,10 +1,7 @@
-import { BpLeadStubPageShell } from "./BpLeadStubPageShell";
+// path: apps/web/src/features/role-bp-lead/pages/BpLeadOverviewPageShell.tsx
+
+import BpOwnerOverviewPageShell from "@/features/role-bp-owner/pages/BpOwnerOverviewPageShell";
 
 export default function BpLeadOverviewPageShell() {
-  return (
-    <BpLeadStubPageShell
-      title="BP Lead Workspace"
-      subtitle="Delegated business-partner workspace. BP Owner delegation controls come next."
-    />
-  );
+  return <BpOwnerOverviewPageShell/>;
 }

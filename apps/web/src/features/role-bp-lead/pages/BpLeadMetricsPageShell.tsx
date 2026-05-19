@@ -1,10 +1,17 @@
-import { BpLeadStubPageShell } from "./BpLeadStubPageShell";
+// path: apps/web/src/features/role-bp-lead/pages/BpLeadMetricsPageShell.tsx
 
-export default function BpLeadMetricsPageShell() {
+import BpOwnerMetricsPageShell from "@/features/role-bp-owner/pages/BpOwnerMetricsPageShell";
+
+type Props = {
+  range?: string;
+  class_type?: "NSR" | "SMART";
+};
+
+export default function BpLeadMetricsPageShell(props: Props) {
   return (
-    <BpLeadStubPageShell
-      title="BP Lead Metrics"
-      subtitle="Delegated metrics placeholder. No affiliate-wide metric rows are exposed here."
+    <BpOwnerMetricsPageShell
+      range={props.range}
+      class_type={props.class_type ?? "NSR"}
     />
   );
 }
