@@ -175,6 +175,44 @@ function orgComparisonScopeCode(payload: MetricsSurfacePayload) {
   return clean(payload.executive_strip?.runtime?.comparison_scope_code) || "ORG";
 }
 
+function gatePayloadToTechIds(
+  payload: MetricsSurfacePayload,
+  techIds: Set<string>
+): MetricsSurfacePayload {
+  return {
+    ...payload,
+    executive_strip: {
+      ...payload.executive_strip,
+      runtime: payload.executive_strip?.runtime
+        ? {
+            ...payload.executive_strip.runtime,
+            current_rows: payload.executive_strip.runtime.current_rows.filter((row) =>
+              techIds.has(clean(row.tech_id))
+            ),
+            previous_rows: payload.executive_strip.runtime.previous_rows.filter((row) =>
+              techIds.has(clean(row.tech_id))
+            ),
+          }
+        : payload.executive_strip?.runtime ?? null,
+    },
+    team_table: {
+      ...payload.team_table,
+      rows: payload.team_table.rows.filter((row) =>
+        techIds.has(rowTechId(row))
+      ),
+    },
+    header: {
+      ...payload.header,
+      scope_headcount: payload.team_table.rows.filter((row) =>
+        techIds.has(rowTechId(row))
+      ).length,
+      total_headcount: payload.team_table.rows.filter((row) =>
+        techIds.has(rowTechId(row))
+      ).length,
+    },
+  } as MetricsSurfacePayload;
+}
+
 function tieBreakerValue(row: MetricsSurfaceTeamRow) {
   return (
     numeric(getRowRaw(row, "tie_breaker_value")) ??
@@ -257,9 +295,17 @@ export async function getBpOwnerExecutiveMetricsPayload(
 ): Promise<MetricsSurfacePayload> {
   const bpScope = await resolveBpOwnerScope();
 
-  const metricEligibleAssignments = bpScope.scoped_assignments.filter((row) =>
-    Boolean(clean(row.tech_id))
-  );
+  const metricEligibleAssignments = bpScope.scoped_assignments.filter((row) => {
+    const techId = clean(row.tech_id);
+    const roleType = clean((row as any).role_type).toUpperCase();
+    const title = clean(row.position_title).toLowerCase();
+
+    if (!techId) return false;
+    if (roleType === "LEADERSHIP") return false;
+    if (title === "bp owner" || title === "bp lead" || title === "bp supervisor") return false;
+
+    return true;
+  });
 
   const techIdsByOrg = groupTechIdsByOrg(metricEligibleAssignments);
 
@@ -286,7 +332,7 @@ export async function getBpOwnerExecutiveMetricsPayload(
 
     if (!scopedTechIds.length) continue;
 
-    const payload = await buildMetricsSurfacePayload({
+    const rawPayload = await buildMetricsSurfacePayload({
       role_key: "BP_OWNER",
       profile_key: args.profile_key,
       pc_org_id: orgId,
@@ -302,6 +348,8 @@ export async function getBpOwnerExecutiveMetricsPayload(
       },
     });
 
+    const payload = gatePayloadToTechIds(rawPayload, new Set(scopedTechIds));
+
     orgPayloads.push(payload);
 
     bpOwnerOrgKpiRows.push({
@@ -309,7 +357,9 @@ export async function getBpOwnerExecutiveMetricsPayload(
       org_label: orgLabelFromPayload(payload, orgId),
       items: buildExecutiveAggregateStrip({
         payloads: [payload],
-        eligible_tech_ids: scopedTechIds,
+        eligible_tech_ids: payload.team_table.rows
+          .map((row) => row.tech_id)
+          .filter((techId): techId is string => Boolean(techId)),
         support: bpScope.contractor_name ?? "Contractor",
         comparison_scope_code: orgComparisonScopeCode(payload),
       }),
@@ -329,15 +379,35 @@ export async function getBpOwnerExecutiveMetricsPayload(
 
   const basePayload = orgPayloads[0];
 
+  const resolvedEligibleTechIds = new Set(
+    orgPayloads
+      .flatMap((payload) => payload.team_table.rows)
+      .map((row) => row.tech_id)
+      .filter((techId): techId is string => Boolean(techId))
+  );
+
+  const resolvedEligibleOrgTechPairs = new Set(
+    orgPayloads
+      .flatMap((payload) => payload.team_table.rows)
+      .map((row) => {
+        const orgId = rowOrgId(row);
+        const techId = rowTechId(row);
+        return orgId && techId ? `${orgId}::${techId}` : null;
+      })
+      .filter((key): key is string => Boolean(key))
+  );
+
   const mergedRows = mergeRows({
     payloads: orgPayloads,
-    eligibleTechIds,
-    eligibleOrgTechPairs,
+    eligibleTechIds: resolvedEligibleTechIds,
+    eligibleOrgTechPairs: resolvedEligibleOrgTechPairs,
   });
 
   const aggregateExecutiveItems = buildExecutiveAggregateStrip({
     payloads: orgPayloads,
-    eligible_tech_ids: [...eligibleTechIds],
+    eligible_tech_ids: mergedRows
+      .map((row) => row.tech_id)
+      .filter((techId): techId is string => Boolean(techId)),
     support: bpScope.contractor_name ?? "Contractor",
     comparison_scope_code:
       bpScope.contractor_name ??

@@ -3,6 +3,7 @@
 import { loadMetricCompositeRows } from "@/shared/server/metrics/loadMetricCompositeRows.server";
 import { loadMetricScoreRows } from "@/shared/server/metrics/loadMetricScoreRows.server";
 import { loadMetricWorkMixRows } from "@/shared/server/metrics/loadMetricWorkMixRows.server";
+import type { MetricOwnershipRow } from "@/shared/server/metrics/loadMetricOwnershipRows.server";
 import type { WorkforceSourceRow } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
 import type {
   MetricsSurfaceTeamCell,
@@ -93,26 +94,54 @@ function normalizeSeatType(row: WorkforceSourceRow): string | null {
 }
 
 export function buildWorkforceIdentityMap(
-  rows: WorkforceSourceRow[]
+  rows: WorkforceSourceRow[],
+  ownershipRows: MetricOwnershipRow[] = []
 ): Map<string, WorkforceMetricsIdentity> {
   const byTechId = new Map<string, WorkforceMetricsIdentity>();
+
+  for (const ownership of ownershipRows ?? []) {
+    const techId = toNullableString(ownership.tech_id);
+    if (!techId) continue;
+
+    const existing = byTechId.get(techId);
+
+    byTechId.set(techId, {
+      assignment_id: null,
+      person_id: toNullableString(ownership.person_id),
+      tech_id: techId,
+      full_name: toNullableString(ownership.full_name),
+      office_id: null,
+      office_label: null,
+      affiliation_id: toNullableString(ownership.prospecting_affiliation_id),
+      affiliation:
+        toNullableString(ownership.contractor_name) ??
+        toNullableString(ownership.contractor_code),
+      affiliation_type: ownership.contractor_id ? "CONTRACTOR" : null,
+      reports_to_assignment_id: null,
+      reports_to_person_id: null,
+      reports_to_label: null,
+      seat_type: null,
+      position_title: null,
+      is_active: ownership.person_status !== "inactive",
+    });
+  }
 
   for (const row of rows ?? []) {
     const techId = toNullableString(row.tech_id);
     if (!techId) continue;
 
-    if (byTechId.has(techId)) continue;
+    const existing = byTechId.get(techId);
 
     byTechId.set(techId, {
       assignment_id: toNullableString(row.assignment_id),
-      person_id: toNullableString(row.person_id),
+      person_id: toNullableString(row.person_id) ?? existing?.person_id ?? null,
       tech_id: techId,
-      full_name: toNullableString(row.full_name),
+      full_name: toNullableString(row.full_name) ?? existing?.full_name ?? null,
       office_id: toNullableString(row.office_id),
       office_label: toNullableString(row.office),
-      affiliation_id: toNullableString(row.affiliation_id),
-      affiliation: toNullableString(row.affiliation),
-      affiliation_type: normalizeAffiliationType(row),
+      affiliation_id: toNullableString(row.affiliation_id) ?? existing?.affiliation_id ?? null,
+      affiliation: toNullableString(row.affiliation) ?? existing?.affiliation ?? null,
+      affiliation_type: normalizeAffiliationType(row) ?? existing?.affiliation_type ?? null,
       reports_to_assignment_id: toNullableString(row.reports_to_assignment_id),
       reports_to_person_id: toNullableString(row.reports_to_person_id),
       reports_to_label: toNullableString(row.reports_to_name),

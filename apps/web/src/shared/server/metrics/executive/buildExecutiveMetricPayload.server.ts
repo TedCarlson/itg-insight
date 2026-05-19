@@ -130,8 +130,6 @@ export async function buildExecutiveMetricPayload(
       orgId,
     });
 
-    if (!scopedTechIds.length) continue;
-
     const payload = await buildMetricsSurfacePayload({
       role_key: args.scope.role,
       profile_key: args.profile_key,
