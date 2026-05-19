@@ -339,7 +339,9 @@ export async function getBpOwnerExecutiveMetricsPayload(
     payloads: orgPayloads,
     eligible_tech_ids: [...eligibleTechIds],
     support: bpScope.contractor_name ?? "Contractor",
-    comparison_scope_code: "JCM",
+    comparison_scope_code:
+      bpScope.contractor_name ??
+      orgComparisonScopeCode(basePayload),
   });
 
   return {
