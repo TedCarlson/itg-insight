@@ -205,7 +205,7 @@ export default async function ProfilePageShell() {
         ? admin
             .from("v_person_core")
             .select(
-              "person_id, full_name, emails, mobile, active, role, co_ref_id, co_code"
+              "person_id, full_name, emails, mobile, active, role, co_ref_id, co_code, prospecting_affiliation_id"
             )
             .eq("person_id", effectivePersonId)
             .maybeSingle()
@@ -220,7 +220,9 @@ export default async function ProfilePageShell() {
         : Promise.resolve({ data: null } as any),
     ]);
 
-  const personCoRefId = clean((person as any)?.co_ref_id);
+  const personCoRefId =
+    clean((person as any)?.prospecting_affiliation_id) ??
+    clean((person as any)?.co_ref_id);
 
   const [{ data: contractor }, { data: companyCoverageRaw }] =
     await Promise.all([
@@ -367,8 +369,15 @@ export default async function ProfilePageShell() {
     selectedPcOrgId && activeCompanyCoveragePcOrgIds.includes(selectedPcOrgId)
   );
 
+  const selectedOrgAllowedByAssignment = Boolean(
+    selectedPcOrgId &&
+      assignments.some((row) => clean(row.pc_org_id) === selectedPcOrgId)
+  );
+
   const selectedOrgAllowed =
-    selectedOrgAllowedByMembership || selectedOrgAllowedByCompanyCoverage;
+    selectedOrgAllowedByMembership ||
+    selectedOrgAllowedByCompanyCoverage ||
+    selectedOrgAllowedByAssignment;
 
   const health = {
     profile: Boolean(profile),
@@ -496,7 +505,9 @@ export default async function ProfilePageShell() {
                     ? "Personal membership"
                     : selectedOrgAllowedByCompanyCoverage
                       ? "Company coverage"
-                      : "No matching scope"
+                      : selectedOrgAllowedByAssignment
+                        ? "Active assignment"
+                        : "No matching scope"
                 }
               />
             </div>
@@ -668,7 +679,7 @@ export default async function ProfilePageShell() {
             <HealthLine ok={health.person}>Core person is linked</HealthLine>
             <HealthLine ok={health.selectedOrg}>Selected org is set</HealthLine>
             <HealthLine ok={health.selectedOrgAllowed}>
-              Selected org is in membership or company coverage
+              Selected org is in membership, company coverage, or active assignment
             </HealthLine>
             <HealthLine ok={health.assignment}>
               Active assignment found

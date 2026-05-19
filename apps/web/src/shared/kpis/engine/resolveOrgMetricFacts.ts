@@ -51,7 +51,7 @@ export async function resolveOrgMetricFacts(args: {
   }
 
   const { data, error } = await admin
-    .from("metrics_raw_row")
+    .from("metric_raw_rows_compat_v")
     .select("tech_id,metric_date,fiscal_end_date,batch_id,inserted_at,raw")
     .in("pc_org_id", args.pcOrgIds)
     .order("fiscal_end_date", { ascending: false })

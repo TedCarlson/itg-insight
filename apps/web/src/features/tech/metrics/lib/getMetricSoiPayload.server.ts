@@ -76,7 +76,7 @@ export async function getMetricSoiPayload(args: Args) {
   const admin = supabaseAdmin();
 
   const { data, error } = await admin
-    .from("metrics_raw_row")
+    .from("metric_raw_rows_compat_v")
     .select("metric_date,fiscal_end_date,batch_id,inserted_at,raw")
     .eq("pc_org_id", scope.selected_pc_org_id)
     .eq("tech_id", args.tech_id)

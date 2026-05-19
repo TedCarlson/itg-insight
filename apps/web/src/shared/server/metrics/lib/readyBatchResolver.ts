@@ -16,6 +16,7 @@ type MetricReadyBatchRow = {
   metric_batch_id: string | null;
   metric_date: string | null;
   fiscal_end_date: string | null;
+  created_at?: string | null;
 };
 
 export function dedupeLatestPerMetricDate(
@@ -136,10 +137,10 @@ export async function loadLatestReadyBatch(
 
   const { data, error } = await sb
     .from("metric_ready_batches_v")
-    .select("metric_batch_id, metric_date, fiscal_end_date")
+    .select("metric_batch_id, metric_date, fiscal_end_date, created_at")
     .eq("pc_org_id", pc_org_id)
     .order("metric_date", { ascending: false })
-    .order("metric_batch_id", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -159,12 +160,12 @@ export async function loadReadyBatchesForDateWindow(args: {
 
   const { data, error } = await sb
     .from("metric_ready_batches_v")
-    .select("metric_batch_id, metric_date, fiscal_end_date")
+    .select("metric_batch_id, metric_date, fiscal_end_date, created_at")
     .eq("pc_org_id", args.pc_org_id)
     .gte("metric_date", args.start_date)
     .lte("metric_date", args.end_date)
     .order("metric_date", { ascending: false })
-    .order("metric_batch_id", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) {
     throw new Error(error.message);

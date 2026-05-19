@@ -29,7 +29,7 @@ export async function GET() {
   );
 
   const { data: visibleBatches } = await sb
-    .from("metrics_raw_batch")
+    .from("metric_raw_batches_compat_v")
     .select("batch_id")
     .eq("pc_org_id", profile?.selected_pc_org_id);
 

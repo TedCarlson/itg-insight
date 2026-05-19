@@ -47,7 +47,7 @@ export default async function MetricsUploadsPage() {
   }
 
   const { data: latestBatch } = await sb
-    .from("metrics_raw_batch")
+    .from("metric_raw_batches_compat_v")
     .select("batch_id, fiscal_end_date, row_count, uploaded_at, status")
     .eq("pc_org_id", pc_org_id)
     .order("uploaded_at", { ascending: false })
@@ -55,7 +55,7 @@ export default async function MetricsUploadsPage() {
     .maybeSingle();
 
   const { data: rows } = await sb
-    .from("metrics_raw_row")
+    .from("metric_raw_rows_compat_v")
     .select("fiscal_end_date, tech_id, unique_row_key")
     .eq("pc_org_id", pc_org_id)
     .order("inserted_at", { ascending: false })

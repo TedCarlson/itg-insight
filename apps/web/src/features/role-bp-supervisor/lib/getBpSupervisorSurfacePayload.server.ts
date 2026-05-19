@@ -107,6 +107,20 @@ export async function getBpSupervisorSurfacePayload(args?: {
     )
   );
 
+  if (scopedTechIds.length === 0) {
+    return {
+      ...buildEmptyPayload(activeRange),
+      header: {
+        ...buildEmptyPayload(activeRange).header,
+        role_label: resolvedScope.role_label,
+        rep_full_name: resolvedScope.rep_full_name,
+        rep_person_id: resolvedScope.rep_person_id ?? null,
+      } as MetricsSurfacePayload["header"] & {
+        rep_person_id?: string | null;
+      },
+    };
+  }
+
   const basePayload = await buildMetricsSurfacePayload({
     role_key: "BP_SUPERVISOR",
     profile_key: profileKey,

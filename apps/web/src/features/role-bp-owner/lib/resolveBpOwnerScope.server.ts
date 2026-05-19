@@ -186,7 +186,7 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
   const today = isoToday();
 
   const { data: meData } = await admin
-    .from("person")
+    .from("v_person_core")
     .select("person_id, full_name, co_ref_id")
     .eq("person_id", boot.person_id)
     .maybeSingle();
@@ -257,7 +257,7 @@ export async function resolveBpOwnerScope(): Promise<BpOwnerScopeResult> {
   }
 
   const { data: peopleRaw } = await admin
-    .from("person")
+    .from("v_person_core")
     .select("person_id, full_name, co_ref_id")
     .in("person_id", personIds);
 

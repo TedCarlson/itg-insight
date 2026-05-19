@@ -35,7 +35,7 @@ export async function getLatestBatch(
   const admin = supabaseAdmin();
 
   let query = admin
-    .from("metrics_raw_batch")
+    .from("metric_raw_batches_compat_v")
     .select(
       [
         "batch_id",

@@ -57,7 +57,7 @@ export async function getAtomicRows(
   const admin = supabaseAdmin();
 
   let query = admin
-    .from("metrics_raw_row")
+    .from("metric_raw_rows_compat_v")
     .select(
       [
         "id",

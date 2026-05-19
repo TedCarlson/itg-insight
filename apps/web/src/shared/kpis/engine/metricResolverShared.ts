@@ -152,7 +152,7 @@ export async function fetchMetricRawRows(args: {
   }
 
   let query = admin
-    .from("metrics_raw_row")
+    .from("metric_raw_rows_compat_v")
     .select("tech_id,metric_date,fiscal_end_date,batch_id,inserted_at,raw")
     .in("pc_org_id", args.pcOrgIds)
     .in("tech_id", args.techIds);
