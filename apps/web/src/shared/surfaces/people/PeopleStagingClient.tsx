@@ -35,6 +35,8 @@ type PeopleStagingRow = {
   nt_login: string | null;
   csg: string | null;
   prospecting_affiliation_id: string | null;
+  onboarding_pc_org_id: string | null;
+  onboarding_pc_org_name: string | null;
   affiliation_code: string | null;
   affiliation: string | null;
   active_assignment_count: number;
@@ -92,6 +94,8 @@ function toEditorRow(person: PeopleIntakeCreatedPerson): PeopleEditorRow {
     nt_login: person.nt_login,
     csg: person.csg,
     prospecting_affiliation_id: person.prospecting_affiliation_id,
+    onboarding_pc_org_id: person.onboarding_pc_org_id,
+    onboarding_pc_org_name: person.onboarding_pc_org_name,
     affiliation_code: null,
     affiliation: null,
     active_assignment_count: 0,
@@ -211,6 +215,7 @@ export function PeopleStagingClient({ affiliations = [] }: Props) {
                   <th className="px-3 py-3 text-left">Contact</th>
                   <th className="px-3 py-3 text-left">Identifiers</th>
                   <th className="px-3 py-3 text-left">Prospecting Affiliation</th>
+                  <th className="px-3 py-3 text-left">Onboarding Org</th>
                   <th className="px-3 py-3 text-left">Assignment</th>
                   <th className="px-3 py-3 text-left">Readiness</th>
                   <th className="px-3 py-3 text-left">Action</th>
@@ -262,6 +267,15 @@ export function PeopleStagingClient({ affiliations = [] }: Props) {
                       <div className="text-xs text-muted-foreground">
                         {row.affiliation_code ?? "—"}
                       </div>
+                    </td>
+
+                    <td className="px-3 py-3 align-top">
+                      <div>{row.onboarding_pc_org_name ?? "—"}</div>
+                      {row.status === "onboarding" && !row.onboarding_pc_org_id ? (
+                        <div className="text-xs text-[var(--to-danger)]">
+                          Needs onboarding org
+                        </div>
+                      ) : null}
                     </td>
 
                     <td className="px-3 py-3 text-sm">

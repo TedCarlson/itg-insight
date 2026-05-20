@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type PeopleEditorRow = {
   person_id: string;
@@ -17,6 +17,8 @@ export type PeopleEditorRow = {
   nt_login: string | null;
   csg: string | null;
   prospecting_affiliation_id: string | null;
+  onboarding_pc_org_id: string | null;
+  onboarding_pc_org_name: string | null;
   affiliation_code: string | null;
   affiliation: string | null;
   active_assignment_count: number;
@@ -26,6 +28,13 @@ export type PeopleEditorRow = {
 type AffiliationOption = {
   affiliation_id: string;
   affiliation_label: string;
+};
+
+type OnboardingOrgOption = {
+  pc_org_id: string;
+  pc_org_name: string | null;
+  fulfillment_center_name: string | null;
+  is_selected: boolean;
 };
 
 type Props = {
@@ -45,6 +54,10 @@ type InnerProps = {
 function clean(value: string) {
   const next = value.trim();
   return next ? next : null;
+}
+
+function isOnboardingStatus(status: string) {
+  return status === "onboarding" || status === "onboarding_closed";
 }
 
 export function PeopleEditorDrawer({
@@ -84,10 +97,13 @@ function PeopleEditorDrawerInner({
     nt_login: p.nt_login ?? "",
     csg: p.csg ?? "",
     prospecting_affiliation_id: p.prospecting_affiliation_id ?? "",
+    onboarding_pc_org_id: p.onboarding_pc_org_id ?? "",
   }));
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orgOptions, setOrgOptions] = useState<OnboardingOrgOption[]>([]);
+  const [orgLoading, setOrgLoading] = useState(false);
 
   async function save() {
     setSaving(true);
@@ -111,6 +127,7 @@ function PeopleEditorDrawerInner({
         nt_login: clean(draft.nt_login),
         csg: clean(draft.csg),
         prospecting_affiliation_id: clean(draft.prospecting_affiliation_id),
+        onboarding_pc_org_id: clean(draft.onboarding_pc_org_id),
       }),
     });
 
@@ -125,6 +142,50 @@ function PeopleEditorDrawerInner({
     setSaving(false);
     onSaved();
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOrgOptions() {
+      setOrgLoading(true);
+
+      const res = await fetch("/api/people/onboarding-org-options");
+      const json = await res.json().catch(() => null);
+
+      if (cancelled) return;
+
+      const rows = Array.isArray(json?.rows) ? json.rows : [];
+      setOrgOptions(rows);
+
+      const selected =
+        rows.find((row: OnboardingOrgOption) => row.is_selected) ?? rows[0];
+
+      if (selected?.pc_org_id) {
+        setDraft((current) => {
+          if (current.onboarding_pc_org_id) return current;
+
+          return {
+            ...current,
+            onboarding_pc_org_id: selected.pc_org_id,
+          };
+        });
+      }
+
+      setOrgLoading(false);
+    }
+
+    loadOrgOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const showOnboardingOrg = true;
+  const isOnboardingRecord = isOnboardingStatus(draft.status);
+  const selectedOnboardingOrg = orgOptions.find(
+    (org) => org.pc_org_id === draft.onboarding_pc_org_id
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/20">
@@ -227,6 +288,73 @@ function PeopleEditorDrawerInner({
             </label>
           </div>
         </div>
+
+        {showOnboardingOrg ? (
+          <div className="mt-4 rounded-2xl border p-4">
+            <div className="text-sm font-semibold">Onboarding Ownership</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              This is the PC org that owns the onboarding entry. It controls onboarding report scope.{" "}
+              {!isOnboardingRecord
+                ? "This person is not currently in onboarding status."
+                : ""}
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              {orgOptions.length > 1 ? (
+                <label className="grid gap-1 text-sm">
+                  Onboarding Org
+                  <select
+                    value={draft.onboarding_pc_org_id}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        onboarding_pc_org_id: e.target.value,
+                      })
+                    }
+                    className="h-10 rounded-xl border px-3"
+                  >
+                    {orgOptions.map((org) => (
+                      <option key={org.pc_org_id} value={org.pc_org_id}>
+                        {org.pc_org_name ??
+                          org.fulfillment_center_name ??
+                          org.pc_org_id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : orgOptions.length === 1 ? (
+                <div className="rounded-xl border bg-muted/30 p-3 text-sm">
+                  <div className="text-xs text-muted-foreground">
+                    Onboarding Org
+                  </div>
+                  <div className="mt-1 font-medium">
+                    {orgOptions[0]?.pc_org_name ??
+                      orgOptions[0]?.fulfillment_center_name ??
+                      "Selected org"}
+                  </div>
+                </div>
+              ) : orgLoading ? (
+                <div className="rounded-xl border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Loading onboarding org…
+                </div>
+              ) : (
+                <div className="rounded-xl border border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_8%,white)] p-3 text-sm">
+                  No onboarding org options available.
+                </div>
+              )}
+
+              <div className="rounded-xl border bg-muted/30 p-3 text-xs">
+                <div className="text-muted-foreground">Current Stored Org</div>
+                <div className="mt-1 font-medium">
+                  {selectedOnboardingOrg?.pc_org_name ??
+                    selectedOnboardingOrg?.fulfillment_center_name ??
+                    p.onboarding_pc_org_name ??
+                    "Not resolved"}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-4 rounded-2xl border p-4">
           <div className="text-sm font-semibold">Unique Identifiers</div>

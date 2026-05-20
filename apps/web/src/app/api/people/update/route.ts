@@ -19,6 +19,7 @@ type RequestBody = {
   mobile?: string | null;
   email?: string | null;
   prospecting_affiliation_id?: string | null;
+  onboarding_pc_org_id?: string | null;
 };
 
 function clean(value: unknown): string | null {
@@ -83,6 +84,7 @@ export async function POST(req: Request) {
     p_mobile: clean(body.mobile),
     p_email: clean(body.email),
     p_prospecting_affiliation_id: clean(body.prospecting_affiliation_id),
+    p_onboarding_pc_org_id: clean(body.onboarding_pc_org_id),
   });
 
   if (error) {

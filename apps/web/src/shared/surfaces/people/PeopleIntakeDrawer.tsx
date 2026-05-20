@@ -13,11 +13,20 @@ export type PeopleIntakeCreatedPerson = {
   nt_login: string | null;
   csg: string | null;
   prospecting_affiliation_id: string | null;
+  onboarding_pc_org_id: string | null;
+  onboarding_pc_org_name: string | null;
 };
 
 type AffiliationOption = {
   affiliation_id: string;
   affiliation_label: string;
+};
+
+type OnboardingOrgOption = {
+  pc_org_id: string;
+  pc_org_name: string | null;
+  fulfillment_center_name: string | null;
+  is_selected: boolean;
 };
 
 type DuplicateMatch = {
@@ -60,12 +69,52 @@ export function PeopleIntakeDrawer({
     email: "",
     nt_login: "",
     csg: "",
+    onboarding_pc_org_id: "",
   });
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
+  const [orgOptions, setOrgOptions] = useState<OnboardingOrgOption[]>([]);
+  const [orgLoading, setOrgLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    async function loadOrgOptions() {
+      setOrgLoading(true);
+
+      const res = await fetch("/api/people/onboarding-org-options");
+      const json = await res.json().catch(() => null);
+
+      if (cancelled) return;
+
+      const rows = Array.isArray(json?.rows) ? json.rows : [];
+      setOrgOptions(rows);
+
+      const selected =
+        rows.find((row: OnboardingOrgOption) => row.is_selected) ?? rows[0];
+
+      if (selected?.pc_org_id) {
+        setDraft((current) => ({
+          ...current,
+          onboarding_pc_org_id:
+            current.onboarding_pc_org_id || selected.pc_org_id,
+        }));
+      }
+
+      setOrgLoading(false);
+    }
+
+    loadOrgOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -149,6 +198,7 @@ export function PeopleIntakeDrawer({
         email: clean(draft.email),
         nt_login: clean(draft.nt_login),
         csg: clean(draft.csg),
+        onboarding_pc_org_id: clean(draft.onboarding_pc_org_id),
       }),
     });
 
@@ -167,6 +217,8 @@ export function PeopleIntakeDrawer({
       full_name: draft.full_name.trim(),
       tech_id: clean(draft.tech_id),
       prospecting_affiliation_id: clean(draft.prospecting_affiliation_id),
+      onboarding_pc_org_id: json.onboarding_pc_org_id ?? null,
+      onboarding_pc_org_name: json.onboarding_pc_org_name ?? null,
       mobile: clean(draft.mobile),
       email: clean(draft.email),
       nt_login: clean(draft.nt_login),
@@ -181,6 +233,7 @@ export function PeopleIntakeDrawer({
       email: "",
       nt_login: "",
       csg: "",
+      onboarding_pc_org_id: "",
     });
 
     setDuplicateMatches([]);
@@ -210,6 +263,45 @@ export function PeopleIntakeDrawer({
             Close
           </button>
         </div>
+
+        {orgOptions.length > 1 ? (
+          <div className="mt-5 rounded-2xl border p-4">
+            <div className="text-sm font-semibold">Onboarding Org</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Defaults to your selected org. Change only when creating this onboarding record for another org in your scope.
+            </div>
+
+            <select
+              value={draft.onboarding_pc_org_id}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  onboarding_pc_org_id: event.target.value,
+                })
+              }
+              className="mt-3 h-10 w-full rounded-xl border px-3 text-sm"
+            >
+              {orgOptions.map((org) => (
+                <option key={org.pc_org_id} value={org.pc_org_id}>
+                  {org.pc_org_name ?? org.fulfillment_center_name ?? org.pc_org_id}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : orgOptions.length === 1 ? (
+          <div className="mt-5 rounded-2xl border bg-muted/30 p-4">
+            <div className="text-sm font-semibold">Onboarding Org</div>
+            <div className="mt-1 text-sm">
+              {orgOptions[0]?.pc_org_name ??
+                orgOptions[0]?.fulfillment_center_name ??
+                "Selected org"}
+            </div>
+          </div>
+        ) : orgLoading ? (
+          <div className="mt-5 rounded-2xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+            Loading onboarding org…
+          </div>
+        ) : null}
 
         {hasDuplicateSignal && (duplicateMatches.length > 0 || duplicateLoading) ? (
           <div className="mt-5 rounded-2xl border border-[var(--to-warning)] bg-[color-mix(in_oklab,var(--to-warning)_8%,white)] p-4">
