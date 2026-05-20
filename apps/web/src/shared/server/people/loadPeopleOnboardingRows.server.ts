@@ -18,6 +18,7 @@ export type PeopleOnboardingRow = {
   active_orgs: string | null;
   created_at?: string | null;
   onboarding_date?: string | null;
+  days_in_pipeline?: number | null;
 };
 
 export async function loadPeopleOnboardingRows(args: {
@@ -35,7 +36,36 @@ export async function loadPeopleOnboardingRows(args: {
     throw new Error(error.message);
   }
 
-  return (data ?? []) as PeopleOnboardingRow[];
+  return ((data ?? []) as PeopleOnboardingRow[]).map((row) => {
+    const dateValue = row.onboarding_date ?? row.created_at;
+
+    if (!dateValue) {
+      return {
+        ...row,
+        days_in_pipeline: null,
+      };
+    }
+
+    const start = new Date(String(dateValue).slice(0, 10));
+    const today = new Date();
+
+    const diffMs =
+      new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate()
+      ).getTime() -
+      new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate()
+      ).getTime();
+
+    return {
+      ...row,
+      days_in_pipeline: Math.max(0, Math.floor(diffMs / 86400000)),
+    };
+  });
 }
 
 export function getActivePeopleOnboardingRows(

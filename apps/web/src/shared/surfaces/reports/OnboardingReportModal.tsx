@@ -20,6 +20,7 @@ export type OnboardingReportRow = {
   active_orgs: string | null;
   created_at?: string | null;
   onboarding_date?: string | null;
+  days_in_pipeline?: number | null;
 };
 
 type Props = {
@@ -47,15 +48,12 @@ function displayDate(row: OnboardingReportRow) {
 
 function buildCsv(rows: OnboardingReportRow[]) {
   const output = [
-    ["Person", "Tech ID", "Affiliation", "Affiliation Code", "Mobile", "Email", "Date Added"],
+    ["Person", "Tech ID", "Date Added", "Days in Pipeline"],
     ...rows.map((row) => [
       row.full_name ?? "—",
       row.tech_id ?? "—",
-      row.affiliation ?? "—",
-      row.affiliation_code ?? "—",
-      row.mobile ?? "—",
-      row.email ?? "—",
       displayDate(row),
+      row.days_in_pipeline ?? "—",
     ]),
   ];
 
@@ -153,12 +151,10 @@ export function OnboardingReportModal({
 
             th { background: #f3f4f6; }
 
-            th:nth-child(1), td:nth-child(1) { width: 24%; }
-            th:nth-child(2), td:nth-child(2) { width: 12%; }
-            th:nth-child(3), td:nth-child(3) { width: 22%; }
-            th:nth-child(4), td:nth-child(4) { width: 12%; }
-            th:nth-child(5), td:nth-child(5) { width: 15%; }
-            th:nth-child(6), td:nth-child(6) { width: 15%; }
+            th:nth-child(1), td:nth-child(1) { width: 44%; }
+            th:nth-child(2), td:nth-child(2) { width: 16%; }
+            th:nth-child(3), td:nth-child(3) { width: 20%; }
+            th:nth-child(4), td:nth-child(4) { width: 20%; }
           </style>
         </head>
         <body>${html}</body>
@@ -214,10 +210,8 @@ export function OnboardingReportModal({
                     <tr>
                       <th className="border px-2 py-1 text-left">Person</th>
                       <th className="border px-2 py-1 text-left">Tech ID</th>
-                      <th className="border px-2 py-1 text-left">Affiliation</th>
-                      <th className="border px-2 py-1 text-left">Code</th>
-                      <th className="border px-2 py-1 text-left">Mobile</th>
                       <th className="border px-2 py-1 text-left">Date Added</th>
+                      <th className="border px-2 py-1 text-left">Days in Pipeline</th>
                     </tr>
                   </thead>
 
@@ -226,10 +220,10 @@ export function OnboardingReportModal({
                       <tr key={row.person_id}>
                         <td className="border px-2 py-1">{row.full_name ?? "—"}</td>
                         <td className="border px-2 py-1">{row.tech_id ?? "—"}</td>
-                        <td className="border px-2 py-1">{row.affiliation ?? "—"}</td>
-                        <td className="border px-2 py-1">{row.affiliation_code ?? "—"}</td>
-                        <td className="border px-2 py-1">{row.mobile ?? "—"}</td>
                         <td className="border px-2 py-1">{displayDate(row)}</td>
+                        <td className="border px-2 py-1">
+                          {row.days_in_pipeline ?? "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
