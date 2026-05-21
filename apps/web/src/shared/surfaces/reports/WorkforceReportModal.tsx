@@ -15,9 +15,7 @@ type Props = {
 
 function csvEscape(value: unknown) {
   const text = String(value ?? "");
-
   if (!/[",\n]/.test(text)) return text;
-
   return `"${text.replaceAll('"', '""')}"`;
 }
 
@@ -40,11 +38,7 @@ function isLeadershipAboveManager(row: WorkforceRow) {
 }
 
 function shouldIncludeReportRow(row: WorkforceRow) {
-  if (isUnassignedSupervisor(row) && isLeadershipAboveManager(row)) {
-    return false;
-  }
-
-  return true;
+  return !(isUnassignedSupervisor(row) && isLeadershipAboveManager(row));
 }
 
 function displayTechId(row: WorkforceRow) {
@@ -56,18 +50,26 @@ function displayTechId(row: WorkforceRow) {
   return techId;
 }
 
+function displayAffiliate(row: WorkforceRow) {
+  return row.affiliation ?? "Unassigned Affiliate";
+}
+
+function countSeat(rows: WorkforceRow[], seatType: string) {
+  return rows.filter((row) => row.seat_type === seatType).length;
+}
+
 function buildCsv(rows: WorkforceRow[]) {
   const reportRows = rows.filter(shouldIncludeReportRow);
 
   const output = [
-    ["Supervisor", "Person", "Tech ID", "Role", "Seat"],
-
+    ["Affiliate", "Person", "Tech ID", "Role", "Seat", "Reports To"],
     ...reportRows.map((row) => [
-      row.reports_to_name ?? "Unassigned",
+      displayAffiliate(row),
       row.display_name ?? "—",
       displayTechId(row),
       row.position_title ?? "—",
       row.seat_type ?? "—",
+      row.reports_to_name ?? "Unassigned",
     ]),
   ];
 
@@ -89,26 +91,51 @@ export function WorkforceReportModal({
   );
 
   const grouped = useMemo(() => {
-    const map = new Map<string, WorkforceRow[]>();
+    const affiliateMap = new Map<string, WorkforceRow[]>();
 
     for (const row of reportRows) {
-      const supervisor =
-        row.reports_to_name && row.reports_to_name !== "Unassigned"
-          ? row.reports_to_name
-          : "Unassigned";
+      const affiliate = displayAffiliate(row);
 
-      if (!map.has(supervisor)) {
-        map.set(supervisor, []);
+      if (!affiliateMap.has(affiliate)) {
+        affiliateMap.set(affiliate, []);
       }
 
-      map.get(supervisor)!.push(row);
+      affiliateMap.get(affiliate)!.push(row);
     }
 
-    return Array.from(map.entries()).sort((a, b) => {
-      if (a[0] === "Unassigned") return 1;
-      if (b[0] === "Unassigned") return -1;
-      return a[0].localeCompare(b[0]);
-    });
+    return Array.from(affiliateMap.entries())
+      .map(([affiliate, team]) => ({
+        affiliate,
+        totalCount: team.length,
+        team: team.sort((a, b) => {
+          const roleRank = (row: WorkforceRow) => {
+            switch (row.seat_type) {
+              case "LEADERSHIP":
+                return 0;
+              case "TRAINING":
+                return 1;
+              case "FIELD":
+                return 2;
+              case "TRAVEL":
+                return 3;
+              case "DROP_BURY":
+                return 4;
+              case "FMLA":
+                return 5;
+              default:
+                return 9;
+            }
+          };
+
+          const seatDiff = roleRank(a) - roleRank(b);
+          if (seatDiff !== 0) return seatDiff;
+
+          return String(a.display_name ?? "").localeCompare(
+            String(b.display_name ?? "")
+          );
+        }),
+      }))
+      .sort((a, b) => a.affiliate.localeCompare(b.affiliate));
   }, [reportRows]);
 
   if (!open) return null;
@@ -153,19 +180,40 @@ export function WorkforceReportModal({
             .subhead {
               font-size: 12px;
               color: #4b5563;
+              margin-bottom: 6px;
+            }
+
+            .report-note {
+              font-size: 11px;
+              color: #6b7280;
               margin-bottom: 20px;
             }
 
             h2 {
-              font-size: 15px;
-              margin: 22px 0 8px;
+              font-size: 16px;
+              margin: 0 0 12px;
               page-break-after: avoid;
             }
 
             .group {
               break-inside: avoid;
               page-break-inside: avoid;
-              margin-bottom: 18px;
+              margin-bottom: 28px;
+            }
+
+            .summary {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 6px;
+              margin: 0 0 14px;
+            }
+
+            .summary span {
+              border: 1px solid #d1d5db;
+              border-radius: 999px;
+              padding: 4px 8px;
+              font-size: 11px;
+              color: #4b5563;
             }
 
             table {
@@ -193,22 +241,27 @@ export function WorkforceReportModal({
 
             th:nth-child(1),
             td:nth-child(1) {
-              width: 42%;
+              width: 28%;
             }
 
             th:nth-child(2),
             td:nth-child(2) {
-              width: 18%;
+              width: 14%;
             }
 
             th:nth-child(3),
             td:nth-child(3) {
-              width: 25%;
+              width: 24%;
             }
 
             th:nth-child(4),
             td:nth-child(4) {
-              width: 15%;
+              width: 14%;
+            }
+
+            th:nth-child(5),
+            td:nth-child(5) {
+              width: 20%;
             }
           </style>
         </head>
@@ -228,7 +281,6 @@ export function WorkforceReportModal({
         <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold">Workforce Report</h2>
-
             <div className="text-sm text-muted-foreground">
               {regionLabel} • {reportMonthLabel}
             </div>
@@ -260,61 +312,117 @@ export function WorkforceReportModal({
 
         <div ref={printRef} className="flex-1 overflow-y-auto px-5 py-4">
           <h1>{regionLabel} Workforce Report</h1>
-
           <div className="subhead">{reportMonthLabel}</div>
+          <div className="report-note">
+            * Reports to a person not listed in the same affiliate group.
+          </div>
 
           {reportRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               No workforce data found.
             </div>
           ) : (
-            grouped.map(([supervisor, team]) => (
-              <div key={supervisor} className="mb-6 group">
-                <h2>
-                  {supervisor} ({team.length})
-                </h2>
+            grouped.map((affiliateGroup) => {
+              const memberNames = new Set(
+                affiliateGroup.team
+                  .map((member) => member.display_name)
+                  .filter(Boolean)
+              );
 
-                <table className="w-full table-fixed border-collapse text-sm">
-                  <colgroup>
-                    <col style={{ width: "42%" }} />
-                    <col style={{ width: "18%" }} />
-                    <col style={{ width: "25%" }} />
-                    <col style={{ width: "15%" }} />
-                  </colgroup>
+              const fieldCount = countSeat(affiliateGroup.team, "FIELD");
+              const travelCount = countSeat(affiliateGroup.team, "TRAVEL");
+              const dropBuryCount = countSeat(affiliateGroup.team, "DROP_BURY");
 
-                  <thead>
-                    <tr>
-                      <th className="border px-2 py-1 text-left">Person</th>
-                      <th className="border px-2 py-1 text-left">Tech ID</th>
-                      <th className="border px-2 py-1 text-left">Role</th>
-                      <th className="border px-2 py-1 text-left">Seat</th>
-                    </tr>
-                  </thead>
+              return (
+                <div
+                  key={affiliateGroup.affiliate}
+                  className="group mb-10 rounded-2xl border border-[var(--to-border)] bg-[var(--to-surface)] p-4"
+                >
+                  <h2 className="mb-3 text-lg font-semibold">
+                    {affiliateGroup.affiliate} ({affiliateGroup.totalCount})
+                  </h2>
 
-                  <tbody>
-                    {team.map((row) => (
-                      <tr key={`${row.assignment_id}:${row.person_id}`}>
-                        <td className="border px-2 py-1 truncate">
-                          {row.display_name ?? "—"}
-                        </td>
+                  <div className="summary mb-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full border px-2 py-1">
+                      HC {affiliateGroup.totalCount}
+                    </span>
 
-                        <td className="border px-2 py-1">
-                          {displayTechId(row)}
-                        </td>
+                    <span className="rounded-full border px-2 py-1">
+                      {fieldCount} Field
+                    </span>
 
-                        <td className="border px-2 py-1">
-                          {row.position_title ?? "—"}
-                        </td>
+                    <span className="rounded-full border px-2 py-1">
+                      {travelCount} Travel
+                    </span>
 
-                        <td className="border px-2 py-1">
-                          {row.seat_type ?? "—"}
-                        </td>
+                    {dropBuryCount > 0 ? (
+                      <span className="rounded-full border px-2 py-1">
+                        {dropBuryCount} Drop Bury
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <table className="w-full table-fixed border-collapse text-sm">
+                    <colgroup>
+                      <col style={{ width: "28%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "24%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "20%" }} />
+                    </colgroup>
+
+                    <thead>
+                      <tr>
+                        <th className="border px-2 py-1 text-left">Person</th>
+                        <th className="border px-2 py-1 text-left">Tech ID</th>
+                        <th className="border px-2 py-1 text-left">Role</th>
+                        <th className="border px-2 py-1 text-left">Seat</th>
+                        <th className="border px-2 py-1 text-left">
+                          Reports To
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ))
+                    </thead>
+
+                    <tbody>
+                      {affiliateGroup.team.map((row) => {
+                        const reportsTo = row.reports_to_name ?? "Unassigned";
+                        const oversight =
+                          reportsTo !== "Unassigned" &&
+                            reportsTo !== row.display_name &&
+                            !memberNames.has(reportsTo)
+                            ? "*"
+                            : "";
+
+                        return (
+                          <tr key={`${row.assignment_id}:${row.person_id}`}>
+                            <td className="border px-2 py-1 truncate">
+                              {row.display_name ?? "—"}
+                            </td>
+
+                            <td className="border px-2 py-1">
+                              {displayTechId(row)}
+                            </td>
+
+                            <td className="border px-2 py-1">
+                              {row.position_title ?? "—"}
+                            </td>
+
+                            <td className="border px-2 py-1">
+                              {row.seat_type ?? "—"}
+                            </td>
+
+                            <td className="border px-2 py-1">
+                              {reportsTo}
+                              {oversight ? " *" : ""}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })
           )}
         </div>
       </div>

@@ -1,6 +1,7 @@
 // path: apps/web/src/features/role-director/components/DirectorExecutiveSuiteClient.tsx
 
 import Link from "next/link";
+import { Fragment } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -16,7 +17,11 @@ import type {
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
 import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
 
-type DirectorDimensionKey = "overview" | "workforce" | "metrics" | "route-lock";
+type DirectorDimensionKey =
+  | "overview"
+  | "workforce"
+  | "metrics"
+  | "route-lock";
 
 type WorkforceReportsPayload = {
   rows: WorkforceRow[];
@@ -25,6 +30,38 @@ type WorkforceReportsPayload = {
   regionLabel: string;
   reportMonthLabel: string;
 };
+
+type StaffingTotals = {
+  hc: number;
+  local: number;
+  travel: number;
+  onboarding: number;
+  training: number;
+};
+
+function metricNumber(value: unknown) {
+  const next = Number(value ?? 0);
+  return Number.isFinite(next) ? next : 0;
+}
+
+function sumStaffing(cards: ExecutiveArtifactCard[]): StaffingTotals {
+  return cards.reduce(
+    (total, card) => ({
+      hc: total.hc + metricNumber(card.meta?.hc ?? card.value),
+      local: total.local + metricNumber(card.meta?.local),
+      travel: total.travel + metricNumber(card.meta?.travel),
+      onboarding: total.onboarding + metricNumber(card.meta?.onboarding),
+      training: total.training + metricNumber(card.meta?.training),
+    }),
+    {
+      hc: 0,
+      local: 0,
+      travel: 0,
+      onboarding: 0,
+      training: 0,
+    }
+  );
+}
 
 function statusVariant(
   status: ExecutiveArtifactStatus
@@ -42,7 +79,10 @@ function statusLabel(status: ExecutiveArtifactStatus) {
   return status;
 }
 
-function dimensionMatchesActive(dimension: string, active: DirectorDimensionKey) {
+function dimensionMatchesActive(
+  dimension: string,
+  active: DirectorDimensionKey
+) {
   if (active === "overview") return true;
   if (active === "workforce") return dimension === "workforce";
   if (active === "metrics") return dimension === "metrics";
@@ -65,15 +105,21 @@ function sectionCards(
   return artifact.cards.filter((card) => card.meta?.section === section);
 }
 
-function ArtifactHeader({ artifact }: { artifact: ExecutiveDimensionArtifact }) {
+function ArtifactHeader({
+  artifact,
+}: {
+  artifact: ExecutiveDimensionArtifact;
+}) {
   return (
     <div className="flex items-start justify-between gap-2">
       <div>
         <div className="text-sm font-medium">{artifact.title}</div>
+
         <div className="mt-1 text-xs text-[var(--to-ink-muted)]">
           {artifact.description}
         </div>
       </div>
+
       <Badge variant={statusVariant(artifact.status)}>
         {statusLabel(artifact.status)}
       </Badge>
@@ -84,37 +130,41 @@ function ArtifactHeader({ artifact }: { artifact: ExecutiveDimensionArtifact }) 
 function TotalStrip({ cards }: { cards: ExecutiveArtifactCard[] }) {
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
-      <div className="grid grid-cols-3 bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-        {cards.map((card) => (
-          <div key={card.key}>{card.label}</div>
-        ))}
-      </div>
+      {cards.map((card) => {
+        const local = card.meta?.local;
+        const travel = card.meta?.travel;
 
-      <div className="grid grid-cols-3 border-t border-[var(--to-border)] px-3 py-3 text-xs">
-        {cards.map((card) => (
-          <div key={card.key}>
-            <div className="text-lg font-semibold tabular-nums">
+        const helper =
+          local !== undefined || travel !== undefined
+            ? `${String(local ?? 0)} local • ${String(
+              travel ?? 0
+            )} travel${card.helper ? ` | ${card.helper}` : ""}`
+            : card.helper ?? "";
+
+        return (
+          <div
+            key={card.key}
+            className="grid grid-cols-[1fr_72px_1.5fr] border-t border-[var(--to-border)] px-3 py-2 text-xs first:border-t-0"
+          >
+            <div className="font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+              {card.label}
+            </div>
+
+            <div className="text-center text-base font-semibold tabular-nums">
               {card.value}
             </div>
-            {card.helper ? (
-              <div className="mt-0.5 text-[11px] text-[var(--to-ink-muted)]">
-                {card.helper}
-              </div>
-            ) : null}
+
+            <div className="text-right text-[11px] text-[var(--to-ink-muted)]">
+              {helper}
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
 
-function WorkforceRowGrid({
-  cards,
-  showOnboarding,
-}: {
-  cards: ExecutiveArtifactCard[];
-  showOnboarding?: boolean;
-}) {
+function WorkforceRowGrid({ cards }: { cards: ExecutiveArtifactCard[] }) {
   if (!cards.length) {
     return (
       <div className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-xs text-[var(--to-ink-muted)]">
@@ -125,61 +175,48 @@ function WorkforceRowGrid({
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
-      <div
-        className={
-          showOnboarding
-            ? "grid grid-cols-[1fr_64px_96px_80px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]"
-            : "grid grid-cols-[1fr_72px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]"
-        }
-      >
-        <div>{showOnboarding ? "BP Name" : "Office"}</div>
-        <div className="text-right">HC</div>
-        {showOnboarding ? <div className="text-right">Onboarding</div> : null}
-        {showOnboarding ? <div className="text-right">Training</div> : null}
-      </div>
+      <table className="w-full table-fixed border-collapse text-xs">
+        <colgroup>
+          <col style={{ width: "48%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "19%" }} />
+          <col style={{ width: "19%" }} />
+        </colgroup>
 
-      {cards.map((card) => (
-        <div
-          key={card.key}
-          className={
-            showOnboarding
-              ? "grid grid-cols-[1fr_64px_96px_80px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
-              : "grid grid-cols-[1fr_72px] border-t border-[var(--to-border)] px-3 py-2 text-xs"
-          }
-        >
-          <div className="font-medium">{card.label}</div>
-          <div className="text-right tabular-nums">
-            {String(card.meta?.hc ?? card.value)}
-          </div>
-          {showOnboarding ? (
-            <div className="text-right tabular-nums">
-              {String(card.meta?.onboarding ?? 0)}
-            </div>
-          ) : null}
-          {showOnboarding ? (
-            <div className="text-right tabular-nums">
-              {String(card.meta?.training ?? 0)}
-            </div>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
+        <thead>
+          <tr className="border-b border-[var(--to-border)] bg-[var(--to-surface-soft)]">
+            <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+              Office
+            </th>
+            <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+              HC
+            </th>
+            <th className="bg-[color-mix(in_oklab,var(--to-accent)_6%,var(--to-surface-soft))] px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
+              Local
+            </th>
+            <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+              Travel
+            </th>
+          </tr>
+        </thead>
 
-function StaffingRow({ card }: { card: ExecutiveArtifactCard }) {
-  return (
-    <div className="grid grid-cols-[1fr_72px_96px_80px] border-t border-[var(--to-border)] px-3 py-2 text-xs">
-      <div className="font-medium">{card.label}</div>
-      <div className="text-right tabular-nums">
-        {String(card.meta?.hc ?? card.value)}
-      </div>
-      <div className="text-right tabular-nums">
-        {String(card.meta?.onboarding ?? 0)}
-      </div>
-      <div className="text-right tabular-nums">
-        {String(card.meta?.training ?? 0)}
-      </div>
+        <tbody>
+          {cards.map((card) => (
+            <tr key={card.key} className="border-b border-[var(--to-border)]">
+              <td className="px-3 py-2 font-medium">{card.label}</td>
+              <td className="px-2 py-2 text-center tabular-nums">
+                {String(card.meta?.hc ?? card.value)}
+              </td>
+              <td className="bg-[color-mix(in_oklab,var(--to-accent)_4%,transparent)] px-2 py-2 text-center tabular-nums">
+                {String(card.meta?.local ?? 0)}
+              </td>
+              <td className="px-2 py-2 text-center tabular-nums">
+                {String(card.meta?.travel ?? 0)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -189,10 +226,16 @@ function WorkforceCompositionArtifact({
 }: {
   artifact: ExecutiveDimensionArtifact;
 }) {
-  const totalCards = sectionCards(artifact, "total_strip");
+  const totalCards = sectionCards(artifact, "total_strip").filter(
+    (card) => card.key !== "all_in_hc"
+  );
+
   const staffingCards = sectionCards(artifact, "staffing_summary");
   const bpCards = sectionCards(artifact, "bp_breakout");
   const officeCards = sectionCards(artifact, "office_grid");
+
+  const staffingRows = [...staffingCards, ...bpCards];
+  const totals = sumStaffing(staffingRows);
 
   return (
     <div className="rounded-2xl border border-[var(--to-border)] p-3">
@@ -203,6 +246,7 @@ function WorkforceCompositionArtifact({
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
             Headcount Mix
           </div>
+
           <TotalStrip cards={totalCards} />
         </section>
 
@@ -212,30 +256,86 @@ function WorkforceCompositionArtifact({
           </div>
 
           <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
-            <div className="grid grid-cols-[1fr_72px_96px_80px] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-              <div>Group</div>
-              <div className="text-right">HC</div>
-              <div className="text-right">Onboarding</div>
-              <div className="text-right">Training</div>
-            </div>
+            <table className="w-full border-collapse table-fixed text-xs">
+              <colgroup>
+                <col style={{ width: "40%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "12%" }} />
+              </colgroup>
 
-            {staffingCards.map((card) => (
-              <StaffingRow key={card.key} card={card} />
-            ))}
+              <thead>
+                <tr className="border-b border-[var(--to-border)] bg-[var(--to-surface-soft)]">
+                  <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+                    Group
+                  </th>
+                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+                    HC
+                  </th>
+                  <th className="bg-[color-mix(in_oklab,var(--to-accent)_6%,var(--to-surface-soft))] px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
+                    Local
+                  </th>
+                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+                    Travel
+                  </th>
+                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+                    Onboarding
+                  </th>
+                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
+                    Training
+                  </th>
+                </tr>
+              </thead>
 
-            {bpCards.map((card, index) => (
-              <div
-                key={card.key}
-                className={[
-                  "border-t",
-                  index === 0
-                    ? "border-t-2 border-[var(--to-border)]"
-                    : "border-[var(--to-border)]",
-                ].join(" ")}
-              >
-                <StaffingRow card={card} />
-              </div>
-            ))}
+              <tbody>
+                {staffingRows.map((card) => (
+                  <tr
+                    key={card.key}
+                    className="border-b border-[var(--to-border)]"
+                  >
+                    <td className="px-3 py-2 font-medium">{card.label}</td>
+                    <td className="px-2 py-2 text-center tabular-nums">
+                      {String(card.meta?.hc ?? card.value)}
+                    </td>
+                    <td className="bg-[color-mix(in_oklab,var(--to-accent)_4%,transparent)] px-2 py-2 text-center tabular-nums">
+                      {String(card.meta?.local ?? 0)}
+                    </td>
+                    <td className="px-2 py-2 text-center tabular-nums">
+                      {String(card.meta?.travel ?? 0)}
+                    </td>
+                    <td className="px-2 py-2 text-center tabular-nums">
+                      {String(card.meta?.onboarding ?? 0)}
+                    </td>
+                    <td className="px-2 py-2 text-center tabular-nums">
+                      {String(card.meta?.training ?? 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+
+              <tfoot>
+                <tr className="bg-[var(--to-surface-soft)] font-semibold">
+                  <td className="px-3 py-2">Total</td>
+                  <td className="px-2 py-2 text-center tabular-nums">
+                    {totals.hc}
+                  </td>
+                  <td className="bg-[color-mix(in_oklab,var(--to-accent)_8%,var(--to-surface-soft))] px-2 py-2 text-center tabular-nums">
+                    {totals.local}
+                  </td>
+                  <td className="bg-[var(--to-surface-soft)] px-2 py-2 text-center tabular-nums">
+                    {totals.travel}
+                  </td>
+                  <td className="px-2 py-2 text-center tabular-nums">
+                    {totals.onboarding}
+                  </td>
+                  <td className="px-2 py-2 text-center tabular-nums">
+                    {totals.training}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </section>
 
@@ -243,6 +343,7 @@ function WorkforceCompositionArtifact({
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
             Office Mix
           </div>
+
           <WorkforceRowGrid cards={officeCards} />
         </section>
       </div>
@@ -290,124 +391,16 @@ function WorkforceReportsArtifact({
             Org Chart
           </button>
         </div>
-      ) : (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {artifact.cards.map((card) => (
-            <Link
-              key={card.key}
-              href="/director/executive?dimension=workforce"
-              className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-sm font-semibold hover:bg-muted/20"
-            >
-              {card.value}
-            </Link>
-          ))}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function RouteLockSevenDayArtifact(props: {
+function StandardArtifact({
+  artifact,
+}: {
   artifact: ExecutiveDimensionArtifact;
 }) {
-  const { artifact } = props;
-
-  function lockTone(lockStatus: string) {
-    if (lockStatus === "MET" || lockStatus === "MEETS") {
-      return "text-[rgba(16,185,129,0.95)]";
-    }
-
-    if (lockStatus === "MISSED" || lockStatus === "MISSES") {
-      return "text-[rgba(239,68,68,0.95)]";
-    }
-
-    return "text-[var(--to-ink-muted)]";
-  }
-
-  function eligibleTone(meta: ExecutiveArtifactCard["meta"]) {
-    const eligible = Number(meta?.eligible ?? NaN);
-    const quota = Number(meta?.quota ?? NaN);
-
-    if (!Number.isFinite(eligible) || !Number.isFinite(quota)) {
-      return "text-[var(--to-ink-muted)]";
-    }
-
-    if (eligible >= quota) return "text-[rgba(16,185,129,0.95)]";
-    if (quota > 0 && eligible >= quota * 0.9) return "text-[rgba(245,158,11,0.95)]";
-
-    return "text-[rgba(239,68,68,0.95)]";
-  }
-
-  return (
-    <div className="rounded-2xl border border-[var(--to-border)] p-3">
-      <ArtifactHeader artifact={artifact} />
-
-      {artifact.cards.length ? (
-        <div className="mt-3 overflow-hidden rounded-xl border border-[var(--to-border)]">
-          <div className="grid grid-cols-[1.1fr_0.75fr_0.8fr_0.8fr_0.8fr] bg-[var(--to-surface-soft)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-            <div>Date</div>
-            <div>Phase</div>
-            <div className="text-right">Quota</div>
-            <div className="text-right">Eligible</div>
-            <div className="text-right">Lock</div>
-          </div>
-
-          {artifact.cards.map((card) => {
-            const lockStatus = String(card.meta?.lock_status ?? "—");
-            const quota =
-              card.meta?.quota === null || card.meta?.quota === undefined
-                ? "—"
-                : String(card.meta.quota);
-            const eligible =
-              card.meta?.eligible === null || card.meta?.eligible === undefined
-                ? "—"
-                : String(card.meta.eligible);
-            const phase = String(card.meta?.phase ?? "—");
-            const isToday = card.meta?.is_today === true;
-
-            return (
-              <div
-                key={card.key}
-                className={[
-                  "grid grid-cols-[1.1fr_0.75fr_0.8fr_0.8fr_0.8fr] border-t border-[var(--to-border)] px-3 py-2 text-xs tabular-nums",
-                  isToday ? "bg-[rgba(37,99,235,0.06)]" : "",
-                ].join(" ")}
-              >
-                <div className="font-medium">
-                  {card.label}
-                  {isToday ? (
-                    <span className="ml-2 rounded-full border px-1.5 py-0.5 text-[10px] text-[var(--to-ink-muted)]">
-                      Today
-                    </span>
-                  ) : null}
-                </div>
-                <div className="text-[var(--to-ink-muted)]">{phase}</div>
-                <div className="text-right">{quota}</div>
-                <div className={`text-right font-semibold ${eligibleTone(card.meta)}`}>
-                  {eligible}
-                </div>
-                <div className={`text-right font-semibold ${lockTone(lockStatus)}`}>
-                  {lockStatus}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="mt-3 text-xs text-[var(--to-ink-muted)]">
-          No cards returned yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StandardArtifact(props: {
-  artifact: ExecutiveDimensionArtifact;
-  dimension: string;
-}) {
-  const { artifact } = props;
-
   return (
     <div className="rounded-2xl border border-[var(--to-border)] p-3">
       <ArtifactHeader artifact={artifact} />
@@ -422,7 +415,9 @@ function StandardArtifact(props: {
               <div className="text-[11px] uppercase tracking-wide text-[var(--to-ink-muted)]">
                 {card.label}
               </div>
+
               <div className="mt-1 text-lg font-semibold">{card.value}</div>
+
               {card.helper ? (
                 <div className="text-[11px] text-[var(--to-ink-muted)]">
                   {card.helper}
@@ -442,7 +437,6 @@ function StandardArtifact(props: {
 
 function ExecutiveArtifactRenderer({
   artifact,
-  dimension,
   workforceReports,
 }: {
   artifact: ExecutiveDimensionArtifact;
@@ -462,11 +456,7 @@ function ExecutiveArtifactRenderer({
     );
   }
 
-  if (artifact.key === "route_lock_7_day") {
-    return <RouteLockSevenDayArtifact artifact={artifact} />;
-  }
-
-  return <StandardArtifact artifact={artifact} dimension={dimension} />;
+  return <StandardArtifact artifact={artifact} />;
 }
 
 export default function DirectorExecutiveSuiteClient({
@@ -490,11 +480,13 @@ export default function DirectorExecutiveSuiteClient({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold">{dimension.title}</h2>
+
                 <p className="text-xs text-[var(--to-ink-muted)]">
                   {dimension.artifacts.length} artifact pipeline
                   {dimension.artifacts.length === 1 ? "" : "s"}
                 </p>
               </div>
+
               <Badge variant={statusVariant(dimension.status)}>
                 {statusLabel(dimension.status)}
               </Badge>
