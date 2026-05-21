@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { HomeWidgetPayload } from "../../contracts/widget.types";
+import type { HomeWidgetPayload } from "@/shared/widgets/contracts/widget.types";
 
 export function QuickActionsWidget(props: {
   payload: HomeWidgetPayload["quick_actions"];

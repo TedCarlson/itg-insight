@@ -1,44 +1,97 @@
-import { Card } from "@/components/ui/Card";
-import type { HomeSurfacePayload } from "../contracts/home.types";
-import { HomeSection } from "./HomeSection";
+"use client";
+
+import { useMemo, useState } from "react";
+
+import { WorkspaceBuilderPreview } from "../builder/WorkspaceBuilderPreview";
+
+import type {
+  HomeLayoutConfig,
+  HomeSurfacePayload,
+} from "../contracts/home.types";
+
+import {
+  resolveWorkspacePreset,
+  type WorkspacePresetKey,
+} from "../config/presetRegistry";
+
+import { HomeWorkspace } from "./HomeWorkspace";
+import { HomeWorkspaceControlStrip } from "./HomeWorkspaceControlStrip";
 
 export function HomeSurface(props: {
   payload: HomeSurfacePayload;
 }) {
-  const { payload } = props;
-  const displayName = payload.context.full_name ?? "there";
-  const orgLabel = payload.context.org_label ?? "No org selected";
+  const [
+    preset,
+    setPreset,
+  ] =
+    useState<WorkspacePresetKey>(
+      "default",
+    );
+
+  const [
+    builderOpen,
+    setBuilderOpen,
+  ] = useState(false);
+
+  const [
+    previewLayout,
+    setPreviewLayout,
+  ] = useState<HomeLayoutConfig | null>(null);
+
+  const resolvedLayout =
+    useMemo(() => {
+      return (
+        previewLayout ??
+        resolveWorkspacePreset(
+          preset,
+        )
+      );
+    }, [preset, previewLayout]);
+
+  const payload =
+    useMemo(() => {
+      return {
+        ...props.payload,
+        layout: resolvedLayout,
+      };
+    }, [
+      props.payload,
+      resolvedLayout,
+    ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div
         id="shell-role-hint"
-        data-shell-role={payload.context.role}
+        data-shell-role={
+          payload.context.role
+        }
         className="hidden"
         aria-hidden="true"
       />
 
-      <Card className="p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-muted)]">
-              {payload.layout.label}
-            </div>
-            <h1 className="mt-1 text-2xl font-semibold">Welcome, {displayName}</h1>
-            <p className="mt-1 text-sm text-[var(--to-muted)]">
-              {payload.context.role.replaceAll("_", " ")} • {orgLabel}
-            </p>
-          </div>
+      <HomeWorkspaceControlStrip
+        payload={payload}
+        activePreset={preset}
+        onPresetChange={(nextPreset) => {
+          setPreviewLayout(null);
+          setPreset(nextPreset);
+        }}
+        onEditLayout={() => {
+          setBuilderOpen((value) => !value);
+        }}
+      />
 
-          <div className="rounded-full border border-[var(--to-border)] px-3 py-1 text-xs text-[var(--to-muted)]">
-            Default layout
-          </div>
-        </div>
-      </Card>
-
-      {payload.layout.sections.map((section) => (
-        <HomeSection key={section.id} section={section} payload={payload} />
-      ))}
+      {builderOpen ? (
+        <WorkspaceBuilderPreview
+          onApplyLayout={(layout) => {
+            setPreviewLayout(layout);
+            setBuilderOpen(false);
+          }}
+        />
+      ) : (
+        <HomeWorkspace payload={payload} />
+      )}
     </div>
   );
 }

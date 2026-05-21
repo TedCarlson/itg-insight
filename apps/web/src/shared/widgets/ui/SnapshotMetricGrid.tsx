@@ -1,4 +1,4 @@
-import type { HomeMetricDatum } from "../../contracts/widget.types";
+import type { HomeMetricDatum } from "@/shared/widgets/contracts/widget.types";
 
 function toneClass(tone: HomeMetricDatum["tone"]) {
   if (tone === "good") return "border-emerald-500/40";

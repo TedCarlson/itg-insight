@@ -6,7 +6,7 @@ export type HomeWidgetKind =
   | "quick_actions"
   | "activity_feed";
 
-export type HomeWidgetSize = "sm" | "md" | "lg" | "wide";
+export type HomeWidgetSize = "small" | "medium" | "wide" | "rail_half" | "rail_full";
 
 export type HomeMetricDatum = {
   label: string;
@@ -32,19 +32,35 @@ export type HomeActivityItem = {
 export type HomeWidgetPayload = {
   metrics_snapshot: {
     title: string;
+    headline: string;
+    subhead?: string | null;
     items: HomeMetricDatum[];
+    alerts?: HomeActivityItem[];
+    links?: HomeAction[];
   };
   workforce_snapshot: {
     title: string;
+    headline: string;
+    subhead?: string | null;
     items: HomeMetricDatum[];
+    alerts?: HomeActivityItem[];
+    links?: HomeAction[];
   };
   route_lock_snapshot: {
     title: string;
+    headline: string;
+    subhead?: string | null;
     items: HomeMetricDatum[];
+    alerts?: HomeActivityItem[];
+    links?: HomeAction[];
   };
   dispatch_snapshot: {
     title: string;
+    headline: string;
+    subhead?: string | null;
     items: HomeMetricDatum[];
+    alerts?: HomeActivityItem[];
+    links?: HomeAction[];
   };
   quick_actions: {
     title: string;

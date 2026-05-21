@@ -1,5 +1,7 @@
 import type { AppRole } from "@/shared/navigation/types";
-import type { HomeWidgetKind, HomeWidgetPayload, HomeWidgetSize } from "./widget.types";
+import type { HomeWidgetKind, HomeWidgetPayload, HomeWidgetSize } from "@/shared/widgets/contracts/widget.types";
+
+export type HomeWidgetZone = "main" | "rail";
 
 export type HomeSurfaceContext = {
   full_name: string | null;
@@ -15,6 +17,7 @@ export type HomeWidgetConfig = {
   kind: HomeWidgetKind;
   title: string;
   size: HomeWidgetSize;
+  zone?: HomeWidgetZone;
 };
 
 export type HomeSectionConfig = {

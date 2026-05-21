@@ -1,65 +1,78 @@
-import type { HomeLayoutConfig } from "../contracts/home.types";
+import type { HomeLayoutConfig } from "../../contracts/home.types";
 
-export const managerHomeDefault: HomeLayoutConfig = {
-  id: "company-manager-default",
-  label: "Manager Home",
+export const managerHomeOperations: HomeLayoutConfig = {
+  id: "manager-operations",
   role: "COMPANY_MANAGER",
+  label: "Operations Workspace",
+
   sections: [
     {
-      id: "operating",
-      title: "Today’s Operating Snapshot",
-      description: "Daily route-lock coverage and dispatch signals.",
+      id: "operations-primary",
+
+      title: "Operations",
+
       widgets: [
         {
           id: "route-lock",
           kind: "route_lock_snapshot",
           title: "Route Lock",
-          size: "medium",
+          size: "wide",
+          zone: "main",
         },
+
         {
           id: "dispatch",
           kind: "dispatch_snapshot",
-          title: "Dispatch Signal",
-          size: "medium",
+          title: "Dispatch",
+          size: "wide",
+          zone: "main",
         },
       ],
     },
+
     {
       id: "performance",
+
       title: "Performance",
-      description: "Manager KPI signals for the selected org.",
+
       widgets: [
         {
           id: "metrics",
           kind: "metrics_snapshot",
-          title: "Metrics Snapshot",
-          size: "wide",
+          title: "Metrics",
+          size: "medium",
+          zone: "main",
         },
       ],
     },
+
     {
       id: "workforce",
+
       title: "Workforce",
-      description: "People, coverage, and readiness signals.",
+
       widgets: [
         {
           id: "workforce",
           kind: "workforce_snapshot",
-          title: "Workforce Snapshot",
-          size: "wide",
+          title: "Workforce",
+          size: "medium",
+          zone: "main",
         },
       ],
     },
+
     {
       id: "activity",
+
       title: "Activity",
-      description: "Recent operational notes and system signals.",
+
       widgets: [
         {
           id: "activity-feed",
           kind: "activity_feed",
           title: "Activity Feed",
-          size: "rail_half",
+          size: "rail_full",
           zone: "rail",
         },
       ],

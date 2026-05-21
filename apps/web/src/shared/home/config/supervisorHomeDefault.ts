@@ -10,8 +10,8 @@ export const supervisorHomeDefault: HomeLayoutConfig = {
       title: "Today’s Operating Snapshot",
       description: "Daily supervisor operating signals.",
       widgets: [
-        { id: "dispatch", kind: "dispatch_snapshot", title: "Dispatch Signal", size: "md" },
-        { id: "route-lock", kind: "route_lock_snapshot", title: "Route Lock", size: "md" },
+        { id: "dispatch", kind: "dispatch_snapshot", title: "Dispatch Signal", size: "medium" },
+        { id: "route-lock", kind: "route_lock_snapshot", title: "Route Lock", size: "medium" },
       ],
     },
     {
