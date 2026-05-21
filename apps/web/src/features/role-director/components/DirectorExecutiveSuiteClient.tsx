@@ -1,83 +1,21 @@
 // path: apps/web/src/features/role-director/components/DirectorExecutiveSuiteClient.tsx
 
-import Link from "next/link";
-import { Fragment } from "react";
-
-import { Badge } from "@/components/ui/Badge";
-import { Card } from "@/components/ui/Card";
-import { ExhibitLauncher } from "@/shared/surfaces/reports/ExhibitLauncher";
-import { OnboardingReportLauncher } from "@/shared/surfaces/reports/OnboardingReportLauncher";
-import { WorkforceReportLauncher } from "@/shared/surfaces/reports/WorkforceReportLauncher";
 import type {
-  ExecutiveArtifactCard,
-  ExecutiveArtifactStatus,
-  ExecutiveDimensionArtifact,
+  ExecutiveDimensionPayload,
   ExecutiveSuitePayload,
 } from "@/shared/types/executive/executiveSuite";
-import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
-import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
 
-type DirectorDimensionKey =
-  | "overview"
-  | "workforce"
-  | "metrics"
-  | "route-lock";
-
-type WorkforceReportsPayload = {
-  rows: WorkforceRow[];
-  affiliations: WorkforceAffiliationOption[];
-  scopedAffiliations: string[];
-  regionLabel: string;
-  reportMonthLabel: string;
-};
-
-type StaffingTotals = {
-  hc: number;
-  local: number;
-  travel: number;
-  onboarding: number;
-  training: number;
-};
-
-function metricNumber(value: unknown) {
-  const next = Number(value ?? 0);
-  return Number.isFinite(next) ? next : 0;
-}
-
-function sumStaffing(cards: ExecutiveArtifactCard[]): StaffingTotals {
-  return cards.reduce(
-    (total, card) => ({
-      hc: total.hc + metricNumber(card.meta?.hc ?? card.value),
-      local: total.local + metricNumber(card.meta?.local),
-      travel: total.travel + metricNumber(card.meta?.travel),
-      onboarding: total.onboarding + metricNumber(card.meta?.onboarding),
-      training: total.training + metricNumber(card.meta?.training),
-    }),
-    {
-      hc: 0,
-      local: 0,
-      travel: 0,
-      onboarding: 0,
-      training: 0,
-    }
-  );
-}
-
-function statusVariant(
-  status: ExecutiveArtifactStatus
-): "neutral" | "success" | "warning" | "danger" | "info" {
-  if (status === "ready") return "success";
-  if (status === "degraded") return "warning";
-  if (status === "empty") return "neutral";
-
-  return "info";
-}
-
-function statusLabel(status: ExecutiveArtifactStatus) {
-  if (status === "not_wired") return "not wired";
-
-  return status;
-}
+import {
+  DimensionCard,
+  StandardArtifact,
+} from "@/shared/executive/DirectorExecutiveArtifactChrome";
+import { DirectorExecutiveMetricsCard } from "@/shared/executive/DirectorExecutiveMetricsCard";
+import { DirectorExecutiveRouteLockCard } from "@/shared/executive/DirectorExecutiveRouteLockCard";
+import { DirectorExecutiveWorkforceCard } from "@/shared/executive/DirectorExecutiveWorkforceCard";
+import type {
+  DirectorDimensionKey,
+  WorkforceReportsPayload,
+} from "@/shared/executive/executiveSurfaceTypes";
 
 function dimensionMatchesActive(
   dimension: string,
@@ -98,365 +36,53 @@ function dimensionMatchesActive(
   return true;
 }
 
-function sectionCards(
-  artifact: ExecutiveDimensionArtifact,
-  section: string
-): ExecutiveArtifactCard[] {
-  return artifact.cards.filter((card) => card.meta?.section === section);
+function isRouteLockDimension(dimension: string) {
+  return (
+    dimension === "routeLock" ||
+    dimension === "route-lock" ||
+    dimension === "route_lock"
+  );
 }
 
-function ArtifactHeader({
-  artifact,
+function FallbackDimensionCard({
+  dimension,
 }: {
-  artifact: ExecutiveDimensionArtifact;
+  dimension: ExecutiveDimensionPayload;
 }) {
   return (
-    <div className="flex items-start justify-between gap-2">
-      <div>
-        <div className="text-sm font-medium">{artifact.title}</div>
-
-        <div className="mt-1 text-xs text-[var(--to-ink-muted)]">
-          {artifact.description}
-        </div>
-      </div>
-
-      <Badge variant={statusVariant(artifact.status)}>
-        {statusLabel(artifact.status)}
-      </Badge>
-    </div>
+    <DimensionCard dimension={dimension}>
+      {dimension.artifacts.map((artifact) => (
+        <StandardArtifact key={artifact.key} artifact={artifact} />
+      ))}
+    </DimensionCard>
   );
 }
 
-function TotalStrip({ cards }: { cards: ExecutiveArtifactCard[] }) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
-      {cards.map((card) => {
-        const local = card.meta?.local;
-        const travel = card.meta?.travel;
-
-        const helper =
-          local !== undefined || travel !== undefined
-            ? `${String(local ?? 0)} local • ${String(
-              travel ?? 0
-            )} travel${card.helper ? ` | ${card.helper}` : ""}`
-            : card.helper ?? "";
-
-        return (
-          <div
-            key={card.key}
-            className="grid grid-cols-[1fr_72px_1.5fr] border-t border-[var(--to-border)] px-3 py-2 text-xs first:border-t-0"
-          >
-            <div className="font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-              {card.label}
-            </div>
-
-            <div className="text-center text-base font-semibold tabular-nums">
-              {card.value}
-            </div>
-
-            <div className="text-right text-[11px] text-[var(--to-ink-muted)]">
-              {helper}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function WorkforceRowGrid({ cards }: { cards: ExecutiveArtifactCard[] }) {
-  if (!cards.length) {
-    return (
-      <div className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-xs text-[var(--to-ink-muted)]">
-        No rows returned yet.
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
-      <table className="w-full table-fixed border-collapse text-xs">
-        <colgroup>
-          <col style={{ width: "48%" }} />
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "19%" }} />
-          <col style={{ width: "19%" }} />
-        </colgroup>
-
-        <thead>
-          <tr className="border-b border-[var(--to-border)] bg-[var(--to-surface-soft)]">
-            <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-              Office
-            </th>
-            <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-              HC
-            </th>
-            <th className="bg-[color-mix(in_oklab,var(--to-accent)_6%,var(--to-surface-soft))] px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-              Local
-            </th>
-            <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-              Travel
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {cards.map((card) => (
-            <tr key={card.key} className="border-b border-[var(--to-border)]">
-              <td className="px-3 py-2 font-medium">{card.label}</td>
-              <td className="px-2 py-2 text-center tabular-nums">
-                {String(card.meta?.hc ?? card.value)}
-              </td>
-              <td className="bg-[color-mix(in_oklab,var(--to-accent)_4%,transparent)] px-2 py-2 text-center tabular-nums">
-                {String(card.meta?.local ?? 0)}
-              </td>
-              <td className="px-2 py-2 text-center tabular-nums">
-                {String(card.meta?.travel ?? 0)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function WorkforceCompositionArtifact({
-  artifact,
-}: {
-  artifact: ExecutiveDimensionArtifact;
-}) {
-  const totalCards = sectionCards(artifact, "total_strip").filter(
-    (card) => card.key !== "all_in_hc"
-  );
-
-  const staffingCards = sectionCards(artifact, "staffing_summary");
-  const bpCards = sectionCards(artifact, "bp_breakout");
-  const officeCards = sectionCards(artifact, "office_grid");
-
-  const staffingRows = [...staffingCards, ...bpCards];
-  const totals = sumStaffing(staffingRows);
-
-  return (
-    <div className="rounded-2xl border border-[var(--to-border)] p-3">
-      <ArtifactHeader artifact={artifact} />
-
-      <div className="mt-4 space-y-4">
-        <section className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Headcount Mix
-          </div>
-
-          <TotalStrip cards={totalCards} />
-        </section>
-
-        <section className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Staffing Pipeline
-          </div>
-
-          <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
-            <table className="w-full border-collapse table-fixed text-xs">
-              <colgroup>
-                <col style={{ width: "40%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "15%" }} />
-                <col style={{ width: "12%" }} />
-              </colgroup>
-
-              <thead>
-                <tr className="border-b border-[var(--to-border)] bg-[var(--to-surface-soft)]">
-                  <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                    Group
-                  </th>
-                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                    HC
-                  </th>
-                  <th className="bg-[color-mix(in_oklab,var(--to-accent)_6%,var(--to-surface-soft))] px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-                    Local
-                  </th>
-                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                    Travel
-                  </th>
-                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                    Onboarding
-                  </th>
-                  <th className="px-2 py-2 text-center text-[11px] font-medium uppercase tracking-wide text-[var(--to-ink-muted)]">
-                    Training
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {staffingRows.map((card) => (
-                  <tr
-                    key={card.key}
-                    className="border-b border-[var(--to-border)]"
-                  >
-                    <td className="px-3 py-2 font-medium">{card.label}</td>
-                    <td className="px-2 py-2 text-center tabular-nums">
-                      {String(card.meta?.hc ?? card.value)}
-                    </td>
-                    <td className="bg-[color-mix(in_oklab,var(--to-accent)_4%,transparent)] px-2 py-2 text-center tabular-nums">
-                      {String(card.meta?.local ?? 0)}
-                    </td>
-                    <td className="px-2 py-2 text-center tabular-nums">
-                      {String(card.meta?.travel ?? 0)}
-                    </td>
-                    <td className="px-2 py-2 text-center tabular-nums">
-                      {String(card.meta?.onboarding ?? 0)}
-                    </td>
-                    <td className="px-2 py-2 text-center tabular-nums">
-                      {String(card.meta?.training ?? 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-
-              <tfoot>
-                <tr className="bg-[var(--to-surface-soft)] font-semibold">
-                  <td className="px-3 py-2">Total</td>
-                  <td className="px-2 py-2 text-center tabular-nums">
-                    {totals.hc}
-                  </td>
-                  <td className="bg-[color-mix(in_oklab,var(--to-accent)_8%,var(--to-surface-soft))] px-2 py-2 text-center tabular-nums">
-                    {totals.local}
-                  </td>
-                  <td className="bg-[var(--to-surface-soft)] px-2 py-2 text-center tabular-nums">
-                    {totals.travel}
-                  </td>
-                  <td className="px-2 py-2 text-center tabular-nums">
-                    {totals.onboarding}
-                  </td>
-                  <td className="px-2 py-2 text-center tabular-nums">
-                    {totals.training}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </section>
-
-        <section className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Office Mix
-          </div>
-
-          <WorkforceRowGrid cards={officeCards} />
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function WorkforceReportsArtifact({
-  artifact,
+function DirectorDimensionRenderer({
+  dimension,
   workforceReports,
 }: {
-  artifact: ExecutiveDimensionArtifact;
+  dimension: ExecutiveDimensionPayload;
   workforceReports?: WorkforceReportsPayload;
 }) {
-  return (
-    <div className="rounded-2xl border border-[var(--to-border)] p-3">
-      <ArtifactHeader artifact={artifact} />
-
-      {workforceReports ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <ExhibitLauncher
-            rows={workforceReports.rows}
-            affiliations={workforceReports.affiliations}
-            regionLabel={workforceReports.regionLabel}
-            reportMonthLabel={workforceReports.reportMonthLabel}
-          />
-
-          <WorkforceReportLauncher
-            rows={workforceReports.rows}
-            regionLabel={workforceReports.regionLabel}
-            reportMonthLabel={workforceReports.reportMonthLabel}
-          />
-
-          <OnboardingReportLauncher
-            regionLabel={workforceReports.regionLabel}
-            reportMonthLabel={workforceReports.reportMonthLabel}
-            scopedAffiliations={workforceReports.scopedAffiliations}
-          />
-
-          <button
-            type="button"
-            disabled
-            className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-left text-sm font-semibold opacity-80"
-          >
-            Org Chart
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function StandardArtifact({
-  artifact,
-}: {
-  artifact: ExecutiveDimensionArtifact;
-}) {
-  return (
-    <div className="rounded-2xl border border-[var(--to-border)] p-3">
-      <ArtifactHeader artifact={artifact} />
-
-      {artifact.cards.length ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {artifact.cards.map((card) => (
-            <div
-              key={card.key}
-              className="rounded-xl bg-[var(--to-surface-soft)] p-2"
-            >
-              <div className="text-[11px] uppercase tracking-wide text-[var(--to-ink-muted)]">
-                {card.label}
-              </div>
-
-              <div className="mt-1 text-lg font-semibold">{card.value}</div>
-
-              {card.helper ? (
-                <div className="text-[11px] text-[var(--to-ink-muted)]">
-                  {card.helper}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 text-xs text-[var(--to-ink-muted)]">
-          No cards returned yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExecutiveArtifactRenderer({
-  artifact,
-  workforceReports,
-}: {
-  artifact: ExecutiveDimensionArtifact;
-  dimension: string;
-  workforceReports?: WorkforceReportsPayload;
-}) {
-  if (artifact.key === "workforce_composition") {
-    return <WorkforceCompositionArtifact artifact={artifact} />;
-  }
-
-  if (artifact.key === "workforce_reports") {
+  if (dimension.dimension === "workforce") {
     return (
-      <WorkforceReportsArtifact
-        artifact={artifact}
+      <DirectorExecutiveWorkforceCard
+        dimension={dimension}
         workforceReports={workforceReports}
       />
     );
   }
 
-  return <StandardArtifact artifact={artifact} />;
+  if (dimension.dimension === "metrics") {
+    return <DirectorExecutiveMetricsCard dimension={dimension} />;
+  }
+
+  if (isRouteLockDimension(dimension.dimension)) {
+    return <DirectorExecutiveRouteLockCard dimension={dimension} />;
+  }
+
+  return <FallbackDimensionCard dimension={dimension} />;
 }
 
 export default function DirectorExecutiveSuiteClient({
@@ -476,39 +102,11 @@ export default function DirectorExecutiveSuiteClient({
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         {visibleDimensions.map((dimension) => (
-          <Card key={dimension.dimension} className="space-y-3 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold">{dimension.title}</h2>
-
-                <p className="text-xs text-[var(--to-ink-muted)]">
-                  {dimension.artifacts.length} artifact pipeline
-                  {dimension.artifacts.length === 1 ? "" : "s"}
-                </p>
-              </div>
-
-              <Badge variant={statusVariant(dimension.status)}>
-                {statusLabel(dimension.status)}
-              </Badge>
-            </div>
-
-            <div className="space-y-3">
-              {dimension.artifacts.map((artifact) => (
-                <ExecutiveArtifactRenderer
-                  key={artifact.key}
-                  artifact={artifact}
-                  dimension={dimension.dimension}
-                  workforceReports={workforceReports}
-                />
-              ))}
-            </div>
-
-            {dimension.notes?.length ? (
-              <div className="rounded-xl bg-[var(--to-surface-soft)] p-2 text-xs text-[var(--to-ink-muted)]">
-                {dimension.notes.join(" • ")}
-              </div>
-            ) : null}
-          </Card>
+          <DirectorDimensionRenderer
+            key={dimension.dimension}
+            dimension={dimension}
+            workforceReports={workforceReports}
+          />
         ))}
       </div>
     </div>
