@@ -203,6 +203,43 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
   },
 
   {
+    key: "tech_home",
+    label: "Home",
+    href: "/tech",
+    icon: "home",
+    visibility: "default",
+    defaultRoles: ["TECH"],
+    sortOrder: 200,
+  },
+  {
+    key: "tech_schedule",
+    label: "Schedule",
+    href: "/tech/schedule",
+    icon: "calendar",
+    visibility: "default",
+    defaultRoles: ["TECH"],
+    sortOrder: 210,
+  },
+  {
+    key: "tech_metrics",
+    label: "Metrics",
+    href: "/tech/metrics",
+    icon: "chart",
+    visibility: "default",
+    defaultRoles: ["TECH"],
+    sortOrder: 220,
+  },
+  {
+    key: "tech_field_log",
+    label: "Field Log",
+    href: "/tech/field-log",
+    icon: "field_log",
+    visibility: "default",
+    defaultRoles: ["TECH"],
+    sortOrder: 230,
+  },
+
+  {
     key: "field_log",
     label: "Field Log",
     href: "/field-log",
