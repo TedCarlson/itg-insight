@@ -727,7 +727,7 @@ export function WorkspaceBuilderPreview(props: {
           </div>
         </div>
 
-        <Card className="space-y-3 p-4">
+        <Card className="space-y-4 p-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-muted)]">
               Builder Notes
@@ -746,7 +746,7 @@ export function WorkspaceBuilderPreview(props: {
                 buildAppliedLayout(),
               );
             }}
-            className="w-full rounded-xl bg-[var(--to-focus)] px-3 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-xl border border-blue-700 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100"
           >
             Apply Preview to Home
           </button>

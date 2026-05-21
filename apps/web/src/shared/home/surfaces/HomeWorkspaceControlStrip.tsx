@@ -35,6 +35,10 @@ export function HomeWorkspaceControlStrip(props: {
     preset: PresetKey,
   ) => void;
   onEditLayout?: () => void;
+  onSaveWorkspace?: () => void;
+  onResetWorkspace?: () => void;
+  hasUnsavedPreview?: boolean;
+  hasSavedWorkspace?: boolean;
 }) {
   const [
     presetMenuOpen,
@@ -171,6 +175,26 @@ export function HomeWorkspaceControlStrip(props: {
               </div>
             ) : null}
           </div>
+
+          {props.hasUnsavedPreview ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={props.onSaveWorkspace}
+            >
+              Save Workspace
+            </Button>
+          ) : null}
+
+          {props.hasSavedWorkspace ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={props.onResetWorkspace}
+            >
+              Reset Workspace
+            </Button>
+          ) : null}
 
           <Button
             type="button"

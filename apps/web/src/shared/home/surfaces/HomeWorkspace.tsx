@@ -76,12 +76,14 @@ function WorkspaceSection(props: {
   section: HomeSectionConfig;
   payload: HomeSurfacePayload;
   zone: HomeWidgetZone;
+  hasRail: boolean;
 }) {
   return (
     <HomeWidgetGrid
       widgets={props.section.widgets}
       payload={props.payload}
       zone={props.zone}
+      hasRail={props.hasRail}
     />
   );
 }
@@ -96,9 +98,18 @@ export function HomeWorkspace(props: {
     props.payload.layout.sections,
   );
 
+  const hasRail =
+    railSections.length > 0;
+
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-      <div className="space-y-6 xl:col-span-9">
+      <div
+        className={
+          hasRail
+            ? "space-y-6 xl:col-span-9"
+            : "space-y-6 xl:col-span-12"
+        }
+      >
         {mainSections.map((section) => {
           return (
             <WorkspaceSection
@@ -106,12 +117,13 @@ export function HomeWorkspace(props: {
               section={section}
               payload={props.payload}
               zone="main"
+              hasRail={hasRail}
             />
           );
         })}
       </div>
 
-      {railSections.length > 0 ? (
+      {hasRail ? (
         <aside className="space-y-4 xl:col-span-3">
           {railSections.map((section) => {
             return (
@@ -120,6 +132,7 @@ export function HomeWorkspace(props: {
                 section={section}
                 payload={props.payload}
                 zone="rail"
+                hasRail={hasRail}
               />
             );
           })}

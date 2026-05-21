@@ -11,10 +11,15 @@ import type {
   HomeWidgetZone,
 } from "../contracts/home.types";
 
-function mainSizeClass(size: HomeWidgetConfig["size"]) {
+function mainSizeClass(
+  size: HomeWidgetConfig["size"],
+  hasRail: boolean,
+) {
   switch (size) {
     case "small":
-      return "col-span-12 md:col-span-6 xl:col-span-4";
+      return hasRail
+        ? "col-span-12 md:col-span-6 xl:col-span-4"
+        : "col-span-12 md:col-span-6 xl:col-span-3";
 
     case "medium":
       return "col-span-12 xl:col-span-6";
@@ -69,8 +74,10 @@ export function HomeWidgetGrid(props: {
   widgets: HomeWidgetConfig[];
   payload: HomeSurfacePayload;
   zone?: HomeWidgetZone;
+  hasRail?: boolean;
 }) {
   const zone = props.zone ?? "main";
+  const hasRail = props.hasRail ?? false;
 
   if (zone === "rail") {
     return (
@@ -95,7 +102,10 @@ export function HomeWidgetGrid(props: {
         return (
           <Card
             key={widget.id}
-            className={`p-4 ${mainSizeClass(widget.size)}`}
+            className={`p-4 ${mainSizeClass(
+              widget.size,
+              hasRail,
+            )}`}
           >
             {renderWidget(widget, props.payload)}
           </Card>
