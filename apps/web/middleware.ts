@@ -32,7 +32,21 @@ const ALLOWED_NEXT_PREFIXES = [
   "/route-lock",
   "/metrics",
   "/locate",
-] as const;
+
+  "/company-supervisor",
+  "/company-manager",
+  "/bp-supervisor",
+  "/bp-lead",
+  "/bp-owner",
+  "/director",
+  "/dispatch-console",
+  "/field-log",
+  "/fulfillment",
+  "/profile",
+  "/people",
+  "/workforce",
+  "/tech",
+];
 
 function isAllowedNextPath(pathname: string) {
   return ALLOWED_NEXT_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
