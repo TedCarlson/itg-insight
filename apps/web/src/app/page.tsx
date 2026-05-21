@@ -2,12 +2,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { supabaseServer } from "@/shared/data/supabase/server";
+import { getHomePayload } from "@/features/home/lib/getHomePayload.server";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function Page() {
   const supabase = await supabaseServer();
   const { data, error } = await supabase.auth.getUser();
 
   if (!error && data?.user) {
+    const home = await getHomePayload();
+
+    if (home.role === "TECH") {
+      redirect("/tech");
+    }
+
     redirect("/home");
   }
 

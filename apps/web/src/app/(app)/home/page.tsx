@@ -9,6 +9,10 @@ export const revalidate = 0;
 export default async function Page() {
   const payload = await buildHomeSurfacePayload();
 
+  if (payload.context.role === "TECH") {
+    redirect("/tech");
+  }
+
   if (payload.context.role === "DIRECTOR") {
     redirect("/director/executive");
   }
