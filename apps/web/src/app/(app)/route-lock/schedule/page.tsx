@@ -33,6 +33,18 @@ type Technician = {
 
 type RouteRow = { route_id: string; route_name: string };
 
+type QuotaRouteRow = {
+  route_id: string;
+  route_name: string;
+  qh_sun: number | null;
+  qh_mon: number | null;
+  qh_tue: number | null;
+  qh_wed: number | null;
+  qh_thu: number | null;
+  qh_fri: number | null;
+  qh_sat: number | null;
+};
+
 type ScheduleBaselineRow = {
   schedule_baseline_month_id?: string;
   assignment_id: string;
@@ -292,6 +304,26 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
 
   const routes = (routeRows ?? []) as RouteRow[];
 
+  const { data: quotaRowsRaw } = await admin
+    .from("quota_admin_v")
+    .select("route_id,route_name,qh_sun,qh_mon,qh_tue,qh_wed,qh_thu,qh_fri,qh_sat")
+    .eq("pc_org_id", pc_org_id)
+    .eq("fiscal_month_id", activeFm.fiscal_month_id);
+
+  const quotaRows = ((quotaRowsRaw ?? []) as any[]).map(
+    (r): QuotaRouteRow => ({
+      route_id: String(r?.route_id ?? ""),
+      route_name: String(r?.route_name ?? ""),
+      qh_sun: r?.qh_sun ?? null,
+      qh_mon: r?.qh_mon ?? null,
+      qh_tue: r?.qh_tue ?? null,
+      qh_wed: r?.qh_wed ?? null,
+      qh_thu: r?.qh_thu ?? null,
+      qh_fri: r?.qh_fri ?? null,
+      qh_sat: r?.qh_sat ?? null,
+    })
+  );
+
   // Roster techs (DO NOT POLA-GATE schedule planning)
   const { data: rosterRows, error: rosterErr } = await sb
     .from("route_lock_roster_v")
@@ -457,6 +489,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       <ScheduleGridClient
         technicians={technicians as any}
         routes={routes}
+        quotaRows={quotaRows}
         scheduleByAssignment={scheduleByAssignment}
         previousScheduleByAssignment={previousScheduleByAssignment}
         fiscalMonthId={activeFm.fiscal_month_id}

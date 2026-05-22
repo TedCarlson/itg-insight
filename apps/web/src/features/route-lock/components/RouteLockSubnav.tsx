@@ -13,7 +13,8 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Lock Calendar", href: "/route-lock/calendar" },
+  { label: "Lock Summary", href: "/route-lock" },
+  { label: "Lock Report", href: "/route-lock/calendar" },
   { label: "Baseline Schedule", href: "/route-lock/schedule" },
   { label: "Exceptions", href: "/route-lock/exceptions" },
   { label: "Shift Validations", href: "/route-lock/shift-validation" },
@@ -24,6 +25,10 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 function isActive(pathname: string, href: string) {
+  if (href === "/route-lock") {
+    return pathname === "/route-lock";
+  }
+
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

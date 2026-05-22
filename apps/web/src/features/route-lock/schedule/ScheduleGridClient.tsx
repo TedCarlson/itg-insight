@@ -18,6 +18,18 @@ type Technician = {
 
 type RouteRow = { route_id: string; route_name: string };
 
+type QuotaRouteRow = {
+  route_id: string;
+  route_name: string;
+  qh_sun: number | null;
+  qh_mon: number | null;
+  qh_tue: number | null;
+  qh_wed: number | null;
+  qh_thu: number | null;
+  qh_fri: number | null;
+  qh_sat: number | null;
+};
+
 type ScheduleBaselineRow = {
   schedule_baseline_month_id?: string;
   assignment_id: string;
@@ -189,9 +201,40 @@ function fmtPct(part: number, whole: number) {
   return `${Math.round((part / whole) * 100)}%`;
 }
 
+function readinessPct(part: number, whole: number): number {
+  if (!whole) return 0;
+  return Math.round((part / whole) * 100);
+}
+
+function readinessClass(pct: number): string {
+  if (pct < 90) return "text-[var(--to-danger)]";
+  if (pct < 100) return "text-[var(--to-warning)]";
+  if (pct <= 110) return "text-[var(--to-success)]";
+  return "text-[var(--to-warning)]";
+}
+
+function quotaHoursForDay(row: QuotaRouteRow, day: DayKey): number {
+  const key = `qh_${day}` as keyof QuotaRouteRow;
+  const n = Number(row[key]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function sumQuotaByDay(rows: QuotaRouteRow[]): Record<DayKey, number> {
+  const perDay: Record<DayKey, number> = { sun: 0, mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0 };
+
+  for (const r of rows) {
+    for (const d of DAYS) {
+      perDay[d.key] += quotaHoursForDay(r, d.key) / 8;
+    }
+  }
+
+  return perDay;
+}
+
 export function ScheduleGridClient({
   technicians,
   routes,
+  quotaRows,
   scheduleByAssignment,
   previousScheduleByAssignment = {},
   fiscalMonthId,
@@ -200,6 +243,7 @@ export function ScheduleGridClient({
 }: {
   technicians: Technician[];
   routes: RouteRow[];
+  quotaRows: QuotaRouteRow[];
   scheduleByAssignment: Record<string, ScheduleBaselineRow>;
   previousScheduleByAssignment?: Record<string, ScheduleBaselineRow>;
   fiscalMonthId: string;
@@ -443,6 +487,28 @@ export function ScheduleGridClient({
   }, [rows, previousScheduleByAssignment]);
 
   const filterActive = search.trim().length > 0;
+
+  const quotaTotals = useMemo(() => sumQuotaByDay(quotaRows), [quotaRows]);
+
+  const filteredQuotaTotals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return quotaTotals;
+
+    const visibleRouteIds = new Set(viewRows.map((r) => String(r.routeId ?? "")).filter(Boolean));
+
+    const scopedRows = quotaRows.filter((r) => {
+      const routeId = String(r.route_id ?? "").toLowerCase();
+      const routeName = String(r.route_name ?? "").toLowerCase();
+
+      return routeId.includes(q) || routeName.includes(q) || visibleRouteIds.has(String(r.route_id ?? ""));
+    });
+
+    return sumQuotaByDay(scopedRows);
+  }, [quotaRows, quotaTotals, search, viewRows]);
+
+  const activeQuotaTotals = filterActive ? filteredQuotaTotals : quotaTotals;
+  const activeScheduledTotals = filterActive ? filteredTotals.perDay : totals.perDay;
+
   const commitLabel = stageAll ? "Commit changes (ALL)" : `Commit changes (${dirtyRows.length})`;
 
   async function purgeOneTech(techId: string) {
@@ -569,13 +635,6 @@ export function ScheduleGridClient({
     []
   );
 
-  const summaryGridStyle: CSSProperties = useMemo(
-    () => ({
-      gridTemplateColumns: "12rem repeat(7, minmax(4.75rem, 1fr))",
-    }),
-    []
-  );
-
   return (
     <Card>
       <div className="flex flex-col gap-2 p-3 border-b border-[var(--to-border)]">
@@ -658,66 +717,77 @@ export function ScheduleGridClient({
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <div className="min-w-[40rem]">
-            <div
-              className="grid items-center gap-x-3 gap-y-1 text-xs font-medium text-[var(--to-ink-muted)]"
-              style={summaryGridStyle}
-            >
-              <div />
-              {DAYS.map((d) => (
-                <div key={`summary-head-${d.key}`} className="text-center">
-                  {d.label}
-                </div>
-              ))}
-            </div>
-
-            <div
-              className="grid items-center gap-x-3 gap-y-1 py-1 text-sm border-t border-[var(--to-border)]"
-              style={summaryGridStyle}
-            >
-              <div className="font-medium text-[var(--to-ink)]">All Scheduled</div>
-              {DAYS.map((d) => (
-                <div key={`all-${d.key}`} className="text-center font-medium">
-                  {totals.perDay[d.key]}
-                </div>
-              ))}
-            </div>
-
-            {filterActive ? (
-              <>
-                <div
-                  className="grid items-center gap-x-3 gap-y-1 py-1 text-sm border-t border-[var(--to-border)]"
-                  style={summaryGridStyle}
-                >
-                  <div className="font-medium text-[var(--to-ink)]">Filtered Scheduled</div>
-                  {DAYS.map((d) => (
-                    <div key={`filtered-${d.key}`} className="text-center font-medium">
-                      {filteredTotals.perDay[d.key]}
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  className="grid items-center gap-x-3 gap-y-1 py-1 text-sm border-t border-[var(--to-border)]"
-                  style={summaryGridStyle}
-                >
-                  <div className="font-medium text-[var(--to-ink)]">Filtered % of All</div>
-                  {DAYS.map((d) => (
-                    <div key={`pct-${d.key}`} className="text-center font-medium">
-                      {fmtPct(filteredTotals.perDay[d.key], totals.perDay[d.key])}
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
       <div className={cls("relative", "max-h-[calc(100vh-16rem)]", "overflow-auto")}>
         <div className="sticky top-0 z-20 bg-[var(--to-surface)] border-b border-[var(--to-border)]">
           <DataTable layout="fixed" gridStyle={gridStyle}>
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">{filterActive ? "Filtered Quota" : "Quota"}</div>
+              {DAYS.map((d) => (
+                <div key={`quota-${d.key}`} className="text-center font-medium">
+                  {Math.trunc(activeQuotaTotals[d.key])}
+                </div>
+              ))}
+              <div />
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">{filterActive ? "Filtered Scheduled" : "Scheduled"}</div>
+              {DAYS.map((d) => (
+                <div key={`scheduled-${d.key}`} className="text-center font-medium">
+                  {activeScheduledTotals[d.key]}
+                </div>
+              ))}
+              <div />
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">Gap</div>
+              {DAYS.map((d) => {
+                const gap = activeScheduledTotals[d.key] - activeQuotaTotals[d.key];
+                return (
+                  <div
+                    key={`gap-${d.key}`}
+                    className={cls(
+                      "text-center font-medium",
+                      gap < 0 ? "text-[var(--to-danger)]" : gap > 0 ? "text-[var(--to-success)]" : "text-[var(--to-ink)]"
+                    )}
+                  >
+                    {gap > 0 ? `+${Math.trunc(gap)}` : Math.trunc(gap)}
+                  </div>
+                );
+              })}
+              <div />
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">Readiness</div>
+              {DAYS.map((d) => (
+                <div
+                  key={`readiness-${d.key}`}
+                  className={cls("text-center font-medium", readinessClass(readinessPct(activeScheduledTotals[d.key], activeQuotaTotals[d.key])))}
+                >
+                  {fmtPct(activeScheduledTotals[d.key], activeQuotaTotals[d.key])}
+                </div>
+              ))}
+              <div />
+              <div />
+            </div>
+
             <DataTableHeader gridStyle={gridStyle}>
               <div className="whitespace-nowrap">Tech Id</div>
               <div className="min-w-0">Name</div>
@@ -830,6 +900,7 @@ export function ScheduleGridClient({
             })}
           </DataTableBody>
         </DataTable>
+      </div>
       </div>
     </Card>
   );
