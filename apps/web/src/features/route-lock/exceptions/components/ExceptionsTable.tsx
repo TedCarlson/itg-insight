@@ -257,7 +257,7 @@ export default function ExceptionsTable(props: {
             <select
               className="to-select h-8 text-xs"
               value={rangeSlice}
-              onChange={(e) => setRangeSlice(e.target.value as "forward" | "all")}
+              onChange={(e) => setRangeSlice(e.target.value as "all" | "forward")}
             >
               <option value="forward">Today Forward</option>
               <option value="all">All</option>
