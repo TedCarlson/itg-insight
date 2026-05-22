@@ -52,7 +52,7 @@ export const workspaceLayoutLibrary: WorkspaceLayoutPreview[] = [
   },
   {
     id: "metrics-focus",
-    label: "Metrics Focus",
+    label: "Mixed Stack",
     description: "Wide / split / wide review flow.",
     rows: [
       {

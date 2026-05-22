@@ -8,36 +8,30 @@ import type {
   HomeSurfacePayload,
 } from "../contracts/home.types";
 
-type PresetKey =
+type LayoutMode =
   | "default"
-  | "operations"
-  | "people"
-  | "metrics";
+  | "my_layout";
+
+const LAYOUT_LABELS: Record<
+  LayoutMode,
+  string
+> = {
+  default: "Default",
+  my_layout: "My Layout",
+};
 
 function formatRole(role: string) {
   return role.replaceAll("_", " ");
 }
 
-const PRESET_LABELS: Record<
-  PresetKey,
-  string
-> = {
-  default: "Default",
-  operations: "Operations",
-  people: "People",
-  metrics: "Metrics",
-};
-
 export function HomeWorkspaceControlStrip(props: {
   payload: HomeSurfacePayload;
-  activePreset?: PresetKey;
-  onPresetChange?: (
-    preset: PresetKey,
+  activeLayoutMode?: LayoutMode;
+  onLayoutModeChange?: (
+    mode: LayoutMode,
   ) => void;
   onEditLayout?: () => void;
-  onSaveWorkspace?: () => void;
   onResetWorkspace?: () => void;
-  hasUnsavedPreview?: boolean;
   hasSavedWorkspace?: boolean;
 }) {
   const [
@@ -54,8 +48,13 @@ export function HomeWorkspaceControlStrip(props: {
     props.payload.context.selected_pc_org_id ??
     "No org selected";
 
-  const activePreset =
-    props.activePreset ?? "default";
+  const activeLayoutMode =
+    props.activeLayoutMode ?? "default";
+
+  const workspaceLabel =
+    activeLayoutMode === "my_layout"
+      ? "My Layout"
+      : "Default Workspace";
 
   return (
     <div className="rounded-2xl border border-[var(--to-border)] bg-[var(--to-card)] px-4 py-3">
@@ -77,11 +76,7 @@ export function HomeWorkspaceControlStrip(props: {
             </div>
 
             <div className="text-sm text-[var(--to-muted)]">
-              · {
-                PRESET_LABELS[
-                  activePreset
-                ]
-              } Workspace
+              · {workspaceLabel}
             </div>
           </div>
         </div>
@@ -105,11 +100,7 @@ export function HomeWorkspaceControlStrip(props: {
             type="button"
             className="rounded-full border border-[var(--to-border)] px-3 py-1.5 text-xs font-medium text-[var(--to-foreground)]"
           >
-            {
-              PRESET_LABELS[
-                activePreset
-              ]
-            } Workspace
+            {workspaceLabel}
           </button>
 
           <div className="mx-1 hidden h-6 w-px bg-[var(--to-border)] md:block" />
@@ -120,35 +111,33 @@ export function HomeWorkspaceControlStrip(props: {
               variant="secondary"
               onClick={() => {
                 setPresetMenuOpen(
-                  (v) => !v,
+                  (value) => !value,
                 );
               }}
             >
-              Workspace Presets
+              Workspace Layout
             </Button>
 
             {presetMenuOpen ? (
-              <div className="absolute right-0 z-20 mt-2 w-52 rounded-2xl border border-[var(--to-border)] bg-[var(--to-card)] p-2 shadow-xl">
+              <div className="absolute right-0 z-20 mt-2 w-52 rounded-2xl border border-slate-300 bg-white p-2 shadow-2xl ring-1 ring-slate-200">
                 {(
                   Object.keys(
-                    PRESET_LABELS,
-                  ) as PresetKey[]
-                ).map((preset) => {
+                    LAYOUT_LABELS,
+                  ) as LayoutMode[]
+                ).map((mode) => {
                   const active =
-                    preset === activePreset;
+                    mode === activeLayoutMode;
 
                   return (
                     <button
-                      key={preset}
+                      key={mode}
                       type="button"
                       onClick={() => {
-                        props.onPresetChange?.(
-                          preset,
+                        props.onLayoutModeChange?.(
+                          mode,
                         );
 
-                        setPresetMenuOpen(
-                          false,
-                        );
+                        setPresetMenuOpen(false);
                       }}
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition hover:bg-[var(--to-row-hover)] ${
                         active
@@ -157,11 +146,7 @@ export function HomeWorkspaceControlStrip(props: {
                       }`}
                     >
                       <span>
-                        {
-                          PRESET_LABELS[
-                            preset
-                          ]
-                        }
+                        {LAYOUT_LABELS[mode]}
                       </span>
 
                       {active ? (
@@ -175,26 +160,6 @@ export function HomeWorkspaceControlStrip(props: {
               </div>
             ) : null}
           </div>
-
-          {props.hasUnsavedPreview ? (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={props.onSaveWorkspace}
-            >
-              Save Workspace
-            </Button>
-          ) : null}
-
-          {props.hasSavedWorkspace ? (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={props.onResetWorkspace}
-            >
-              Reset Workspace
-            </Button>
-          ) : null}
 
           <Button
             type="button"
