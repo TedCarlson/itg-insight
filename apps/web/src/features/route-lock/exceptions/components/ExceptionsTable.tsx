@@ -29,6 +29,40 @@ function rowMatchesSearch(row: ExceptionRow, q: string) {
   return haystack.includes(q);
 }
 
+function fmtSigned(n: number) {
+  return n > 0 ? `+${n}` : String(n);
+}
+
+function scheduleDelta(row: ExceptionRow) {
+  const type = String(row.exception_type ?? "").toUpperCase();
+
+  if (type.includes("ADD")) return { current: 0, projected: 1 };
+  if (type.includes("OVERRIDE")) return { current: 0, projected: 0 };
+
+  return { current: 0, projected: -1 };
+}
+
+function impactFromReadiness(projectedGap: number) {
+  if (projectedGap < 0) {
+    return {
+      label: "RISK",
+      className: "border-[var(--to-danger)] text-[var(--to-danger)] bg-[rgba(239,68,68,0.08)]",
+    };
+  }
+
+  if (projectedGap === 0) {
+    return {
+      label: "TIGHT",
+      className: "border-[var(--to-warning)] text-[var(--to-warning)] bg-[rgba(245,158,11,0.08)]",
+    };
+  }
+
+  return {
+    label: "SAFE",
+    className: "border-[var(--to-info)] text-[var(--to-info)] bg-[rgba(59,130,246,0.08)]",
+  };
+}
+
 export default function ExceptionsTable(props: {
   rows: ExceptionRow[];
   onApprove: (row: ExceptionRow, decisionNotes?: string) => Promise<void>;
@@ -277,8 +311,8 @@ export default function ExceptionsTable(props: {
             <th className="px-3 py-2">Date</th>
             <th className="px-3 py-2">Tech</th>
             <th className="px-3 py-2">Type</th>
-            <th className="px-3 py-2">Force Off</th>
-            <th className="px-3 py-2">Override Route</th>
+            <th className="px-3 py-2 text-center">Schedule Δ+/-</th>
+            <th className="px-3 py-2 text-center">Impact</th>
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Action</th>
           </tr>
@@ -308,8 +342,28 @@ export default function ExceptionsTable(props: {
                 <td className="px-3 py-2">{r.shift_date}</td>
                 <td className="px-3 py-2">{r.tech_id}</td>
                 <td className="px-3 py-2">{r.exception_type}</td>
-                <td className="px-3 py-2">{r.force_off ? "Yes" : "-"}</td>
-                <td className="px-3 py-2">{r.override_route_id ?? "-"}</td>
+                <td className="px-3 py-2 text-center font-medium">
+                  {(() => {
+                    const delta = scheduleDelta(r);
+                    return `${fmtSigned(delta.current)} → ${fmtSigned(delta.projected)}`;
+                  })()}
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex justify-center">
+                    {(() => {
+                      const delta = scheduleDelta(r);
+                      const impact = impactFromReadiness(delta.projected);
+
+                      return (
+                        <span
+                          className={`to-pill h-7 px-3 text-xs inline-flex items-center justify-center ${impact.className}`}
+                        >
+                          {impact.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </td>
                 <td className="px-3 py-2">{status}</td>
                 <td className="px-3 py-2">
                   {pending ? (
