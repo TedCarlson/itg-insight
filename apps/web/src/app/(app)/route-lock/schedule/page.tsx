@@ -86,8 +86,24 @@ async function resolveNextFiscalMonth(sb: any, currentEndISO: string): Promise<F
   };
 }
 
-// We intentionally load routes with service role (admin) because route RLS
-// can be tighter than schedule planning access, and schedule must not go blank.
+async function resolvePreviousFiscalMonth(sb: any, currentStartISO: string): Promise<FiscalMonth | null> {
+  const { data, error } = await sb
+    .from("fiscal_month_dim")
+    .select("fiscal_month_id,start_date,end_date,label")
+    .lt("end_date", currentStartISO)
+    .order("end_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.fiscal_month_id) return null;
+  return {
+    fiscal_month_id: String(data.fiscal_month_id),
+    start_date: String(data.start_date),
+    end_date: String(data.end_date),
+    label: (data.label as string | null) ?? null,
+  };
+}
+
 async function guardCanReadRouteLock(sb: any, pc_org_id: string) {
   const {
     data: { user },
@@ -121,6 +137,7 @@ function MonthToggle({
   nextLabel,
   currentFiscalMonthId,
   nextFiscalMonthId,
+  previousFiscalMonthId,
 }: {
   active: "current" | "next";
   currentHref: string;
@@ -129,6 +146,7 @@ function MonthToggle({
   nextLabel: string;
   currentFiscalMonthId: string;
   nextFiscalMonthId: string;
+  previousFiscalMonthId?: string | null;
 }) {
   return (
     <Card variant="subtle">
@@ -162,10 +180,25 @@ function MonthToggle({
               Next • {nextLabel}
             </Link>
 
+            {active === "current" && previousFiscalMonthId && (
+              <SeedNextMonthButton
+                fromFiscalMonthId={previousFiscalMonthId}
+                toFiscalMonthId={currentFiscalMonthId}
+                label="Copy Previous into Current"
+                busyLabel="Copying…"
+                successTitle="Current month copied"
+                title="Copy previous month schedule baselines into the current month"
+              />
+            )}
+
             {active === "next" && (
               <SeedNextMonthButton
                 fromFiscalMonthId={currentFiscalMonthId}
                 toFiscalMonthId={nextFiscalMonthId}
+                label="Seed Next from Current"
+                busyLabel="Seeding…"
+                successTitle="Next month seeded"
+                title="Copy current month schedule baselines into next month"
               />
             )}
           </div>
@@ -209,6 +242,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
     );
   }
 
+  const fmPrevious = await resolvePreviousFiscalMonth(sb, fmCurrent.start_date);
   const fmNext = await resolveNextFiscalMonth(sb, fmCurrent.end_date);
   if (!fmNext) {
     return (
@@ -223,6 +257,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   const sp = (await searchParams) ?? {};
   const monthMode = String(sp?.month ?? "current") === "next" ? "next" : "current";
   const activeFm = monthMode === "next" ? fmNext : fmCurrent;
+  const previousSourceFm = monthMode === "next" ? fmCurrent : fmPrevious;
 
   const currentHref = "/route-lock/schedule?month=current";
   const nextHref = "/route-lock/schedule?month=next";
@@ -245,7 +280,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
           currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
           nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
           currentFiscalMonthId={fmCurrent.fiscal_month_id}
-          nextFiscalMonthId={fmNext.fiscal_month_id}
+          nextFiscalMonthId={fmNext.fiscal_month_id}          previousFiscalMonthId={fmPrevious?.fiscal_month_id ?? null}
         />
         <Card>
           <div className="text-sm text-[var(--to-warning)]">Could not load routes.</div>
@@ -273,7 +308,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
           currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
           nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
           currentFiscalMonthId={fmCurrent.fiscal_month_id}
-          nextFiscalMonthId={fmNext.fiscal_month_id}
+          nextFiscalMonthId={fmNext.fiscal_month_id}          previousFiscalMonthId={fmPrevious?.fiscal_month_id ?? null}
         />
         <Card>
           <div className="text-sm text-[var(--to-warning)]">{rosterErr.message}</div>
@@ -323,7 +358,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
           currentLabel={String(fmCurrent.label ?? `${fmCurrent.start_date} → ${fmCurrent.end_date}`)}
           nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
           currentFiscalMonthId={fmCurrent.fiscal_month_id}
-          nextFiscalMonthId={fmNext.fiscal_month_id}
+          nextFiscalMonthId={fmNext.fiscal_month_id}          previousFiscalMonthId={fmPrevious?.fiscal_month_id ?? null}
         />
         <Card>
           <div className="text-sm text-[var(--to-warning)]">{baselineErr.message}</div>
@@ -368,6 +403,40 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
     }
   }
 
+  let previousBaselineRows: any[] = [];
+
+  if (previousSourceFm?.fiscal_month_id) {
+    const { data: prevRows } = await sb
+      .from("schedule_baseline_month")
+      .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat")
+      .eq("pc_org_id", pc_org_id)
+      .eq("fiscal_month_id", previousSourceFm.fiscal_month_id)
+      .eq("is_active", true);
+
+    previousBaselineRows = (prevRows ?? []) as any[];
+  }
+
+  const previousScheduleByAssignment: Record<string, ScheduleBaselineRow> = {};
+  for (const r of previousBaselineRows) {
+    const assignment_id = String(r?.assignment_id ?? "").trim();
+    const tech_id = String(r?.tech_id ?? "").trim();
+    if (!assignment_id || !tech_id) continue;
+
+    previousScheduleByAssignment[assignment_id] = {
+      schedule_baseline_month_id: r?.schedule_baseline_month_id ? String(r.schedule_baseline_month_id) : undefined,
+      assignment_id,
+      tech_id,
+      default_route_id: r?.default_route_id ? String(r.default_route_id) : null,
+      sun: r?.sun ?? null,
+      mon: r?.mon ?? null,
+      tue: r?.tue ?? null,
+      wed: r?.wed ?? null,
+      thu: r?.thu ?? null,
+      fri: r?.fri ?? null,
+      sat: r?.sat ?? null,
+    };
+  }
+
   const technicians: Technician[] = [
     ...activeRosterTechs.map((t) => ({ ...t, not_on_roster: false })),
     ...orphanTechs,
@@ -389,6 +458,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
         technicians={technicians as any}
         routes={routes}
         scheduleByAssignment={scheduleByAssignment}
+        previousScheduleByAssignment={previousScheduleByAssignment}
         fiscalMonthId={activeFm.fiscal_month_id}
         defaults={{ unitsPerHour: 12, hoursPerDay: 8 }}
       />

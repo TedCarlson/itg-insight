@@ -193,6 +193,7 @@ export function ScheduleGridClient({
   technicians,
   routes,
   scheduleByAssignment,
+  previousScheduleByAssignment = {},
   fiscalMonthId,
   defaults,
   onTotalsChange,
@@ -200,6 +201,7 @@ export function ScheduleGridClient({
   technicians: Technician[];
   routes: RouteRow[];
   scheduleByAssignment: Record<string, ScheduleBaselineRow>;
+  previousScheduleByAssignment?: Record<string, ScheduleBaselineRow>;
   fiscalMonthId: string;
   defaults: { unitsPerHour: number; hoursPerDay: number };
   onTotalsChange?: (t: ScheduleTotals) => void;
@@ -342,6 +344,40 @@ export function ScheduleGridClient({
     );
   }
 
+  function paintFromPrevious() {
+    if (previousPaintCount <= 0) {
+      toast.push({
+        variant: "warning",
+        title: "Nothing to paint",
+        message: "No previous-month schedule baseline was found for the visible assignment set.",
+        durationMs: 2600,
+      });
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((r) => {
+        const source = previousScheduleByAssignment[r.assignmentId];
+        if (!source) return r;
+
+        const norm = normalizeFromBaselineRow(source);
+        return {
+          ...r,
+          routeId: norm.routeId,
+          days: { ...norm.days },
+          deleteArmed: false,
+        };
+      })
+    );
+
+    toast.push({
+      variant: "success",
+      title: "Previous schedule painted",
+      message: `Staged ${previousPaintCount} rows from the previous fiscal month. Review, then Commit changes.`,
+      durationMs: 3000,
+    });
+  }
+
   const viewRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = !q
@@ -401,6 +437,10 @@ export function ScheduleGridClient({
   const unscheduledRowsCount = useMemo(() => {
     return rows.filter((r) => allDaysOff(r.days)).length;
   }, [rows]);
+
+  const previousPaintCount = useMemo(() => {
+    return rows.filter((r) => !!previousScheduleByAssignment[r.assignmentId]).length;
+  }, [rows, previousScheduleByAssignment]);
 
   const filterActive = search.trim().length > 0;
   const commitLabel = stageAll ? "Commit changes (ALL)" : `Commit changes (${dirtyRows.length})`;
@@ -551,6 +591,17 @@ export function ScheduleGridClient({
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              className="to-btn to-btn--secondary h-8 px-3 text-xs"
+              disabled={isSaving || previousPaintCount <= 0}
+              onClick={paintFromPrevious}
+              aria-disabled={isSaving || previousPaintCount <= 0}
+              title="Paint this schedule surface from the previous fiscal month. This stages changes only; Commit changes saves them."
+            >
+              Paint from Previous
+            </button>
+
             <button
               type="button"
               className={cls("to-btn h-8 px-3 text-xs", stageAll ? "to-btn--primary" : "to-btn--secondary")}

@@ -8,6 +8,10 @@ export function SeedNextMonthButton(props: {
   fromFiscalMonthId: string;
   toFiscalMonthId: string;
   disabled?: boolean;
+  label?: string;
+  busyLabel?: string;
+  successTitle?: string;
+  title?: string;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -36,7 +40,7 @@ export function SeedNextMonthButton(props: {
 
       toast.push({
         variant: "success",
-        title: "Next month seeded",
+        title: props.successTitle ?? "Next month seeded",
         message: `Baseline: +${Number(json?.inserted ?? 0)} inserted • ${Number(json?.updated ?? 0)} updated`,
         durationMs: 2200,
       });
@@ -61,9 +65,9 @@ export function SeedNextMonthButton(props: {
       onClick={onSeed}
       disabled={busy || props.disabled}
       aria-disabled={busy || props.disabled}
-      title="Copy current month schedule baselines into next month"
+      title={props.title ?? "Copy schedule baselines from one fiscal month into another"}
     >
-      {busy ? "Seeding…" : "Seed Next from Current"}
+      {busy ? props.busyLabel ?? "Copying…" : props.label ?? "Seed Next from Current"}
     </button>
   );
 }
