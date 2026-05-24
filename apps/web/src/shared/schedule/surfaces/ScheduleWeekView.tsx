@@ -61,6 +61,22 @@ function phaseShort(row: ScheduleSurfaceRow) {
   return "PLN";
 }
 
+function techCardTone(row: ScheduleSurfaceRow) {
+  if (row.dispatch.callOut) {
+    return "border-red-300 bg-red-50/40 text-red-950";
+  }
+
+  if (row.routeLock.phase === "actual") {
+    return "border-emerald-300 bg-emerald-50/50";
+  }
+
+  if (row.routeLock.phase === "built") {
+    return "border-violet-300 bg-violet-50/50";
+  }
+
+  return "border-[var(--border)] bg-background";
+}
+
 function cardTone(args: {
   isToday: boolean;
   isFmEnd: boolean;
@@ -188,7 +204,10 @@ export default function ScheduleWeekView({
                       return (
                         <div
                           key={`${row.personId}:${row.assignmentId ?? "none"}:${row.date}`}
-                          className="group relative rounded-md border border-[var(--border)] bg-background px-1.5 py-1 text-xs"
+                          className={[
+                            "group relative rounded-md border px-1.5 py-1 text-xs",
+                            techCardTone(row),
+                          ].join(" ")}
                         >
                           <div className="truncate text-center font-semibold tabular-nums">
                             {row.techId ?? "—"}
