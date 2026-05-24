@@ -209,8 +209,23 @@ export default function ScheduleWeekView({
                             techCardTone(row),
                           ].join(" ")}
                         >
-                          <div className="truncate text-center font-semibold tabular-nums">
-                            {row.techId ?? "—"}
+                          <div className="flex items-center justify-center gap-1 truncate text-center font-semibold tabular-nums">
+                            <span>
+                              {row.techId ?? "—"}
+                            </span>
+
+                            {row.affiliationCode ? (
+                              <span
+                                title={[
+                                  row.affiliationCode,
+                                  row.contractorName,
+                                  row.affiliationName,
+                                ].filter(Boolean).join(" • ")}
+                                className="rounded-sm bg-muted px-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
+                              >
+                                {row.affiliationCode}
+                              </span>
+                            ) : null}
                           </div>
 
                           <div

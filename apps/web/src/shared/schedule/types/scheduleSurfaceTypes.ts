@@ -71,6 +71,8 @@ export type ScheduleSurfaceRow = {
 
   contractorId: string | null;
   contractorName: string | null;
+  affiliationCode: string | null;
+  affiliationName: string | null;
 
   baseSchedule: ScheduleBaseSchedule;
 
@@ -90,6 +92,14 @@ export type ScheduleSurfaceFilters = {
   endDate: string;
 
   viewMode: ScheduleViewMode;
+
+  roleContext?: "director" | "bp_owner" | "bp_lead" | "bp_supervisor" | null;
+
+  forceScope?: "TECH_SELF" | null;
+
+  forceAssignmentIds?: string[] | null;
+
+  search?: string | null;
 };
 
 export type ScheduleDailySummary = {

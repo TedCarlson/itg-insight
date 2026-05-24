@@ -38,7 +38,10 @@ export async function loadScheduleSurfacePayload(
   filters: ScheduleSurfaceFilters,
 ): Promise<ScheduleSurfacePayload> {
 
-  const scope = await resolveScheduleScope();
+  const scope = await resolveScheduleScope({
+    forceScope: filters.forceScope ?? null,
+    forceAssignmentIds: filters.forceAssignmentIds ?? null,
+  });
 
   /**
    * NEXT PASS
@@ -65,6 +68,15 @@ export async function loadScheduleSurfacePayload(
     endDate: resolvedRange.endDate,
   };
 
+  console.log("SCHEDULE_SCOPE_DEBUG", {
+    scope: scope.scope,
+    contractorId: scope.contractorId,
+    personId: scope.personId,
+    assignmentIds: scope.assignmentIds,
+    allowedPcOrgIds: scope.allowedPcOrgIds,
+    filters,
+  });
+
   const pcOrgIds =
     resolvedFilters.pcOrgId
       ? [resolvedFilters.pcOrgId]
@@ -75,6 +87,7 @@ export async function loadScheduleSurfacePayload(
       scope: scope.scope,
       contractorId: scope.contractorId,
       assignmentIds: scope.assignmentIds,
+      search: resolvedFilters.search ?? null,
       pcOrgIds,
       startDate: resolvedFilters.startDate,
       endDate: resolvedFilters.endDate,

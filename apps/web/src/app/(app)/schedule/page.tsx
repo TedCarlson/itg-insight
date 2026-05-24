@@ -11,6 +11,8 @@ type SearchParams = {
   start_date?: string;
   end_date?: string;
   view_mode?: "day" | "week" | "month" | "list";
+  role_context?: "director" | "bp_owner" | "bp_lead" | "bp_supervisor";
+  search?: string;
 };
 
 type Props = {
@@ -35,6 +37,8 @@ export default async function Page({
       startDate: params?.start_date ?? today,
       endDate: params?.end_date ?? today,
       viewMode: params?.view_mode ?? "day",
+      roleContext: params?.role_context ?? null,
+      search: params?.search ?? null,
     });
 
   return (

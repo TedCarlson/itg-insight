@@ -84,6 +84,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     sortOrder: 80,
   },
 
+
   {
     key: "company_manager_metrics",
     label: "Metrics",
@@ -191,6 +192,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     defaultRoles: ["BP_LEAD"],
     sortOrder: 149,
   },
+
   {
     key: "bp_supervisor_metrics",
     label: "Metrics",
@@ -201,6 +203,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     exposeWhenPermissions: ["metrics_access"],
     sortOrder: 150,
   },
+
 
   {
     key: "tech_home",

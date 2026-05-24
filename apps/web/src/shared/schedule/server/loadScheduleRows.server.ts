@@ -9,13 +9,15 @@ import type {
 type LoadScheduleRowsArgs = {
   scope:
     | "ALL_ORG"
-    | "BP_COMPANY"
+    | "BP_CONTRACTOR"
     | "BP_SUPERVISOR"
     | "TECH_SELF";
 
   contractorId: string | null;
 
   assignmentIds: string[];
+
+  search: string | null;
 
   pcOrgIds: string[];
 
@@ -36,6 +38,8 @@ type WorkforceRow = {
   is_active: boolean | null;
 
   affiliation_id: string | null;
+  affiliation_code: string | null;
+  affiliation: string | null;
 };
 
 type ScheduleFactRow = {
@@ -110,7 +114,8 @@ export async function loadScheduleRows(
           "office_id",
           "is_active",
           "affiliation_id",
-          "affiliation_id",
+          "affiliation_code",
+          "affiliation",
         ].join(","),
       )
       .in("pc_org_id", args.pcOrgIds);
@@ -125,7 +130,7 @@ export async function loadScheduleRows(
     ((workforceRows ?? []) as unknown as WorkforceRow[]);
 
   if (
-    args.scope === "BP_COMPANY" &&
+    args.scope === "BP_CONTRACTOR" &&
     args.contractorId
   ) {
     scopedWorkforceRows =
@@ -136,7 +141,10 @@ export async function loadScheduleRows(
   }
 
   if (
-    args.scope === "BP_SUPERVISOR" &&
+    (
+      args.scope === "BP_SUPERVISOR" ||
+      args.scope === "TECH_SELF"
+    ) &&
     args.assignmentIds.length
   ) {
     const allowedAssignments =
@@ -151,8 +159,8 @@ export async function loadScheduleRows(
       );
   }
 
-  const { data: factRows, error: factError } =
-    await admin
+  let factQuery =
+    admin
       .from("schedule_day_fact")
       .select(
         [
@@ -166,6 +174,40 @@ export async function loadScheduleRows(
       .in("pc_org_id", args.pcOrgIds)
       .gte("shift_date", args.startDate)
       .lte("shift_date", args.endDate);
+
+  if (
+    (
+      args.scope === "BP_SUPERVISOR" ||
+      args.scope === "TECH_SELF"
+    ) &&
+    args.assignmentIds.length
+  ) {
+    factQuery =
+      factQuery.in("assignment_id", args.assignmentIds);
+  }
+
+  const search =
+    clean(args.search).toLowerCase();
+
+  if (search) {
+    scopedWorkforceRows =
+      scopedWorkforceRows.filter((row) => {
+        const haystack =
+          [
+            row.tech_id,
+            row.full_name,
+            row.affiliation_code,
+            row.affiliation,
+          ]
+            .map((value) => clean(value).toLowerCase())
+            .join(" ");
+
+        return haystack.includes(search);
+      });
+  }
+
+  const { data: factRows, error: factError } =
+    await factQuery;
 
   if (factError) {
     throw new Error(
@@ -447,14 +489,18 @@ export async function loadScheduleRows(
       clean(workforce.tech_id);
 
     const sv =
-      techId
-        ? svByTechDate.get(`${techId}:${factDate}`) ?? null
-        : null;
+      args.scope === "TECH_SELF"
+        ? null
+        : techId
+          ? svByTechDate.get(`${techId}:${factDate}`) ?? null
+          : null;
 
     const checkIn =
-      techId
-        ? checkInByTechDate.get(`${techId}:${factDate}`) ?? null
-        : null;
+      args.scope === "TECH_SELF"
+        ? null
+        : techId
+          ? checkInByTechDate.get(`${techId}:${factDate}`) ?? null
+          : null;
 
     const hasShiftValidation =
       !!sv;
@@ -511,9 +557,17 @@ export async function loadScheduleRows(
 
       supervisorName: null,
 
-      contractorId: null,
+      contractorId:
+        clean(workforce.affiliation_id) || null,
 
-      contractorName: null,
+      contractorName:
+        clean(workforce.affiliation) || null,
+
+      affiliationCode:
+        clean(workforce.affiliation_code) || null,
+
+      affiliationName:
+        clean(workforce.affiliation) || null,
 
       baseSchedule: {
         scheduled: true,

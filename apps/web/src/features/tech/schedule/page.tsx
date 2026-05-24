@@ -40,6 +40,52 @@ function dayNum(iso: string) {
   return Number(iso.slice(8, 10));
 }
 
+function phaseLabel(phase: string | null | undefined, scheduled: boolean) {
+  if (phase === "actual") return "Actual";
+  if (phase === "built") return "Built";
+  if (scheduled) return "Planned";
+  return "Off";
+}
+
+function tileTone(args: {
+  scheduled: boolean;
+  phase: string | null | undefined;
+  hasDispatch: boolean;
+}) {
+  if (args.hasDispatch) {
+    return {
+      borderColor: "color-mix(in oklab, var(--to-danger) 58%, var(--to-border))",
+      backgroundColor: "color-mix(in oklab, var(--to-danger) 10%, var(--to-surface))",
+    };
+  }
+
+  if (args.phase === "actual") {
+    return {
+      borderColor: "color-mix(in oklab, var(--to-success) 62%, var(--to-border))",
+      backgroundColor: "color-mix(in oklab, var(--to-success) 14%, var(--to-surface))",
+    };
+  }
+
+  if (args.phase === "built") {
+    return {
+      borderColor: "color-mix(in oklab, var(--to-success) 50%, var(--to-border))",
+      backgroundColor: "color-mix(in oklab, var(--to-success) 10%, var(--to-surface))",
+    };
+  }
+
+  if (args.scheduled) {
+    return {
+      borderColor: "color-mix(in oklab, var(--to-success) 52%, var(--to-border))",
+      backgroundColor: "color-mix(in oklab, var(--to-success) 9%, var(--to-surface))",
+    };
+  }
+
+  return {
+    borderColor: "color-mix(in oklab, var(--to-warning) 55%, var(--to-border))",
+    backgroundColor: "color-mix(in oklab, var(--to-warning) 10%, var(--to-surface))",
+  };
+}
+
 export default async function TechScheduleFeaturePage() {
   const payload = await getTechScheduleCalendar();
   const days = buildMonthDays(payload.year, payload.month);
@@ -83,22 +129,28 @@ export default async function TechScheduleFeaturePage() {
               );
             }
 
-            const scheduled = payload.scheduledDates.has(cell.date);
+            const day = payload.daysByDate.get(cell.date) ?? null;
+            const scheduled = Boolean(day?.scheduled);
             const isToday = cell.date === payload.todayIso;
 
-            const style = scheduled
-              ? {
-                  borderColor:
-                    "color-mix(in oklab, var(--to-success) 55%, var(--to-border))",
-                  backgroundColor:
-                    "color-mix(in oklab, var(--to-success) 12%, var(--to-surface))",
-                }
-              : {
-                  borderColor:
-                    "color-mix(in oklab, var(--to-warning) 55%, var(--to-border))",
-                  backgroundColor:
-                    "color-mix(in oklab, var(--to-warning) 12%, var(--to-surface))",
-                };
+            const units =
+              day?.actualUnits ??
+              day?.builtUnits ??
+              day?.plannedUnits ??
+              null;
+
+            const hasDispatch =
+              Boolean(day?.dispatchBadges.length || day?.latestNote);
+
+            const state =
+              phaseLabel(day?.phase, scheduled);
+
+            const style =
+              tileTone({
+                scheduled,
+                phase: day?.phase,
+                hasDispatch,
+              });
 
             return (
               <div
@@ -107,10 +159,31 @@ export default async function TechScheduleFeaturePage() {
                   isToday ? "ring-2 ring-[var(--to-accent)]" : ""
                 }`}
                 style={style}
-                title={`${cell.date} • ${scheduled ? "Scheduled" : "Off"}`}
+                title={[
+                  cell.date,
+                  state,
+                  day?.routeArea,
+                  units == null ? null : `${units} units`,
+                  day?.dispatchBadges.join(", "),
+                  day?.latestNote,
+                ].filter(Boolean).join(" • ")}
               >
-                <div className="flex h-full items-start justify-end">
-                  <span className="text-sm font-semibold">{dayNum(cell.date)}</span>
+                <div className="flex h-full flex-col justify-between">
+                  <div className="flex items-start justify-end">
+                    <span className="text-sm font-semibold">{dayNum(cell.date)}</span>
+                  </div>
+
+                  {day?.routeArea ? (
+                    <div className="min-w-0">
+                      <div className="truncate text-[10px] font-semibold">
+                        {day.routeArea}
+                      </div>
+
+                      {hasDispatch ? (
+                        <div className="mt-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             );

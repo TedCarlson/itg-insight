@@ -101,6 +101,13 @@ function hrefFor(
     params.set("pc_org_id", filters.pcOrgId);
   }
 
+  const search =
+    String(filters.search ?? "").trim();
+
+  if (search) {
+    params.set("search", search);
+  }
+
   return `/schedule?${params.toString()}`;
 }
 
@@ -140,6 +147,32 @@ export default function ScheduleControlStrip({
               {filters.endDate}
             </span>
           </div>
+
+          <form action="/schedule" className="inline-flex items-center gap-1">
+            <input type="hidden" name="view_mode" value={filters.viewMode} />
+            <input type="hidden" name="start_date" value={filters.startDate} />
+            {filters.pcOrgId ? (
+              <input type="hidden" name="pc_org_id" value={filters.pcOrgId} />
+            ) : null}
+
+            <input
+              name="search"
+              defaultValue={filters.search ?? ""}
+              placeholder="Search tech / name / affiliate"
+              className="h-7 w-[210px] rounded-md border bg-background px-2 text-xs outline-none placeholder:text-muted-foreground/70"
+            />
+
+            {filters.search ? (
+              <Link
+                href={hrefFor(filters, {
+                  anchorDate: filters.startDate,
+                }).replace(/&?search=[^&]*/g, "")}
+                className="rounded-md border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-background hover:text-foreground"
+              >
+                Clear
+              </Link>
+            ) : null}
+          </form>
 
         </div>
 

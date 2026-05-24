@@ -1,5 +1,24 @@
+// path: apps/web/src/features/tech/schedule/lib/getTechScheduleCalendar.ts
+
 import { getTechShellContext } from "@/features/tech/lib/getTechShellContext";
-import { supabaseAdmin } from "@/shared/data/supabase/admin";
+
+import {
+  loadScheduleSurfacePayload,
+} from "@/shared/schedule/server/loadScheduleSurfacePayload.server";
+
+export type TechScheduleDay = {
+  date: string;
+  scheduled: boolean;
+  routeArea: string | null;
+  phase: "planned" | "built" | "actual" | "none";
+  plannedUnits: number | null;
+  builtUnits: number | null;
+  actualUnits: number | null;
+  hasShiftValidation: boolean;
+  hasCheckIn: boolean;
+  dispatchBadges: string[];
+  latestNote: string | null;
+};
 
 export type TechScheduleCalendarPayload = {
   ok: boolean;
@@ -9,6 +28,7 @@ export type TechScheduleCalendarPayload = {
   month: number; // 0-based
   todayIso: string;
   scheduledDates: Set<string>;
+  daysByDate: Map<string, TechScheduleDay>;
 };
 
 function isoTodayUtc() {
@@ -31,17 +51,30 @@ function monthLabelUtc(year: number, month: number) {
   });
 }
 
-export async function getTechScheduleCalendar(): Promise<TechScheduleCalendarPayload> {
-  const shell = await getTechShellContext();
+function buildDispatchBadges(
+  row: Awaited<ReturnType<typeof loadScheduleSurfacePayload>>["rows"][number],
+) {
+  const badges: string[] = [];
 
+  if (row.dispatch.callOut) badges.push("Coverage Gap");
+  if (row.dispatch.addIn) badges.push("Add-In");
+  if (row.dispatch.techMove) badges.push("Move");
+  if (row.dispatch.incidentCount > 0) badges.push("Incident");
+  if (row.dispatch.noteCount > 0) badges.push("Note");
+
+  return badges;
+}
+
+export async function getTechScheduleCalendar(): Promise<TechScheduleCalendarPayload> {
   const now = new Date();
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth();
   const todayIso = isoTodayUtc();
   const startIso = monthStartIsoUtc(year, month);
   const endIso = monthEndIsoUtc(year, month);
+  const shell = await getTechShellContext();
 
-  if (!shell.ok || !shell.pc_org_id || !shell.assignment_id) {
+  if (!shell.ok || !shell.assignment_id) {
     return {
       ok: false,
       reason: shell.reason,
@@ -50,22 +83,45 @@ export async function getTechScheduleCalendar(): Promise<TechScheduleCalendarPay
       month,
       todayIso,
       scheduledDates: new Set<string>(),
+      daysByDate: new Map<string, TechScheduleDay>(),
     };
   }
 
-  const admin = supabaseAdmin();
+  const payload =
+    await loadScheduleSurfacePayload({
+      pcOrgId: shell.pc_org_id,
+      supervisorAssignmentId: null,
+      contractorId: null,
+      startDate: startIso,
+      endDate: endIso,
+      viewMode: "month",
+      roleContext: null,
+      forceScope: "TECH_SELF",
+      forceAssignmentIds: [shell.assignment_id],
+      search: null,
+    });
 
-  const { data: rows, error } = await admin
-    .from("schedule_day_fact")
-    .select("shift_date")
-    .eq("pc_org_id", shell.pc_org_id)
-    .eq("assignment_id", shell.assignment_id)
-    .gte("shift_date", startIso)
-    .lte("shift_date", endIso)
-    .order("shift_date", { ascending: true });
+  const daysByDate =
+    new Map<string, TechScheduleDay>();
 
-  if (error) {
-    throw new Error(`schedule_day_fact lookup failed: ${error.message}`);
+  for (const row of payload.rows) {
+    const scheduled =
+      row.assignmentId === shell.assignment_id &&
+      row.baseSchedule.scheduled === true;
+
+    daysByDate.set(row.date, {
+      date: row.date,
+      scheduled,
+      routeArea: scheduled ? row.baseSchedule.routeArea : null,
+      phase: scheduled ? row.routeLock.phase : "none",
+      plannedUnits: scheduled ? row.routeLock.plannedUnits : null,
+      builtUnits: scheduled ? row.routeLock.builtUnits : null,
+      actualUnits: scheduled ? row.routeLock.actualUnits : null,
+      hasShiftValidation: scheduled ? row.routeLock.hasShiftValidation : false,
+      hasCheckIn: scheduled ? row.routeLock.hasCheckIn : false,
+      dispatchBadges: scheduled ? buildDispatchBadges(row) : [],
+      latestNote: scheduled ? row.dispatch.latestNote : null,
+    });
   }
 
   return {
@@ -76,9 +132,10 @@ export async function getTechScheduleCalendar(): Promise<TechScheduleCalendarPay
     month,
     todayIso,
     scheduledDates: new Set(
-      (rows ?? [])
-        .map((row: { shift_date: string | null }) => String(row.shift_date ?? "").slice(0, 10))
-        .filter(Boolean)
+      Array.from(daysByDate.values())
+        .filter((day) => day.scheduled)
+        .map((day) => day.date),
     ),
+    daysByDate,
   };
 }
