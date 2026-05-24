@@ -45,6 +45,7 @@ export function buildScheduleDailySummaries(args: {
   endDate: string;
   rows: ScheduleSurfaceRow[];
   dispatchFacts?: DispatchDayFactRow[];
+  activeCapacityCount?: number;
 }): ScheduleDailySummary[] {
 
   const dispatchByDate =
@@ -86,7 +87,7 @@ export function buildScheduleDailySummaries(args: {
       scheduledCount,
 
       offCount:
-        rowsForDate.filter((row) => !row.baseSchedule.scheduled).length,
+        Math.max((args.activeCapacityCount ?? 0) - scheduledCount, 0),
 
       plannedRouteCount:
         scheduledCount,

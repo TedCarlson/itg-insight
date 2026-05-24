@@ -86,8 +86,8 @@ function cardClass(args: {
   isCurrentMonth: boolean;
 }) {
   const base = [
-    "min-h-[210px] rounded-xl border bg-background p-3",
-    args.isCurrentMonth ? "" : "opacity-45",
+    "min-h-[112px] rounded-lg border bg-background px-2 py-2",
+    args.isCurrentMonth ? "" : "opacity-40",
   ];
 
   if (args.isToday) {
@@ -112,19 +112,19 @@ export default function ScheduleMonthView({
   const currentMonth = payload.filters.startDate.slice(0, 7);
 
   return (
-    <div className="space-y-3">
-      <div className="sticky top-40 z-20 grid grid-cols-7 gap-2 bg-[var(--background)]/95 py-2 backdrop-blur">
+    <div className="space-y-2">
+      <div className="sticky top-40 z-20 grid grid-cols-7 gap-1.5 bg-[var(--background)]/95 py-2 backdrop-blur">
         {WEEKDAYS.map((weekday) => (
           <div
             key={weekday}
-            className="rounded-lg border bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            className="rounded-lg border bg-muted/30 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
           >
             {weekday}
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-7 gap-1.5">
         {dates.map((date) => {
           const summary = lookup.get(date) ?? emptySummary(date);
           const weekday = WEEKDAYS[new Date(`${date}T00:00:00.000Z`).getUTCDay()];
@@ -141,68 +141,50 @@ export default function ScheduleMonthView({
               })}
             >
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {weekday}
                   </div>
 
                   {summary.fiscalAnchorLabel ? (
-                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                    <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
                       FM End
                     </div>
                   ) : null}
                 </div>
 
-                <div className="text-right">
-                  <div className="text-lg font-semibold">
-                    {Number(date.slice(8, 10))}
-                  </div>
-
+                <div className="flex items-center gap-1 text-right">
                   {isToday ? (
-                    <div className="mt-1 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    <div className="rounded-full bg-blue-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
                       Today
                     </div>
                   ) : null}
-                </div>
-              </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="rounded-lg border p-2">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Scheduled
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">
-                    {summary.scheduledCount}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border p-2">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Off
-                  </div>
-                  <div className="mt-1 text-xl font-semibold">
-                    {summary.offCount}
+                  <div className="text-lg font-semibold leading-none">
+                    {Number(date.slice(8, 10))}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="rounded-lg border p-2">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Call Outs
-                  </div>
-                  <div className="mt-1 text-lg font-semibold">
-                    {summary.callOutCount}
-                  </div>
+              <div className="mt-3 grid gap-1 text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Booked</span>
+                  <span className="font-semibold tabular-nums">{summary.scheduledCount}</span>
                 </div>
 
-                <div className="rounded-lg border p-2">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Add Ins
-                  </div>
-                  <div className="mt-1 text-lg font-semibold">
-                    {summary.addInCount}
-                  </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Off</span>
+                  <span className="font-semibold tabular-nums">{summary.offCount}</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">No-show</span>
+                  <span className="font-semibold tabular-nums text-red-600">{summary.callOutCount}</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Add-in</span>
+                  <span className="font-semibold tabular-nums">{summary.addInCount}</span>
                 </div>
               </div>
             </Card>

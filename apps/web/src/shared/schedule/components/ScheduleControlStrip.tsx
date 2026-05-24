@@ -104,70 +104,63 @@ function hrefFor(
   return `/schedule?${params.toString()}`;
 }
 
+function cx(
+  ...parts: Array<string | false | null | undefined>
+) {
+  return parts.filter(Boolean).join(" ");
+}
+
 export default function ScheduleControlStrip({
   filters,
 }: Props) {
-
   const today =
     todayIso();
 
   return (
-    <div className="sticky top-16 z-30 rounded-xl border bg-background/95 p-4 shadow-sm backdrop-blur">
+    <div className="sticky top-16 z-30 rounded-lg border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
 
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
 
-          <div className="rounded-lg border px-3 py-2">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Start
-            </div>
+          <div className="inline-flex items-center gap-1.5 rounded-md border bg-muted/20 px-2 py-1">
+            <span className="font-semibold uppercase tracking-wide text-muted-foreground">
+              Range
+            </span>
 
-            <div className="text-sm font-medium">
+            <span className="font-medium tabular-nums">
               {filters.startDate}
-            </div>
-          </div>
+            </span>
 
-          <div className="rounded-lg border px-3 py-2">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              End
-            </div>
+            <span className="text-muted-foreground">
+              →
+            </span>
 
-            <div className="text-sm font-medium">
+            <span className="font-medium tabular-nums">
               {filters.endDate}
-            </div>
-          </div>
-
-          <div className="rounded-lg border px-3 py-2">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Org
-            </div>
-
-            <div className="text-sm font-medium">
-              {filters.pcOrgId ?? "Scoped"}
-            </div>
+            </span>
           </div>
 
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
 
-          <div className="flex rounded-lg border bg-muted/30 p-1">
+          <div className="inline-flex overflow-hidden rounded-md border bg-muted/20 text-xs">
 
             <Link
               href={hrefFor(filters, {
                 anchorDate: navigationAnchor(filters, "previous"),
               })}
-              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-background/60 hover:text-foreground"
+              className="px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-background hover:text-foreground"
             >
-              Previous
+              Prev
             </Link>
 
             <Link
               href={hrefFor(filters, {
                 anchorDate: today,
               })}
-              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-background/60 hover:text-foreground"
+              className="border-l px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-background hover:text-foreground"
             >
               Today
             </Link>
@@ -176,17 +169,16 @@ export default function ScheduleControlStrip({
               href={hrefFor(filters, {
                 anchorDate: navigationAnchor(filters, "next"),
               })}
-              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-background/60 hover:text-foreground"
+              className="border-l px-2.5 py-1.5 font-medium text-muted-foreground hover:bg-background hover:text-foreground"
             >
               Next
             </Link>
 
           </div>
 
-          <div className="flex rounded-lg border bg-muted/30 p-1">
+          <div className="inline-flex overflow-hidden rounded-md border bg-muted/20 text-xs">
 
             {VIEW_MODES.map((mode) => {
-
               const active =
                 filters.viewMode === mode.key;
 
@@ -197,12 +189,12 @@ export default function ScheduleControlStrip({
                     viewMode: mode.key,
                     anchorDate: today,
                   })}
-                  className={[
-                    "rounded-md px-3 py-2 text-sm font-medium transition",
+                  className={cx(
+                    "border-l px-2.5 py-1.5 font-medium first:border-l-0",
                     active
-                      ? "bg-background shadow-sm"
-                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-                  ].join(" ")}
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-background hover:text-foreground",
+                  )}
                 >
                   {mode.label}
                 </Link>

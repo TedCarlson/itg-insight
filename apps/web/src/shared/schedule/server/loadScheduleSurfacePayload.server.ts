@@ -30,6 +30,10 @@ import {
   buildScheduleDailySummaries,
 } from "./buildScheduleDailySummaries.server";
 
+import {
+  supabaseAdmin,
+} from "@/shared/data/supabase/admin";
+
 export async function loadScheduleSurfacePayload(
   filters: ScheduleSurfaceFilters,
 ): Promise<ScheduleSurfacePayload> {
@@ -73,6 +77,30 @@ export async function loadScheduleSurfacePayload(
       endDate: resolvedFilters.endDate,
     });
 
+  const admin =
+    supabaseAdmin();
+
+  const { data: capacityRows, error: capacityError } =
+    await admin
+      .from("workforce_current_v")
+      .select("assignment_id,role_type,is_active")
+      .in("pc_org_id", pcOrgIds)
+      .eq("is_active", true)
+      .in("role_type", ["FIELD", "TRAVEL"]);
+
+  if (capacityError) {
+    throw new Error(
+      `schedule capacity lookup failed: ${capacityError.message}`,
+    );
+  }
+
+  const activeCapacityCount =
+    new Set(
+      ((capacityRows ?? []) as Array<{ assignment_id: string | null }>)
+        .map((row) => String(row.assignment_id ?? "").trim())
+        .filter(Boolean),
+    ).size;
+
   const dispatchFacts =
     await loadDispatchDayFacts({
       pcOrgIds,
@@ -86,6 +114,7 @@ export async function loadScheduleSurfacePayload(
       endDate: resolvedFilters.endDate,
       rows,
       dispatchFacts,
+      activeCapacityCount,
     });
 
   return {
