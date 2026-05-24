@@ -66,7 +66,7 @@ function cardTone(args: {
   isFmEnd: boolean;
 }) {
   if (args.isToday) {
-    return "border-2 border-blue-500 bg-blue-50/20";
+    return "border-2 border-blue-500 bg-blue-50/10";
   }
 
   if (args.isFmEnd) {
@@ -94,19 +94,6 @@ export default function ScheduleWeekView({
   return (
     <div className="space-y-3">
 
-      <div className="sticky top-40 z-20 grid grid-cols-7 gap-1.5 bg-[var(--background)]/95 py-2 backdrop-blur">
-        {summaries.map((summary) => (
-          <div
-            key={`${summary.date}:header`}
-            className="rounded-lg border bg-muted/20 px-2.5 py-2"
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              {weekdayLabel(summary.date)}
-            </div>
-          </div>
-        ))}
-      </div>
-
       <div className="grid grid-cols-7 gap-1.5">
         {summaries.map((
           summary: ScheduleDailySummary,
@@ -132,26 +119,26 @@ export default function ScheduleWeekView({
               ].join(" ")}
             >
               <div className="border-b border-[var(--border)] px-2.5 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="text-2xl font-semibold tracking-tight">
-                      {shortDate(summary.date)}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {weekdayLabel(summary.date)}
                     </div>
 
-                    {isToday ? (
-                      <div className="rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                        Today
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <div className="text-2xl font-semibold tracking-tight">
+                        {shortDate(summary.date)}
                       </div>
-                    ) : null}
 
                     {isFmEnd ? (
                       <div className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                         FM End
                       </div>
                     ) : null}
+                    </div>
                   </div>
 
-                  <div className="text-xs text-muted-foreground">
+                  <div className="pt-4 text-xs text-muted-foreground">
                     {summary.scheduledCount} booked
                   </div>
                 </div>
