@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Lock Summary", href: "/route-lock" },
   { label: "Lock Report", href: "/route-lock/calendar" },
   { label: "Baseline Schedule", href: "/route-lock/schedule" },
+  { label: "Booking View", href: "/schedule" },
   { label: "Exceptions", href: "/route-lock/exceptions" },
   { label: "Shift Validations", href: "/route-lock/shift-validation" },
   { label: "Check-In Uploads", href: "/route-lock/check-in" },

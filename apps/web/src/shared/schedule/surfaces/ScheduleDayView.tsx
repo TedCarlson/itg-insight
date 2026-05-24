@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/Card";
 import SchedulePhasePill from "../components/SchedulePhasePill";
 import ScheduleStatusPill from "../components/ScheduleStatusPill";
 
+import ScheduleDayStatsStrip from "./ScheduleDayStatsStrip";
+
 import type {
   ScheduleSurfacePayload,
   ScheduleSurfaceRow,
@@ -15,6 +17,17 @@ import type {
 type Props = {
   payload: ScheduleSurfacePayload;
 };
+
+function formatHoursFromUnits(
+  units: number,
+) {
+  const hours =
+    units / 12;
+
+  return Number.isInteger(hours)
+    ? String(hours)
+    : hours.toFixed(1);
+}
 
 function buildDispatchBadges(
   row: ScheduleSurfaceRow,
@@ -49,7 +62,10 @@ export default function ScheduleDayView({
 }: Props) {
 
   return (
-    <Card className="overflow-hidden">
+    <div className="space-y-4">
+      <ScheduleDayStatsStrip rows={payload.rows} />
+
+      <Card className="overflow-hidden">
 
       <div className="border-b border-[var(--border)] px-4 py-3">
         <div className="text-lg font-semibold">
@@ -134,20 +150,31 @@ export default function ScheduleDayView({
                         <div>
                           Units:
                           {" "}
-                          <span className="font-medium text-foreground">
-                            {row.routeLock.actualUnits
+                          {(() => {
+                            const units =
+                              row.routeLock.actualUnits
                               ?? row.routeLock.builtUnits
                               ?? row.routeLock.plannedUnits
-                              ?? "—"}
-                          </span>
-                        </div>
+                              ?? null;
 
-                        <div>
-                          Source:
-                          {" "}
-                          <span className="font-medium text-foreground">
-                            {row.baseSchedule.source}
-                          </span>
+                            if (units == null) {
+                              return (
+                                <span className="font-medium text-foreground">
+                                  —
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <span className="font-medium text-foreground">
+                                {units}
+                                {" "}
+                                <span className="text-[var(--muted-foreground)]">
+                                  [{formatHoursFromUnits(units)} hours]
+                                </span>
+                              </span>
+                            );
+                          })()}
                         </div>
 
                       </div>
@@ -187,6 +214,7 @@ export default function ScheduleDayView({
 
       </div>
 
-    </Card>
+      </Card>
+    </div>
   );
 }

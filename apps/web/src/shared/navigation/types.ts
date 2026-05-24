@@ -56,6 +56,7 @@ export type NavigationItemKey =
   | "route_lock"
   | "dispatch_console"
   | "field_log"
+  | "booking"
   | "metrics_uploads"
   | "roster"
   | "profile"

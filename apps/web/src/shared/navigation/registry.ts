@@ -255,6 +255,33 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     sortOrder: 300,
   },
   {
+    key: "booking",
+    label: "Booking",
+    href: "/schedule",
+    icon: "calendar",
+    visibility: "default",
+    defaultRoles: [
+      "APP_OWNER",
+      "ADMIN",
+      "DIRECTOR",
+      "ITG_SUPERVISOR",
+      "COMPANY_MANAGER",
+      "BP_SUPERVISOR",
+      "BP_LEAD",
+      "BP_OWNER",
+    ],
+    exposeWhenPermissions: [
+      "route_lock_access",
+      "route_lock_read",
+      "route_lock_manage",
+      "dispatch_console_access",
+      "dispatch_manage",
+      "workforce_access",
+    ],
+    sortOrder: 305,
+  },
+
+  {
     key: "route_lock",
     label: "Route Lock",
     href: "/route-lock",
