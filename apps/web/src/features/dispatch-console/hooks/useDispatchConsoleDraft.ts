@@ -16,7 +16,7 @@ function norm(v: unknown) {
 }
 
 function labelForEntryType(t: EntryType) {
-  if (t === "CALL_OUT") return "Call Out";
+  if (t === "CALL_OUT") return "No Show";
   if (t === "ADD_IN") return "Add In";
   if (t === "BP_LOW") return "BP-Low";
   if (t === "INCIDENT") return "Incident";

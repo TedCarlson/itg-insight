@@ -23,7 +23,7 @@ export function EntryBar(props: {
   onClearOrCancel: () => void;
 }) {
   const entryOptionsScheduled = [
-    { value: "CALL_OUT" as const, label: "Call Out" },
+    { value: "CALL_OUT" as const, label: "No Show" },
     { value: "ADD_IN" as const, label: "Add In" },
     { value: "BP_LOW" as const, label: "BP-Low" },
     { value: "INCIDENT" as const, label: "Incident" },

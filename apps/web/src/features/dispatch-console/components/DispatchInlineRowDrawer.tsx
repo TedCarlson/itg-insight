@@ -48,7 +48,7 @@ export function DispatchInlineRowDrawer(props: {
   onDeleteNote: (row: LogRow) => void;
 }) {
   const entryOptionsScheduled: Array<{ value: EntryType; label: string }> = [
-    { value: "CALL_OUT", label: "Call Out" },
+    { value: "CALL_OUT", label: "No Show" },
     { value: "ADD_IN", label: "Add In" },
     { value: "BP_LOW", label: "BP-Low" },
     { value: "INCIDENT", label: "Incident" },

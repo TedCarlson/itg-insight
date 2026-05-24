@@ -287,7 +287,7 @@ export function WorkforcePanel(props: {
               onClick={() => props.setLogFilter("ALL")}
             />
             <SummaryChip
-              label={`${props.summary.call_out_count} call outs`}
+              label={`${props.summary.call_out_count} no shows`}
               active={props.logFilter === "CALL_OUT"}
               onClick={() => props.setLogFilter(props.logFilter === "CALL_OUT" ? "ALL" : "CALL_OUT")}
             />

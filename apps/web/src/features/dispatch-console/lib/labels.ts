@@ -11,7 +11,7 @@ export function fmtDelta(n: number) {
 }
 
 export function labelForEvent(t: LogRow["event_type"] | EntryType) {
-  if (t === "CALL_OUT") return "Call Out";
+  if (t === "CALL_OUT") return "No Show";
   if (t === "ADD_IN") return "Add In";
   if (t === "BP_LOW") return "BP-Low";
   if (t === "INCIDENT") return "Incident";
@@ -42,7 +42,7 @@ export function buildAutoDraft(entryType: EntryType, tech: WorkforceRow) {
 
 /**
  * Used when editing:
- * - If the message already has a known prefix ("Call Out — ..."), replace just the prefix.
+ * - If the message already has a known prefix ("No Show — ..."), replace just the prefix.
  * - Otherwise, fall back to building a clean auto-draft for the new type + selected tech (if any).
  */
 export function mutateDraftPrefix(args: { message: string; nextType: EntryType; tech?: WorkforceRow | null }) {
@@ -55,7 +55,7 @@ export function mutateDraftPrefix(args: { message: string; nextType: EntryType; 
     const before = msg.slice(0, idx).trim(); // label area (might include spacing)
     const after = msg.slice(idx + 1).trim(); // rest after —
     // only mutate if the "label area" matches any known label
-    const known = ["Call Out", "Add In", "BP-Low", "Incident", "Tech Move", "Note"];
+    const known = ["No Show", "Add In", "BP-Low", "Incident", "Tech Move", "Note"];
     const beforeClean = before.replace(/\s+$/, "");
     if (known.some((k) => beforeClean === k)) {
       return `${nextPrefix} ${after}`;

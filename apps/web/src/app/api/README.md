@@ -309,3 +309,343 @@ When testing permissions:
 - Auditing: write org_event entries for permission changes (grant/revoke)
 
 ---
+
+# API Rebuild Roadmap
+
+The API layer is being rebuilt into a strict boundary-driven architecture.
+
+This is not a cleanup effort.  
+This is a structural rewrite of how the application communicates with domain logic and data access.
+
+The goal is to make every route:
+- predictable
+- auditable
+- testable
+- replaceable
+- readable in one glance
+
+The route is no longer the kitchen.
+
+The route is the front desk.
+
+---
+
+# Core Rebuild Contract
+
+Every API route must follow this shape:
+
+```txt
+route.ts
+  → schema/parser
+  → access guard
+  → service/action
+  → repository/data access
+  → mapper/presenter
+  → standard response envelope
+```
+
+## Route Responsibilities ONLY
+
+A route may:
+1. Parse request input
+2. Validate payload/query params
+3. Resolve auth/session/access
+4. Call exactly one service/action
+5. Return a standardized response
+
+## A Route May NOT
+
+A route must not contain:
+- business workflow
+- reconciliation logic
+- upload normalization
+- scoring engines
+- metrics computation
+- Supabase query chains
+- orchestration logic
+- sweep logic
+- response shaping
+- branching domain rules
+- inline access logic duplication
+
+If those exist inside `route.ts`, the boundary has failed.
+
+---
+
+# Working Rule
+
+When rebuilding an API route:
+
+DO NOT:
+- patch the fat route
+- improve the fat route
+- reorganize the fat route
+
+Instead:
+1. Identify the workflow hidden inside the route
+2. Extract the workflow into proper layers
+3. Leave the route thin and obvious
+
+The rebuild is complete only when the route becomes boring.
+
+---
+
+# Layer Definitions
+
+## 1) `route.ts`
+
+Purpose:
+- HTTP boundary only
+
+Responsibilities:
+- parse request
+- call schema validation
+- resolve authenticated context
+- invoke service/action
+- return response envelope
+
+A route should be understandable top-to-bottom in under one minute.
+
+---
+
+## 2) Schema / Parser Layer
+
+Purpose:
+- explicit request contracts
+
+Responsibilities:
+- validate body/query/params
+- normalize primitive input shapes
+- reject malformed requests early
+
+Examples:
+
+```txt
+schemas/
+  createMetricUpload.schema.ts
+  updateRosterAssignment.schema.ts
+```
+
+Preferred tooling:
+- zod
+- typed parser helpers
+- shared DTO contracts
+
+---
+
+## 3) Access Guard Layer
+
+Purpose:
+- centralized authorization
+
+Responsibilities:
+- org access verification
+- permission enforcement
+- ownership/admin checks
+- reusable gate policies
+
+Examples:
+
+```txt
+guards/
+  requirePcOrgAccess.ts
+  requireRosterManage.ts
+  requireMetricsManage.ts
+```
+
+Rules:
+- access logic should never be duplicated across routes
+- routes should not inline grant checks
+
+---
+
+## 4) Service / Action Layer
+
+Purpose:
+- own business workflow
+
+This is the domain orchestration layer.
+
+Responsibilities:
+- execute business operations
+- coordinate repositories
+- enforce workflow rules
+- manage transactions/orchestration
+- invoke engines/processors
+
+Examples:
+
+```txt
+services/
+  processMetricsUpload.service.ts
+  rebuildScheduleMonth.service.ts
+  assignPersonToRoster.service.ts
+```
+
+This layer owns:
+- reconciliation
+- scoring
+- ingestion workflow
+- domain decisions
+- state transitions
+
+---
+
+## 5) Repository Layer
+
+Purpose:
+- isolate database access
+
+Responsibilities:
+- Supabase queries
+- SQL execution
+- persistence operations
+- data retrieval
+
+Rules:
+- repositories do not own business rules
+- repositories do not shape UI payloads
+- repositories should be composable and predictable
+
+Examples:
+
+```txt
+repositories/
+  metrics.repository.ts
+  roster.repository.ts
+  workforce.repository.ts
+```
+
+---
+
+## 6) Mapper / Presenter Layer
+
+Purpose:
+- shape stable response contracts
+
+Responsibilities:
+- convert domain output into API-safe payloads
+- normalize naming/typing
+- provide UI-stable contracts
+
+Examples:
+
+```txt
+mappers/
+  metricsUpload.mapper.ts
+  workforceSurface.mapper.ts
+```
+
+Rules:
+- UI should not depend on raw database structures
+- response shaping belongs here, not in routes
+
+---
+
+## 7) Standard Response Envelope
+
+All APIs should return predictable envelopes.
+
+Preferred shape:
+
+```ts
+type ApiSuccess<T> = {
+  ok: true;
+  data: T;
+};
+
+type ApiError = {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+  };
+};
+```
+
+Goals:
+- predictable frontend handling
+- centralized error behavior
+- stable contracts across the platform
+
+---
+
+# Error Handling Standard
+
+Routes should not contain custom error trees.
+
+Use:
+- centralized error mapping
+- domain error classes
+- standard response envelopes
+
+Examples:
+
+```txt
+errors/
+  ForbiddenError.ts
+  ValidationError.ts
+  NotFoundError.ts
+```
+
+The route catches once.  
+The domain defines the meaning.
+
+---
+
+# Definition of Done
+
+An API route is considered rebuilt only when:
+
+- `route.ts` contains no business workflow
+- request validation is explicit
+- access is centralized
+- database calls are outside the route
+- business logic lives in services/actions
+- repositories isolate persistence
+- response shaping is extracted
+- responses use the standard envelope
+- errors use the standard error handler
+- the route can be read top-to-bottom in under one minute
+
+---
+
+# Rebuild Priorities
+
+Priority order for rebuild candidates:
+
+1. Metrics ingestion routes
+2. Route-lock workflows
+3. Dispatch workflows
+4. Workforce write flows
+5. Roster onboarding/process flows
+6. Metrics reporting routes
+7. Executive aggregation routes
+8. Remaining legacy admin routes
+
+Focus first on:
+- highest complexity
+- most duplicated logic
+- most dangerous business coupling
+- routes currently acting as orchestration engines
+
+---
+
+# Architectural North Star
+
+The API layer becomes a stable contract between:
+- UI
+- domain engine
+- persistence layer
+
+The route receives the request.
+
+The service owns the workflow.
+
+The repository talks to the database.
+
+The mapper shapes the response.
+
+The UI receives a predictable contract.
+
+That is the rebuild standard.

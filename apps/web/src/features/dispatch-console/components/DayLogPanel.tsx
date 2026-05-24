@@ -12,7 +12,7 @@ function cls(...parts: Array<string | false | undefined>) {
 }
 
 function labelForEvent(t: LogRow["event_type"]) {
-  if (t === "CALL_OUT") return "Call Out";
+  if (t === "CALL_OUT") return "No Show";
   if (t === "ADD_IN") return "Add In";
   if (t === "BP_LOW") return "BP-Low";
   if (t === "INCIDENT") return "Incident";
@@ -59,7 +59,7 @@ export function DayLogPanel(props: {
             size="sm"
             options={[
               { value: "ALL", label: "All" },
-              { value: "CALL_OUT", label: "Call Out" },
+              { value: "CALL_OUT", label: "No Show" },
               { value: "ADD_IN", label: "Add In" },
               { value: "BP_LOW", label: "BP-Low" },
               { value: "INCIDENT", label: "Incident" },
