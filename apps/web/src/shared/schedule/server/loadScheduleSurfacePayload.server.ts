@@ -72,6 +72,9 @@ export async function loadScheduleSurfacePayload(
 
   const rows: ScheduleSurfaceRow[] =
     await loadScheduleRows({
+      scope: scope.scope,
+      contractorId: scope.contractorId,
+      assignmentIds: scope.assignmentIds,
       pcOrgIds,
       startDate: resolvedFilters.startDate,
       endDate: resolvedFilters.endDate,

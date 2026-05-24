@@ -7,7 +7,18 @@ import type {
 } from "../types/scheduleSurfaceTypes";
 
 type LoadScheduleRowsArgs = {
+  scope:
+    | "ALL_ORG"
+    | "BP_COMPANY"
+    | "BP_SUPERVISOR"
+    | "TECH_SELF";
+
+  contractorId: string | null;
+
+  assignmentIds: string[];
+
   pcOrgIds: string[];
+
   startDate: string;
   endDate: string;
 };
@@ -23,6 +34,8 @@ type WorkforceRow = {
   office_id: string | null;
 
   is_active: boolean | null;
+
+  affiliation_id: string | null;
 };
 
 type ScheduleFactRow = {
@@ -96,6 +109,8 @@ export async function loadScheduleRows(
           "full_name",
           "office_id",
           "is_active",
+          "affiliation_id",
+          "affiliation_id",
         ].join(","),
       )
       .in("pc_org_id", args.pcOrgIds);
@@ -104,6 +119,36 @@ export async function loadScheduleRows(
     throw new Error(
       `schedule workforce lookup failed: ${workforceError.message}`,
     );
+  }
+
+  let scopedWorkforceRows =
+    ((workforceRows ?? []) as unknown as WorkforceRow[]);
+
+  if (
+    args.scope === "BP_COMPANY" &&
+    args.contractorId
+  ) {
+    scopedWorkforceRows =
+      scopedWorkforceRows.filter(
+        (row) =>
+          clean(row.affiliation_id) === args.contractorId,
+      );
+  }
+
+  if (
+    args.scope === "BP_SUPERVISOR" &&
+    args.assignmentIds.length
+  ) {
+    const allowedAssignments =
+      new Set(args.assignmentIds);
+
+    scopedWorkforceRows =
+      scopedWorkforceRows.filter(
+        (row) =>
+          allowedAssignments.has(
+            clean(row.assignment_id),
+          ),
+      );
   }
 
   const { data: factRows, error: factError } =
@@ -360,7 +405,7 @@ export async function loadScheduleRows(
   const workforceByAssignment =
     new Map<string, WorkforceRow>();
 
-  for (const row of ((workforceRows ?? []) as unknown as WorkforceRow[])) {
+  for (const row of scopedWorkforceRows) {
 
     const assignmentId =
       clean(row.assignment_id);

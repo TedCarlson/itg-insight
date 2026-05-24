@@ -64,7 +64,10 @@ export function RouteLockSnapshotWidget(props: {
   widget?: HomeWidgetConfig;
 }) {
   const size = props.widget?.size ?? "medium";
-  const visibleItems = props.payload.items.slice(0, visibleItemCount(size));
+  const items = props.payload?.items ?? [];
+
+  const visibleItems =
+    items.slice(0, visibleItemCount(size));
   const isRail = size === "rail_half" || size === "rail_full";
   const isSmall = size === "small";
 
