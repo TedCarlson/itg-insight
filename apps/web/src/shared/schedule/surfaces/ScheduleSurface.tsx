@@ -20,22 +20,16 @@ export default function ScheduleSurface({
 }: Props) {
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
 
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Schedule
-          </h1>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Shared read-only booking visibility surface
-          </p>
+        <div className="text-lg font-semibold tracking-tight">
+          Schedule
         </div>
 
-        <div className="pt-2 text-xs text-muted-foreground">
-          Rows: {payload.rows.length}
+        <div className="text-[11px] text-muted-foreground">
+          {payload.rows.length} rows
         </div>
 
       </div>
