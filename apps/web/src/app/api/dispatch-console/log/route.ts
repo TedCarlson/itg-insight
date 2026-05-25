@@ -31,6 +31,12 @@ function asRouteError(err: unknown) {
   const message = String((err as any)?.message ?? "server_error");
 
   if (err instanceof DispatchApiError) {
+    console.error("DISPATCH_LOG_API_ERROR", {
+      status: err.status,
+      code: err.code,
+      details: err.details,
+    });
+
     return jsonError(err.status, {
       ok: false,
       error: err.code,

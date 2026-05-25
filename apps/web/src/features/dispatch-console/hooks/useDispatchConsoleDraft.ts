@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { EntryType, LogRow, WorkforceRow } from "../lib/types";
-import { buildAutoDraft } from "../lib/labels";
+import { labelForEvent } from "../lib/labels";
 
 type DraftArgs = {
   selectedAssignmentId: string | null;
@@ -16,12 +16,19 @@ function norm(v: unknown) {
 }
 
 function labelForEntryType(t: EntryType) {
-  if (t === "CALL_OUT") return "No Show";
-  if (t === "ADD_IN") return "Add In";
-  if (t === "BP_LOW") return "BP-Low";
-  if (t === "INCIDENT") return "Incident";
-  if (t === "TECH_MOVE") return "Tech Move";
-  return "Note";
+  return labelForEvent(t);
+}
+
+function buildCompactAutoDraft(t: EntryType, row: WorkforceRow) {
+  const label =
+    labelForEntryType(t);
+
+  const route =
+    norm(row.planned_route_name) ||
+    norm(row.planned_route_id) ||
+    "No route";
+
+  return `${label} • ${route} — `;
 }
 
 function mutateMessagePrefix(prevType: EntryType, nextType: EntryType, curMessage: string) {
@@ -98,13 +105,13 @@ export function useDispatchConsoleDraft(args: DraftArgs) {
           if (prev) {
             setMessage((cur) => mutateMessagePrefix(prev, nextType, cur));
           } else if (selectedTech) {
-            setMessage(buildAutoDraft(nextType, selectedTech));
+            setMessage(buildCompactAutoDraft(nextType, selectedTech));
           }
           return nextType;
         }
 
         if (selectedTech) {
-          const nextAuto = buildAutoDraft(nextType, selectedTech);
+          const nextAuto = buildCompactAutoDraft(nextType, selectedTech);
           const cur = norm(message);
           const lastAuto = norm(lastAutoDraftRef.current);
 

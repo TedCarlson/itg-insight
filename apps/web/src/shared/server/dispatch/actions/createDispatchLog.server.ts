@@ -50,12 +50,16 @@ export async function createDispatchLog(
     let identity: DispatchIdentity | null = null;
 
     if (input.assignment_id) {
-      identity = await resolveDispatchIdentity({
-        admin,
-        pc_org_id: input.pc_org_id,
-        shift_date: input.shift_date,
-        assignment_id: input.assignment_id,
-      });
+      try {
+        identity = await resolveDispatchIdentity({
+          admin,
+          pc_org_id: input.pc_org_id,
+          shift_date: input.shift_date,
+          assignment_id: input.assignment_id,
+        });
+      } catch {
+        identity = null;
+      }
     }
 
     return insertDispatchLog({

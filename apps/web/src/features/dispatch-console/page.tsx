@@ -89,7 +89,7 @@ export default function DispatchConsolePage() {
   const toast = useToast();
 
   const pc_org_id = selectedOrgId;
-  const [shiftDate] = useState<string>(() => todayInNY());
+  const [shiftDate, setShiftDate] = useState<string>(() => todayInNY());
 
   const [nameQuery, setNameQuery] = useState("");
   const [routeQuery, setRouteQuery] = useState("");
@@ -372,7 +372,27 @@ export default function DispatchConsolePage() {
 
   return (
     <PageShell>
-      <PageHeader title="Dispatch Console" subtitle="Daily workforce command surface." />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Dispatch Console" subtitle="Daily workforce command surface." />
+
+        <label className="flex items-center gap-2 rounded-xl border bg-[var(--to-surface)] px-3 py-2 text-sm">
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
+            Work Date
+          </span>
+
+          <input
+            type="date"
+            value={shiftDate}
+            onChange={(event) => {
+              setSelectedAssignmentId(null);
+              draft.clearDraft();
+              setShiftDate(event.target.value);
+            }}
+            className="h-8 rounded-md border bg-[var(--to-surface)] px-2 text-sm outline-none"
+            style={{ borderColor: "var(--to-border)", color: "var(--to-ink)" }}
+          />
+        </label>
+      </div>
 
       <WorkforcePanel
         panelH="min-h-[calc(100vh-220px)]"

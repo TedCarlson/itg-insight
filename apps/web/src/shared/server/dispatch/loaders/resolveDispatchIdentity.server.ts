@@ -21,6 +21,25 @@ export async function resolveDispatchIdentity(args: {
   let tech_id: string | null = day.data?.tech_id ?? null;
   let affiliation_id: string | null = day.data?.affiliation_id ?? null;
 
+  if (!person_id || !tech_id || !affiliation_id) {
+    const workforce = await admin
+      .from("workforce_current_v")
+      .select("person_id,tech_id,affiliation_id")
+      .eq("pc_org_id", pc_org_id)
+      .eq("assignment_id", assignment_id)
+      .eq("is_active", true)
+      .eq("assignment_status", "active")
+      .maybeSingle();
+
+    if (workforce.error) {
+      dispatchBadRequest("workforce_identity_lookup_failed", workforce.error);
+    }
+
+    person_id = person_id ?? workforce.data?.person_id ?? null;
+    tech_id = tech_id ?? (workforce.data?.tech_id ? String(workforce.data.tech_id) : null);
+    affiliation_id = affiliation_id ?? workforce.data?.affiliation_id ?? null;
+  }
+
   if (!person_id || !tech_id) {
     const roster = await admin
       .from("route_lock_roster_tech_v")
