@@ -192,7 +192,7 @@ export function DispatchInlineRowDrawer(props: {
                 }
               })();
 
-              const showActions = mine && r.event_type === "NOTE";
+              const showActions = mine;
 
               return (
                 <div

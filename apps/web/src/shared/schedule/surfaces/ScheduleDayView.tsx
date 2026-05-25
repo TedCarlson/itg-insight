@@ -29,6 +29,26 @@ function formatHoursFromUnits(
     : hours.toFixed(1);
 }
 
+function needsActualAttention(
+  row: ScheduleSurfaceRow,
+  dayHasActuals: boolean,
+) {
+  const hasDispatchExplanation =
+    row.dispatch.callOut ||
+    row.dispatch.addIn ||
+    row.dispatch.techMove ||
+    row.dispatch.incidentCount > 0 ||
+    row.dispatch.noteCount > 0 ||
+    Boolean(String(row.dispatch.latestNote ?? "").trim());
+
+  return (
+    dayHasActuals &&
+    row.routeLock.phase === "built" &&
+    !row.routeLock.hasCheckIn &&
+    !hasDispatchExplanation
+  );
+}
+
 function buildDispatchBadges(
   row: ScheduleSurfaceRow,
 ) {
@@ -61,6 +81,9 @@ export default function ScheduleDayView({
   payload,
 }: Props) {
 
+  const dayHasActuals =
+    payload.rows.some((row) => row.routeLock.phase === "actual");
+
   return (
     <div className="space-y-4">
       <ScheduleDayStatsStrip rows={payload.rows} />
@@ -77,30 +100,30 @@ export default function ScheduleDayView({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-collapse">
+          <table className="w-full min-w-[760px] border-collapse text-xs sm:text-sm lg:min-w-[980px]">
             <thead>
               <tr className="border-b border-[var(--border)] bg-[var(--muted)]/30">
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                   Tech
                 </th>
 
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                   Name
                 </th>
 
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                   Route
                 </th>
 
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                   Phase
                 </th>
 
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                   Units
                 </th>
 
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                   Dispatch / Notes
                 </th>
               </tr>
@@ -117,6 +140,9 @@ export default function ScheduleDayView({
                   ?? row.routeLock.plannedUnits
                   ?? null;
 
+                const needsAttention =
+                  needsActualAttention(row, dayHasActuals);
+
                 return (
                   <tr
                     key={[
@@ -124,25 +150,36 @@ export default function ScheduleDayView({
                       row.personId,
                       row.assignmentId ?? "none",
                     ].join(":")}
-                    className="border-b border-[var(--border)] hover:bg-[var(--muted)]/20"
+                    className={[
+                      "border-b border-[var(--border)] hover:bg-[var(--muted)]/20",
+                      needsAttention ? "bg-amber-50/50" : "",
+                    ].join(" ")}
                   >
-                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm font-semibold">
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-sm font-semibold">
                       {row.techId ?? "—"}
                     </td>
 
-                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm">
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-sm">
                       {row.fullName}
                     </td>
 
-                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm font-semibold">
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-sm font-semibold">
                       {row.baseSchedule.routeArea ?? "No booked route"}
                     </td>
 
-                    <td className="whitespace-nowrap px-3 py-2 align-middle">
-                      <SchedulePhasePill phase={row.routeLock.phase} />
+                    <td className="whitespace-nowrap px-2 py-2 align-middle">
+                      <div className="flex items-center gap-1.5">
+                        <SchedulePhasePill phase={row.routeLock.phase} />
+
+                        {needsAttention ? (
+                          <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                            Missing Actual
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
 
-                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm">
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-sm">
                       {units == null ? (
                         <span className="text-[var(--muted-foreground)]">—</span>
                       ) : (
@@ -155,7 +192,7 @@ export default function ScheduleDayView({
                       )}
                     </td>
 
-                    <td className="px-3 py-2 align-middle">
+                    <td className="px-2 py-2 align-middle">
                       {dispatchBadges.length > 0 || row.dispatch.latestNote ? (
                         <div className="flex min-w-[280px] flex-wrap items-center gap-1.5">
                           {dispatchBadges.map((badge) => (

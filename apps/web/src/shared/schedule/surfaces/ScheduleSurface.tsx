@@ -20,9 +20,9 @@ export default function ScheduleSurface({
 }: Props) {
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 overflow-hidden">
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
 
         <div className="text-lg font-semibold tracking-tight">
           Schedule

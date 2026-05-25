@@ -23,6 +23,37 @@ const WEEKDAYS = [
   "Saturday",
 ];
 
+function missingActualCountForDate(
+  payload: ScheduleSurfacePayload,
+  date: string,
+) {
+  const rowsForDate =
+    payload.rows.filter((row) => row.date === date);
+
+  const dayHasActuals =
+    rowsForDate.some((row) => row.routeLock.phase === "actual");
+
+  if (!dayHasActuals) {
+    return 0;
+  }
+
+  return rowsForDate.filter((row) => {
+    const hasDispatchExplanation =
+      row.dispatch.callOut ||
+      row.dispatch.addIn ||
+      row.dispatch.techMove ||
+      row.dispatch.incidentCount > 0 ||
+      row.dispatch.noteCount > 0 ||
+      Boolean(String(row.dispatch.latestNote ?? "").trim());
+
+    return (
+      row.routeLock.phase === "built" &&
+      !row.routeLock.hasCheckIn &&
+      !hasDispatchExplanation
+    );
+  }).length;
+}
+
 function addDays(isoDate: string, days: number) {
   const date = new Date(`${isoDate}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -115,18 +146,7 @@ export default function ScheduleMonthView({
 
   return (
     <div className="space-y-2">
-      <div className="sticky top-40 z-20 grid grid-cols-7 gap-1.5 bg-[var(--background)]/95 py-2 backdrop-blur">
-        {WEEKDAYS.map((weekday) => (
-          <div
-            key={weekday}
-            className="rounded-lg border bg-muted/30 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-          >
-            {weekday}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid auto-cols-[minmax(190px,1fr)] grid-flow-col gap-1.5 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-7 xl:overflow-visible xl:pb-0">
         {dates.map((date) => {
           const summary = lookup.get(date) ?? emptySummary(date);
           const weekday = WEEKDAYS[new Date(`${date}T00:00:00.000Z`).getUTCDay()];
@@ -138,6 +158,9 @@ export default function ScheduleMonthView({
             blackoutDay?.rules?.[0]?.label ?? null;
           const isBlackout =
             Boolean(blackoutDay?.rules?.length);
+
+          const missingActualCount =
+            missingActualCountForDate(payload, date);
 
           return (
             <Card
@@ -168,6 +191,15 @@ export default function ScheduleMonthView({
                         className="rounded-sm border border-zinc-300 bg-zinc-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-700"
                       >
                         Blackout
+                      </span>
+                    ) : null}
+
+                    {missingActualCount > 0 ? (
+                      <span
+                        title="Built rows missing actual check-in"
+                        className="rounded-sm border border-amber-300 bg-amber-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-800"
+                      >
+                        Missing Actual {missingActualCount}
                       </span>
                     ) : null}
                   </div>

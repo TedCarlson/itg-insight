@@ -124,13 +124,13 @@ export default function ScheduleControlStrip({
     todayIso();
 
   return (
-    <div className="sticky top-16 z-30 rounded-lg border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
+    <div className="rounded-lg border bg-background px-2 py-2 shadow-sm sm:px-3">
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-center">
 
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+        <div className="grid min-w-0 gap-2 text-xs sm:flex sm:flex-wrap sm:items-center">
 
-          <div className="inline-flex items-center gap-1.5 rounded-md border bg-muted/20 px-2 py-1">
+          <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md border bg-muted/20 px-2 py-1">
             <span className="font-semibold uppercase tracking-wide text-muted-foreground">
               Range
             </span>
@@ -148,7 +148,7 @@ export default function ScheduleControlStrip({
             </span>
           </div>
 
-          <form action="/schedule" className="inline-flex items-center gap-1">
+          <form action="/schedule" className="flex min-w-0 items-center gap-1">
             <input type="hidden" name="view_mode" value={filters.viewMode} />
             <input type="hidden" name="start_date" value={filters.startDate} />
             {filters.pcOrgId ? (
@@ -159,7 +159,7 @@ export default function ScheduleControlStrip({
               name="search"
               defaultValue={filters.search ?? ""}
               placeholder="Search tech / name / affiliate"
-              className="h-7 w-[210px] rounded-md border bg-background px-2 text-xs outline-none placeholder:text-muted-foreground/70"
+              className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none placeholder:text-muted-foreground/70 sm:w-[210px] sm:flex-none"
             />
 
             {filters.search ? (
@@ -176,7 +176,7 @@ export default function ScheduleControlStrip({
 
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 lg:justify-end">
 
           <div className="inline-flex overflow-hidden rounded-md border bg-muted/20 text-xs">
 

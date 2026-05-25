@@ -236,7 +236,7 @@ export default function DispatchConsolePage() {
           body: JSON.stringify({
             dispatch_console_log_id: draft.editingLogId,
             pc_org_id,
-            event_type: "NOTE",
+            event_type: draft.entryType,
             assignment_id: selectedAssignmentId,
             message: msg,
           }),
@@ -342,7 +342,7 @@ export default function DispatchConsolePage() {
         });
 
         const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to delete note");
+        if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Failed to delete log entry");
 
         if (draft.editingLogId === row.dispatch_console_log_id) draft.cancelEdit();
 
@@ -353,7 +353,7 @@ export default function DispatchConsolePage() {
         });
         await loadLogRollup(pc_org_id, shiftDate);
       } catch (e: any) {
-        toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to delete note", variant: "danger" });
+        toast.push({ title: "Dispatch Console", message: e?.message ?? "Failed to delete log entry", variant: "danger" });
       }
     },
     [pc_org_id, shiftDate, selectedAssignmentId, toast, draft, loadWorkforce, loadNotScheduled, loadLog, loadLogRollup]
@@ -444,11 +444,9 @@ export default function DispatchConsolePage() {
         }
         userId={userId}
         onBeginEdit={(row) => {
-          if (row.event_type !== "NOTE") return;
           draft.beginEdit(row);
         }}
         onDeleteNote={(row) => {
-          if (row.event_type !== "NOTE") return;
           void deleteNote(row);
         }}
       />

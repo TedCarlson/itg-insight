@@ -55,6 +55,26 @@ function rowUnits(row: ScheduleSurfaceRow) {
   );
 }
 
+function needsActualAttention(
+  row: ScheduleSurfaceRow,
+  dayHasActuals: boolean,
+) {
+  const hasDispatchExplanation =
+    row.dispatch.callOut ||
+    row.dispatch.addIn ||
+    row.dispatch.techMove ||
+    row.dispatch.incidentCount > 0 ||
+    row.dispatch.noteCount > 0 ||
+    Boolean(String(row.dispatch.latestNote ?? "").trim());
+
+  return (
+    dayHasActuals &&
+    row.routeLock.phase === "built" &&
+    !row.routeLock.hasCheckIn &&
+    !hasDispatchExplanation
+  );
+}
+
 function dispatchBadges(row: ScheduleSurfaceRow) {
   const badges: string[] = [];
 
@@ -129,12 +149,15 @@ export default function ScheduleWeekView({
   return (
     <div className="space-y-3">
 
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid auto-cols-[minmax(210px,1fr)] grid-flow-col gap-1.5 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-7 xl:overflow-visible xl:pb-0">
         {summaries.map((
           summary: ScheduleDailySummary,
         ) => {
           const rowsForDate =
             payload.rows.filter((row) => row.date === summary.date);
+
+          const dayHasActuals =
+            rowsForDate.some((row) => row.routeLock.phase === "actual");
 
           const isToday =
             summary.date === today;
@@ -155,7 +178,7 @@ export default function ScheduleWeekView({
             <Card
               key={summary.date}
               className={[
-                "flex h-[720px] min-h-0 flex-col overflow-hidden",
+                "flex h-[620px] min-h-0 flex-col overflow-hidden xl:h-[720px]",
                 cardTone({
                   isToday,
                   isFmEnd,
@@ -239,12 +262,16 @@ export default function ScheduleWeekView({
                       const hours =
                         formatHoursFromUnits(units);
 
+                      const needsAttention =
+                        needsActualAttention(row, dayHasActuals);
+
                       return (
                         <div
                           key={`${row.personId}:${row.assignmentId ?? "none"}:${row.date}`}
                           className={[
                             "group relative rounded-md border px-1.5 py-1 text-xs",
                             techCardTone(row),
+                            needsAttention ? "ring-1 ring-amber-300 bg-amber-50/70" : "",
                           ].join(" ")}
                         >
                           <div className="flex items-center justify-center gap-1 truncate text-center font-semibold tabular-nums">
@@ -282,6 +309,15 @@ export default function ScheduleWeekView({
                                 N
                               </span>
                             ) : null}
+
+                            {needsAttention ? (
+                              <span
+                                title="Missing Actual"
+                                className="rounded-sm bg-amber-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-800"
+                              >
+                                MISS
+                              </span>
+                            ) : null}
                           </div>
 
                           <div
@@ -304,6 +340,12 @@ export default function ScheduleWeekView({
                               <div className="font-medium text-foreground">
                                 {phaseShort(row)}
                               </div>
+
+                              {needsAttention ? (
+                                <div className="font-semibold text-amber-800">
+                                  Missing Actual
+                                </div>
+                              ) : null}
 
                               <div className="font-medium text-foreground">
                                 {units != null ? `${units}u` : "—"}
