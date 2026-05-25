@@ -17,7 +17,7 @@ function cleanName(v: unknown): string {
   return s.slice(0, 120);
 }
 
-async function guardSelectedOrgRosterManage() {
+async function guardSelectedOrgRouteLockManage() {
   const sb = await supabaseServer();
   const {
     data: { user },
@@ -38,9 +38,17 @@ async function guardSelectedOrgRosterManage() {
   if (!pc_org_id) return { ok: false as const, status: 409, error: "no selected org" };
 
   const apiClient: any = (sb as any).schema ? (sb as any).schema("api") : sb;
+
+  const { data: isOwner } = await apiClient.rpc("is_owner");
+  const { data: isAdmin } = await apiClient.rpc("is_admin");
+  const { data: isAppOwner } = await apiClient.rpc("is_app_owner");
+
+  if (isOwner || isAdmin || isAppOwner) {
+    return { ok: true as const, pc_org_id };
+  }
   const { data: allowed, error: permErr } = await apiClient.rpc("has_pc_org_permission", {
     p_pc_org_id: pc_org_id,
-    p_permission_key: "roster_manage",
+    p_permission_key: "route_lock_manage",
   });
 
   if (permErr || !allowed) return { ok: false as const, status: 403, error: "forbidden" };
@@ -55,7 +63,7 @@ export async function POST(req: Request) {
   if (!url) return NextResponse.json({ ok: false, error: "missing NEXT_PUBLIC_SUPABASE_URL" }, { status: 500 });
   if (!service) return NextResponse.json({ ok: false, error: "missing SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
 
-  const guard = await guardSelectedOrgRosterManage();
+  const guard = await guardSelectedOrgRouteLockManage();
   if (!guard.ok) return NextResponse.json({ ok: false, error: guard.error }, { status: guard.status });
 
   const body = await req.json().catch(() => ({}));

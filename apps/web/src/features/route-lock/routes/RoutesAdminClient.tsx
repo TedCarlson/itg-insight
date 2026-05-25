@@ -67,21 +67,21 @@ export default function RoutesAdminClient() {
     const out = !q
       ? list
       : list.filter((r) => {
-          const hay = [
-            r.route_name,
-            r.pc_org_name,
-            r.mso_name,
-            r.division_name,
-            r.division_code,
-            r.region_name,
-            r.region_code,
-            r.pc_number,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-          return hay.includes(q);
-        });
+        const hay = [
+          r.route_name,
+          r.pc_org_name,
+          r.mso_name,
+          r.division_name,
+          r.division_code,
+          r.region_name,
+          r.region_code,
+          r.pc_number,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      });
 
     out.sort((a, b) => a.route_name.localeCompare(b.route_name, undefined, { sensitivity: "base" }));
     return out;
@@ -169,14 +169,7 @@ export default function RoutesAdminClient() {
         variant: "success",
       });
 
-      // update list in-place
-      setRows((prev) => {
-        const cur = (prev ?? []).slice();
-        const idx = cur.findIndex((x) => x.route_id === json.item.route_id);
-        if (idx >= 0) cur[idx] = json.item;
-        else cur.unshift(json.item);
-        return cur;
-      });
+      await load();
 
       // keep selection on save
       setSelectedId(json.item.route_id);
@@ -258,7 +251,7 @@ export default function RoutesAdminClient() {
           </div>
 
           <div className="text-[11px] text-[var(--to-ink-muted)]">
-            Access note: requires <code>roster_manage</code> in the selected PC org (owners bypass).
+            Access note: admins/owners bypass grants; scoped users require <code>route_lock_manage</code>.
           </div>
         </div>
 
@@ -306,12 +299,15 @@ export default function RoutesAdminClient() {
                       <div className="min-w-0">
                         <div className="text-sm font-medium truncate">{r.route_name}</div>
                         <div className="text-[11px] text-[var(--to-ink-muted)] truncate">
-                          PC {r.pc_number ?? "—"} • {r.region_code ?? r.region_name ?? "—"} •{" "}
+                          {r.pc_org_name ?? "—"} •
+                          {" "}
+                          {r.region_code ?? r.region_name ?? "—"}
+                          {" / "}
                           {r.division_code ?? r.division_name ?? "—"}
                         </div>
                       </div>
-                      <div className="text-[10px] font-mono text-[var(--to-ink-muted)] truncate max-w-[160px]">
-                        {r.route_id}
+                      <div className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--to-ink-muted)]">
+                        PC {r.pc_number ?? "—"}
                       </div>
                     </div>
                   </button>

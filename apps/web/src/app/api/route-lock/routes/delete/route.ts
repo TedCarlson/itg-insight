@@ -35,7 +35,7 @@ async function requireAuthedSelectedOrg() {
   const apiClient: any = (sb as any).schema ? (sb as any).schema("api") : sb;
   const { data: allowed, error: permErr } = await apiClient.rpc("has_pc_org_permission", {
     p_pc_org_id: pc_org_id,
-    p_permission_key: "roster_manage",
+    p_permission_key: "route_lock_manage",
   });
 
   if (permErr || !allowed) return { ok: false as const, status: 403, error: "forbidden" };
