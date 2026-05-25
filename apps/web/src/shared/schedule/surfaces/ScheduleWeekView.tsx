@@ -175,7 +175,7 @@ export default function ScheduleWeekView({
   return (
     <div className="space-y-3">
 
-      <div className="grid auto-cols-[minmax(210px,1fr)] grid-flow-col gap-1.5 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-7 xl:overflow-visible xl:pb-0">
+      <div className="grid auto-cols-[minmax(260px,1fr)] grid-flow-col gap-2 overflow-x-auto pb-2 2xl:grid-flow-row 2xl:grid-cols-7 2xl:overflow-visible 2xl:pb-0">
         {summaries.map((
           summary: ScheduleDailySummary,
         ) => {
@@ -206,7 +206,7 @@ export default function ScheduleWeekView({
             <Card
               key={summary.date}
               className={[
-                "flex h-[620px] min-h-0 flex-col overflow-hidden xl:h-[720px]",
+                "flex h-[620px] min-h-0 flex-col overflow-hidden 2xl:h-[720px]",
                 cardTone({
                   isToday,
                   isFmEnd,
@@ -232,6 +232,10 @@ export default function ScheduleWeekView({
                       </div>
                     ) : null}
 
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col items-end gap-1 pt-1 text-xs text-muted-foreground">
                     {isBlackout ? (
                       <div
                         title={blackoutLabel ?? "Blackout"}
@@ -240,11 +244,10 @@ export default function ScheduleWeekView({
                         Blackout
                       </div>
                     ) : null}
-                    </div>
-                  </div>
 
-                  <div className="pt-4 text-xs text-muted-foreground">
-                    {summary.scheduledCount} booked
+                    <div>
+                      {summary.scheduledCount} booked
+                    </div>
                   </div>
                 </div>
 
