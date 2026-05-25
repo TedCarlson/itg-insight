@@ -49,6 +49,32 @@ function needsActualAttention(
   );
 }
 
+function dispatchSortWeight(row: ScheduleSurfaceRow) {
+  if (row.dispatch.callOut) return 0;
+  if (row.dispatch.incidentCount > 0) return 1;
+  if (row.dispatch.techMove) return 2;
+  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 3;
+  if (row.dispatch.addIn) return 4;
+  return 10;
+}
+
+function sortRowsForDispatchFocus(rows: ScheduleSurfaceRow[]) {
+  return rows.slice().sort((a, b) => {
+    const weight =
+      dispatchSortWeight(a) - dispatchSortWeight(b);
+
+    if (weight !== 0) return weight;
+
+    const affiliate =
+      String(a.affiliationCode ?? a.contractorName ?? a.affiliationName ?? "")
+        .localeCompare(String(b.affiliationCode ?? b.contractorName ?? b.affiliationName ?? ""));
+
+    if (affiliate !== 0) return affiliate;
+
+    return String(a.techId ?? "").localeCompare(String(b.techId ?? ""));
+  });
+}
+
 function buildDispatchBadges(
   row: ScheduleSurfaceRow,
 ) {
@@ -130,7 +156,7 @@ export default function ScheduleDayView({
             </thead>
 
             <tbody>
-              {payload.rows.map((row) => {
+              {sortRowsForDispatchFocus(payload.rows).map((row) => {
                 const dispatchBadges =
                   buildDispatchBadges(row);
 
