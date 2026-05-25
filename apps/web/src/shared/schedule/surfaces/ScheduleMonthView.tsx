@@ -84,10 +84,12 @@ function cardClass(args: {
   isToday: boolean;
   isFiscalMonthEnd: boolean;
   isCurrentMonth: boolean;
+  isBlackout: boolean;
 }) {
   const base = [
     "min-h-[112px] rounded-lg border bg-background px-2 py-2",
     args.isCurrentMonth ? "" : "opacity-40",
+    args.isBlackout ? "bg-zinc-950/[0.035] shadow-[inset_0_0_0_9999px_rgba(113,113,122,0.035)]" : "",
   ];
 
   if (args.isToday) {
@@ -130,6 +132,12 @@ export default function ScheduleMonthView({
           const weekday = WEEKDAYS[new Date(`${date}T00:00:00.000Z`).getUTCDay()];
           const isToday = date === today;
           const isCurrentMonth = date.slice(0, 7) === currentMonth;
+          const blackoutDay =
+            payload.blackoutByDate?.[date] ?? null;
+          const blackoutLabel =
+            blackoutDay?.rules?.[0]?.label ?? null;
+          const isBlackout =
+            Boolean(blackoutDay?.rules?.length);
 
           return (
             <Card
@@ -138,6 +146,7 @@ export default function ScheduleMonthView({
                 isToday,
                 isFiscalMonthEnd: summary.isFiscalMonthEnd,
                 isCurrentMonth,
+                isBlackout,
               })}
             >
               <div className="flex items-start justify-between gap-2">
@@ -146,11 +155,22 @@ export default function ScheduleMonthView({
                     {weekday}
                   </div>
 
-                  {summary.fiscalAnchorLabel ? (
-                    <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                      FM End
-                    </div>
-                  ) : null}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                    {summary.fiscalAnchorLabel ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                        FM End
+                      </span>
+                    ) : null}
+
+                    {isBlackout ? (
+                      <span
+                        title={blackoutLabel ?? "Blackout"}
+                        className="rounded-sm border border-zinc-300 bg-zinc-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-700"
+                      >
+                        Blackout
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1 text-right">

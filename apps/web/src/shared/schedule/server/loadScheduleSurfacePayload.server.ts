@@ -34,6 +34,10 @@ import {
   supabaseAdmin,
 } from "@/shared/data/supabase/admin";
 
+import {
+  loadBlackoutCalendar,
+} from "@/shared/server/calendar/loadBlackoutCalendar.server";
+
 export async function loadScheduleSurfacePayload(
   filters: ScheduleSurfaceFilters,
 ): Promise<ScheduleSurfacePayload> {
@@ -68,14 +72,6 @@ export async function loadScheduleSurfacePayload(
     endDate: resolvedRange.endDate,
   };
 
-  console.log("SCHEDULE_SCOPE_DEBUG", {
-    scope: scope.scope,
-    contractorId: scope.contractorId,
-    personId: scope.personId,
-    assignmentIds: scope.assignmentIds,
-    allowedPcOrgIds: scope.allowedPcOrgIds,
-    filters,
-  });
 
   const pcOrgIds =
     resolvedFilters.pcOrgId
@@ -124,6 +120,18 @@ export async function loadScheduleSurfacePayload(
       endDate: resolvedFilters.endDate,
     });
 
+  const blackoutCalendar =
+    await loadBlackoutCalendar({
+      countryCode: "US",
+      startDate: resolvedFilters.startDate,
+      endDate: resolvedFilters.endDate,
+    });
+
+  const blackoutByDate =
+    Object.fromEntries(
+      Array.from(blackoutCalendar.entries()),
+    );
+
   const dailySummaries =
     buildScheduleDailySummaries({
       startDate: resolvedFilters.startDate,
@@ -144,5 +152,7 @@ export async function loadScheduleSurfacePayload(
     dailySummaries,
 
     rows,
+
+    blackoutByDate,
   };
 }

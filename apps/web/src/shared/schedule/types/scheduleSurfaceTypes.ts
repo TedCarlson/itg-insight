@@ -51,6 +51,20 @@ export type ScheduleRouteLockFacts = {
   hasCheckIn: boolean;
 };
 
+export type ScheduleBlackoutRule = {
+  blackoutRuleId: string;
+  label: string;
+  blackoutType: string;
+  managerControlledRequestEntry: boolean;
+  source: "holiday_baseline" | "blackout_rule";
+  sourceHolidayId: string | null;
+};
+
+export type ScheduleBlackoutDay = {
+  date: string;
+  rules: ScheduleBlackoutRule[];
+};
+
 export type ScheduleSurfaceRow = {
   date: string;
 
@@ -148,4 +162,6 @@ export type ScheduleSurfacePayload = {
   dailySummaries: ScheduleDailySummary[];
 
   rows: ScheduleSurfaceRow[];
+
+  blackoutByDate: Record<string, ScheduleBlackoutDay>;
 };

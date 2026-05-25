@@ -18,6 +18,9 @@ export type TechScheduleDay = {
   hasCheckIn: boolean;
   dispatchBadges: string[];
   latestNote: string | null;
+  isBlackout: boolean;
+  blackoutLabel: string | null;
+  blackoutType: string | null;
 };
 
 export type TechScheduleCalendarPayload = {
@@ -109,6 +112,12 @@ export async function getTechScheduleCalendar(): Promise<TechScheduleCalendarPay
       row.assignmentId === shell.assignment_id &&
       row.baseSchedule.scheduled === true;
 
+    const blackoutDay =
+      payload.blackoutByDate?.[row.date] ?? null;
+
+    const blackoutRule =
+      blackoutDay?.rules?.[0] ?? null;
+
     daysByDate.set(row.date, {
       date: row.date,
       scheduled,
@@ -121,6 +130,35 @@ export async function getTechScheduleCalendar(): Promise<TechScheduleCalendarPay
       hasCheckIn: scheduled ? row.routeLock.hasCheckIn : false,
       dispatchBadges: scheduled ? buildDispatchBadges(row) : [],
       latestNote: scheduled ? row.dispatch.latestNote : null,
+      isBlackout: Boolean(blackoutDay?.rules?.length),
+      blackoutLabel: blackoutRule?.label ?? null,
+      blackoutType: blackoutRule?.blackoutType ?? null,
+    });
+  }
+
+  for (const [date, blackoutDay] of Object.entries(payload.blackoutByDate ?? {})) {
+    if (daysByDate.has(date)) {
+      continue;
+    }
+
+    const blackoutRule =
+      blackoutDay.rules?.[0] ?? null;
+
+    daysByDate.set(date, {
+      date,
+      scheduled: false,
+      routeArea: null,
+      phase: "none",
+      plannedUnits: null,
+      builtUnits: null,
+      actualUnits: null,
+      hasShiftValidation: false,
+      hasCheckIn: false,
+      dispatchBadges: [],
+      latestNote: null,
+      isBlackout: Boolean(blackoutDay.rules?.length),
+      blackoutLabel: blackoutRule?.label ?? null,
+      blackoutType: blackoutRule?.blackoutType ?? null,
     });
   }
 

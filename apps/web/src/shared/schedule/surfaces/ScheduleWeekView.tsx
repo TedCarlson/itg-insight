@@ -55,6 +55,18 @@ function rowUnits(row: ScheduleSurfaceRow) {
   );
 }
 
+function dispatchBadges(row: ScheduleSurfaceRow) {
+  const badges: string[] = [];
+
+  if (row.dispatch.callOut) badges.push("No Show");
+  if (row.dispatch.addIn) badges.push("Add-In");
+  if (row.dispatch.techMove) badges.push("Move");
+  if (row.dispatch.incidentCount > 0) badges.push(`Incident ${row.dispatch.incidentCount}`);
+  if (row.dispatch.noteCount > 0) badges.push(`Note ${row.dispatch.noteCount}`);
+
+  return badges;
+}
+
 function phaseShort(row: ScheduleSurfaceRow) {
   if (row.routeLock.phase === "actual") return "ACT";
   if (row.routeLock.phase === "built") return "BLD";
@@ -80,9 +92,16 @@ function techCardTone(row: ScheduleSurfaceRow) {
 function cardTone(args: {
   isToday: boolean;
   isFmEnd: boolean;
+  isBlackout: boolean;
 }) {
   if (args.isToday) {
-    return "border-2 border-blue-500 bg-blue-50/10";
+    return args.isBlackout
+      ? "border-2 border-blue-500 bg-blue-50/10 shadow-[inset_0_0_0_9999px_rgba(113,113,122,0.035)]"
+      : "border-2 border-blue-500 bg-blue-50/10";
+  }
+
+  if (args.isBlackout) {
+    return "bg-zinc-950/[0.035] shadow-[inset_0_0_0_9999px_rgba(113,113,122,0.035)]";
   }
 
   if (args.isFmEnd) {
@@ -123,6 +142,15 @@ export default function ScheduleWeekView({
           const isFmEnd =
             isFiscalMonthEnd(summary.date);
 
+          const blackoutDay =
+            payload.blackoutByDate?.[summary.date] ?? null;
+
+          const blackoutLabel =
+            blackoutDay?.rules?.[0]?.label ?? null;
+
+          const isBlackout =
+            Boolean(blackoutDay?.rules?.length);
+
           return (
             <Card
               key={summary.date}
@@ -131,6 +159,7 @@ export default function ScheduleWeekView({
                 cardTone({
                   isToday,
                   isFmEnd,
+                  isBlackout,
                 }),
               ].join(" ")}
             >
@@ -149,6 +178,15 @@ export default function ScheduleWeekView({
                     {isFmEnd ? (
                       <div className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                         FM End
+                      </div>
+                    ) : null}
+
+                    {isBlackout ? (
+                      <div
+                        title={blackoutLabel ?? "Blackout"}
+                        className="rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-700"
+                      >
+                        Blackout
                       </div>
                     ) : null}
                     </div>
@@ -188,7 +226,7 @@ export default function ScheduleWeekView({
                 <div className="space-y-1">
                   {rowsForDate.length === 0 ? (
                     <div className="rounded-lg border border-dashed px-2 py-2 text-xs text-muted-foreground">
-                      No booked work
+                      {isBlackout ? (blackoutLabel ?? "Blackout") : "No booked work"}
                     </div>
                   ) : (
                     rowsForDate.map((row, index) => {
@@ -226,6 +264,24 @@ export default function ScheduleWeekView({
                                 {row.affiliationCode}
                               </span>
                             ) : null}
+
+                            {row.dispatch.callOut ? (
+                              <span className="rounded-sm bg-red-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-red-700">
+                                NS
+                              </span>
+                            ) : null}
+
+                            {row.dispatch.addIn ? (
+                              <span className="rounded-sm bg-emerald-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-emerald-700">
+                                ADD
+                              </span>
+                            ) : null}
+
+                            {row.dispatch.noteCount > 0 ? (
+                              <span className="rounded-sm bg-zinc-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-700">
+                                N
+                              </span>
+                            ) : null}
                           </div>
 
                           <div
@@ -253,6 +309,31 @@ export default function ScheduleWeekView({
                                 {units != null ? `${units}u` : "—"}
                                 {hours ? ` [${hours}h]` : ""}
                               </div>
+
+                              {dispatchBadges(row).length ? (
+                                <div className="pt-1">
+                                  <div className="font-semibold uppercase tracking-wide text-foreground">
+                                    Dispatch
+                                  </div>
+
+                                  <div className="mt-1 flex flex-wrap justify-center gap-1">
+                                    {dispatchBadges(row).map((badge) => (
+                                      <span
+                                        key={badge}
+                                        className="rounded-full border px-1.5 py-0.5 text-[10px]"
+                                      >
+                                        {badge}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {row.dispatch.latestNote ? (
+                                <div className="pt-1 text-[10px] leading-snug text-foreground">
+                                  {row.dispatch.latestNote}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </div>

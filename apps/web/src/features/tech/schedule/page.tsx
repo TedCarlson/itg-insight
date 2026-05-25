@@ -51,7 +51,15 @@ function tileTone(args: {
   scheduled: boolean;
   phase: string | null | undefined;
   hasDispatch: boolean;
+  isBlackout: boolean;
 }) {
+  if (args.isBlackout && !args.scheduled && !args.hasDispatch) {
+    return {
+      borderColor: "color-mix(in oklab, var(--to-ink-muted) 32%, var(--to-border))",
+      backgroundColor: "color-mix(in oklab, var(--to-ink-muted) 9%, var(--to-surface))",
+    };
+  }
+
   if (args.hasDispatch) {
     return {
       borderColor: "color-mix(in oklab, var(--to-danger) 58%, var(--to-border))",
@@ -142,6 +150,9 @@ export default async function TechScheduleFeaturePage() {
             const hasDispatch =
               Boolean(day?.dispatchBadges.length || day?.latestNote);
 
+            const isBlackout =
+              Boolean(day?.isBlackout);
+
             const state =
               phaseLabel(day?.phase, scheduled);
 
@@ -150,12 +161,13 @@ export default async function TechScheduleFeaturePage() {
                 scheduled,
                 phase: day?.phase,
                 hasDispatch,
+                isBlackout,
               });
 
             return (
               <div
                 key={cell.date}
-                className={`aspect-square cursor-pointer rounded-xl border p-2 active:scale-[0.98] ${
+                className={`relative aspect-square cursor-pointer overflow-hidden rounded-xl border p-2 active:scale-[0.98] ${
                   isToday ? "ring-2 ring-[var(--to-accent)]" : ""
                 }`}
                 style={style}
@@ -163,27 +175,44 @@ export default async function TechScheduleFeaturePage() {
                   cell.date,
                   state,
                   day?.routeArea,
+                  day?.blackoutLabel,
                   units == null ? null : `${units} units`,
                   day?.dispatchBadges.join(", "),
                   day?.latestNote,
                 ].filter(Boolean).join(" • ")}
               >
+                {isBlackout ? (
+                  <div className="absolute inset-x-0 top-0 h-1 bg-zinc-900" />
+                ) : null}
+
                 <div className="flex h-full flex-col justify-between">
                   <div className="flex items-start justify-end">
                     <span className="text-sm font-semibold">{dayNum(cell.date)}</span>
                   </div>
 
-                  {day?.routeArea ? (
-                    <div className="min-w-0">
+                  {isBlackout ? (
+                    <div className="inline-flex max-w-full items-center self-start truncate rounded-full bg-zinc-900 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
+                      {day?.blackoutLabel ?? "Blackout"}
+                    </div>
+                  ) : null}
+
+                  <div className="min-w-0">
+                    {day?.routeArea ? (
                       <div className="truncate text-[10px] font-semibold">
                         {day.routeArea}
                       </div>
+                    ) : null}
 
-                      {hasDispatch ? (
-                        <div className="mt-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />
-                      ) : null}
-                    </div>
-                  ) : null}
+                    {isBlackout ? (
+                      <div className="truncate text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {day?.blackoutLabel ?? "Blackout"}
+                      </div>
+                    ) : null}
+
+                    {hasDispatch ? (
+                      <div className="mt-0.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+                    ) : null}
+                  </div>
                 </div>
               </div>
             );
