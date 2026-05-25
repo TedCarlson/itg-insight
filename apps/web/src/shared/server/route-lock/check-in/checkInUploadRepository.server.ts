@@ -129,6 +129,38 @@ export async function upsertCheckInJobRows(
     rows: ParsedCheckInRow[];
   }
 ): Promise<number> {
+
+  const replacementKeys = Array.from(
+    new Set(
+      input.rows.map((r) => `${r.cp_date}::${r.tech_id}`)
+    )
+  );
+
+  for (const key of replacementKeys) {
+    const [cpDate, techId] = key.split("::");
+
+    const { error: deleteError } = await admin
+      .from("check_in_job_row")
+      .delete()
+      .eq("pc_org_id", input.pcOrgId)
+      .eq("cp_date", cpDate)
+      .eq("tech_id", techId);
+
+    if (deleteError) {
+      throw Object.assign(
+        new Error("failed to clear prior check-in rows"),
+        {
+          status: 500,
+          detail: {
+            db_error: dbErr(deleteError),
+            cp_date: cpDate,
+            tech_id: techId,
+          },
+        }
+      );
+    }
+  }
+
   let loaded = 0;
   const chunkSize = 750;
 
@@ -156,9 +188,10 @@ export async function upsertCheckInJobRows(
 
   for (let i = 0; i < jobRows.length; i += chunkSize) {
     const chunk = jobRows.slice(i, i + chunkSize);
-    const { error } = await admin.from("check_in_job_row").upsert(chunk, {
-      onConflict: "pc_org_id,job_num,cp_date,tech_id",
-    });
+
+    const { error } = await admin
+      .from("check_in_job_row")
+      .insert(chunk);
 
     if (error) {
       await updateCheckInBatchLoaded(admin, {
@@ -166,7 +199,7 @@ export async function upsertCheckInJobRows(
         rowCountLoaded: loaded,
       });
 
-      throw Object.assign(new Error("failed to upsert job rows"), {
+      throw Object.assign(new Error("failed to insert job rows"), {
         status: 500,
         detail: dbErr(error),
       });
@@ -179,6 +212,38 @@ export async function upsertCheckInJobRows(
 }
 
 export async function upsertCheckInDayFacts(admin: any, dayFacts: CheckInDayFactAgg[]) {
+
+  const replacementKeys = Array.from(
+    new Set(
+      dayFacts.map(
+        (a) => `${a.pc_org_id}::${a.shift_date}::${a.tech_id}`,
+      ),
+    ),
+  );
+
+  for (const key of replacementKeys) {
+    const [pcOrgId, shiftDate, techId] = key.split("::");
+
+    const { error: deleteError } = await admin
+      .from("check_in_day_fact")
+      .delete()
+      .eq("pc_org_id", pcOrgId)
+      .eq("shift_date", shiftDate)
+      .eq("tech_id", techId);
+
+    if (deleteError) {
+      throw Object.assign(new Error("failed to clear prior day facts"), {
+        status: 500,
+        detail: {
+          db_error: dbErr(deleteError),
+          pc_org_id: pcOrgId,
+          shift_date: shiftDate,
+          tech_id: techId,
+        },
+      });
+    }
+  }
+
   const rows = dayFacts.map((a) => ({
     pc_org_id: a.pc_org_id,
     shift_date: a.shift_date,
