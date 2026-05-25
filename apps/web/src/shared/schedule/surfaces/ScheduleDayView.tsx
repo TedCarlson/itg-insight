@@ -66,154 +66,123 @@ export default function ScheduleDayView({
       <ScheduleDayStatsStrip rows={payload.rows} />
 
       <Card className="overflow-hidden">
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <div className="text-lg font-semibold">
+            Daily Booking Ledger
+          </div>
 
-      <div className="border-b border-[var(--border)] px-4 py-3">
-        <div className="text-lg font-semibold">
-          Daily Booking Ledger
+          <div className="text-sm text-[var(--muted-foreground)]">
+            Coverage, route state, and dispatch context for the selected day
+          </div>
         </div>
 
-        <div className="text-sm text-[var(--muted-foreground)]">
-          Coverage, route state, and dispatch context for the selected day
-        </div>
-      </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] border-collapse">
+            <thead>
+              <tr className="border-b border-[var(--border)] bg-[var(--muted)]/30">
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                  Tech
+                </th>
 
-      <div className="overflow-x-auto">
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                  Name
+                </th>
 
-        <table className="w-full min-w-[1050px] border-collapse">
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                  Route
+                </th>
 
-          <thead>
-            <tr className="border-b border-[var(--border)] bg-[var(--muted)]/30">
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">
-                Tech
-              </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                  Phase
+                </th>
 
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">
-                Name
-              </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                  Units
+                </th>
 
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">
-                Coverage / Booking Status
-              </th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                  Dispatch / Notes
+                </th>
+              </tr>
+            </thead>
 
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">
-                Dispatch / Notes
-              </th>
-            </tr>
-          </thead>
+            <tbody>
+              {payload.rows.map((row) => {
+                const dispatchBadges =
+                  buildDispatchBadges(row);
 
-          <tbody>
-            {payload.rows.map((row) => {
+                const units =
+                  row.routeLock.actualUnits
+                  ?? row.routeLock.builtUnits
+                  ?? row.routeLock.plannedUnits
+                  ?? null;
 
-              const dispatchBadges =
-                buildDispatchBadges(row);
+                return (
+                  <tr
+                    key={[
+                      row.date,
+                      row.personId,
+                      row.assignmentId ?? "none",
+                    ].join(":")}
+                    className="border-b border-[var(--border)] hover:bg-[var(--muted)]/20"
+                  >
+                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm font-semibold">
+                      {row.techId ?? "—"}
+                    </td>
 
-              return (
-                <tr
-                  key={[
-                    row.date,
-                    row.personId,
-                    row.assignmentId ?? "none",
-                  ].join(":")}
-                  className="border-b border-[var(--border)]"
-                >
-                  <td className="px-4 py-4 align-top text-sm font-semibold">
-                    {row.techId ?? "—"}
-                  </td>
+                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm">
+                      {row.fullName}
+                    </td>
 
-                  <td className="px-4 py-4 align-top text-sm">
-                    {row.fullName}
-                  </td>
+                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm font-semibold">
+                      {row.baseSchedule.routeArea ?? "No booked route"}
+                    </td>
 
-                  <td className="px-4 py-4 align-top">
-                    <div className="space-y-2">
+                    <td className="whitespace-nowrap px-3 py-2 align-middle">
+                      <SchedulePhasePill phase={row.routeLock.phase} />
+                    </td>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold">
-                          {row.baseSchedule.routeArea ?? "No booked route"}
-                        </div>
-
-                        <SchedulePhasePill
-                          phase={row.routeLock.phase}
-                        />
-                      </div>
-
-                      <div className="grid gap-1 text-xs text-[var(--muted-foreground)]">
-
-                        <div>
-                          Planned route:
-                          {" "}
-                          <span className="font-medium text-foreground">
-                            {row.baseSchedule.routeArea ?? "—"}
+                    <td className="whitespace-nowrap px-3 py-2 align-middle text-sm">
+                      {units == null ? (
+                        <span className="text-[var(--muted-foreground)]">—</span>
+                      ) : (
+                        <span>
+                          <span className="font-semibold">{units}</span>
+                          <span className="ml-1 text-xs text-[var(--muted-foreground)]">
+                            [{formatHoursFromUnits(units)}h]
                           </span>
-                        </div>
+                        </span>
+                      )}
+                    </td>
 
-                        <div>
-                          Units:
-                          {" "}
-                          {(() => {
-                            const units =
-                              row.routeLock.actualUnits
-                              ?? row.routeLock.builtUnits
-                              ?? row.routeLock.plannedUnits
-                              ?? null;
-
-                            if (units == null) {
-                              return (
-                                <span className="font-medium text-foreground">
-                                  —
-                                </span>
-                              );
-                            }
-
-                            return (
-                              <span className="font-medium text-foreground">
-                                {units}
-                                {" "}
-                                <span className="text-[var(--muted-foreground)]">
-                                  [{formatHoursFromUnits(units)} hours]
-                                </span>
-                              </span>
-                            );
-                          })()}
-                        </div>
-
-                      </div>
-
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-4 align-top">
-                    {dispatchBadges.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap gap-1">
+                    <td className="px-3 py-2 align-middle">
+                      {dispatchBadges.length > 0 || row.dispatch.latestNote ? (
+                        <div className="flex min-w-[280px] flex-wrap items-center gap-1.5">
                           {dispatchBadges.map((badge) => (
                             <ScheduleStatusPill
                               key={badge}
                               label={badge}
                             />
                           ))}
+
+                          {row.dispatch.latestNote ? (
+                            <span className="max-w-[520px] truncate text-xs text-[var(--muted-foreground)]">
+                              {row.dispatch.latestNote}
+                            </span>
+                          ) : null}
                         </div>
-
-                        {row.dispatch.latestNote ? (
-                          <div className="max-w-[360px] text-xs leading-snug text-[var(--muted-foreground)]">
-                            {row.dispatch.latestNote}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-[var(--muted-foreground)]">
-                        —
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-      </div>
-
+                      ) : (
+                        <span className="text-sm text-[var(--muted-foreground)]">
+                          —
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );
