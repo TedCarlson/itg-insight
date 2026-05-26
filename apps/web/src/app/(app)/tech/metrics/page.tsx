@@ -1,3 +1,1 @@
-export default function Page() {
-  return <div>Tech Metrics — Disabled</div>;
-}
+export { default, dynamic } from "@/features/tech/metrics/page";
