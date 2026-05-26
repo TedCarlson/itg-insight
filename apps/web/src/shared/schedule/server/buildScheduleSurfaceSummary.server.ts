@@ -30,6 +30,10 @@ export function buildScheduleSurfaceSummary(
         summary.techMoveCount += 1;
       }
 
+      if (row.dispatch.bpLow) {
+        summary.bpLowCount += 1;
+      }
+
       return summary;
     },
     {
@@ -38,6 +42,7 @@ export function buildScheduleSurfaceSummary(
       callOutCount: 0,
       addInCount: 0,
       techMoveCount: 0,
+      bpLowCount: 0,
     },
   );
 }

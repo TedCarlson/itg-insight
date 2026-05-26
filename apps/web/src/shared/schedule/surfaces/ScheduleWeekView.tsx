@@ -58,9 +58,10 @@ function rowUnits(row: ScheduleSurfaceRow) {
 function dispatchSortWeight(row: ScheduleSurfaceRow) {
   if (row.dispatch.callOut) return 0;
   if (row.dispatch.incidentCount > 0) return 1;
-  if (row.dispatch.techMove) return 2;
-  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 3;
-  if (row.dispatch.addIn) return 4;
+  if (row.dispatch.bpLow) return 2;
+  if (row.dispatch.techMove) return 3;
+  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 4;
+  if (row.dispatch.addIn) return 5;
   return 10;
 }
 
@@ -89,6 +90,7 @@ function needsActualAttention(
     row.dispatch.callOut ||
     row.dispatch.addIn ||
     row.dispatch.techMove ||
+    row.dispatch.bpLow ||
     row.dispatch.incidentCount > 0 ||
     row.dispatch.noteCount > 0 ||
     Boolean(String(row.dispatch.latestNote ?? "").trim());
@@ -107,6 +109,7 @@ function dispatchBadges(row: ScheduleSurfaceRow) {
   if (row.dispatch.callOut) badges.push("No Show");
   if (row.dispatch.addIn) badges.push("Add-In");
   if (row.dispatch.techMove) badges.push("Move");
+  if (row.dispatch.bpLow) badges.push("BP-Low");
   if (row.dispatch.incidentCount > 0) badges.push(`Incident ${row.dispatch.incidentCount}`);
   if (row.dispatch.noteCount > 0) badges.push(`Note ${row.dispatch.noteCount}`);
 

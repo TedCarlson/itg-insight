@@ -115,6 +115,9 @@ export function buildScheduleDailySummaries(args: {
       techMoveCount:
         rowsForDate.filter((row) => row.dispatch.techMove).length,
 
+      bpLowCount:
+        rowsForDate.filter((row) => row.dispatch.bpLow).length,
+
       incidentCount:
         rowsForDate.reduce((sum, row) => sum + row.dispatch.incidentCount, 0),
 

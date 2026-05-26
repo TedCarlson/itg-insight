@@ -16,6 +16,7 @@ export type ScheduleDispatchOverlay = {
   callOut: boolean;
   addIn: boolean;
   techMove: boolean;
+  bpLow: boolean;
 
   incidentCount: number;
   noteCount: number;
@@ -137,6 +138,7 @@ export type ScheduleDailySummary = {
   callOutCount: number;
   addInCount: number;
   techMoveCount: number;
+  bpLowCount: number;
   incidentCount: number;
   noteCount: number;
 
@@ -150,6 +152,7 @@ export type ScheduleSurfaceSummary = {
   callOutCount: number;
   addInCount: number;
   techMoveCount: number;
+  bpLowCount: number;
 };
 
 export type ScheduleSurfacePayload = {

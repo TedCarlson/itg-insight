@@ -150,6 +150,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const logSummaryRes = await admin
+      .from("dispatch_console_log")
+      .select("event_type")
+      .eq("pc_org_id", pc_org_id)
+      .eq("shift_date", shift_date);
+
+    if (logSummaryRes.error) {
+      return jsonError(400, { ok: false, error: "dispatch_log_summary_failed", details: logSummaryRes.error });
+    }
+
+    const logSummary = {
+      bp_low_count: 0,
+    };
+
+    for (const row of logSummaryRes.data ?? []) {
+      const eventType = String((row as any).event_type ?? "").trim();
+      if (eventType === "BP_LOW") logSummary.bp_low_count += 1;
+    }
+
+    const summary = {
+      ...(sumRes.data ?? {}),
+      bp_low_count: logSummary.bp_low_count,
+    };
+
     const rows = Array.from(byAssignment.values()).sort((a: any, b: any) =>
       String(a.full_name ?? "").localeCompare(String(b.full_name ?? ""))
     );
@@ -158,7 +182,7 @@ export async function GET(req: NextRequest) {
       {
         ok: true,
         seeded: seed.data ?? 0,
-        summary: sumRes.data ?? null,
+        summary,
         rows,
       },
       { status: 200 }

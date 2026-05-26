@@ -37,6 +37,7 @@ function needsActualAttention(
     row.dispatch.callOut ||
     row.dispatch.addIn ||
     row.dispatch.techMove ||
+    row.dispatch.bpLow ||
     row.dispatch.incidentCount > 0 ||
     row.dispatch.noteCount > 0 ||
     Boolean(String(row.dispatch.latestNote ?? "").trim());
@@ -52,9 +53,10 @@ function needsActualAttention(
 function dispatchSortWeight(row: ScheduleSurfaceRow) {
   if (row.dispatch.callOut) return 0;
   if (row.dispatch.incidentCount > 0) return 1;
-  if (row.dispatch.techMove) return 2;
-  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 3;
-  if (row.dispatch.addIn) return 4;
+  if (row.dispatch.bpLow) return 2;
+  if (row.dispatch.techMove) return 3;
+  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 4;
+  if (row.dispatch.addIn) return 5;
   return 10;
 }
 
@@ -90,6 +92,10 @@ function buildDispatchBadges(
 
   if (row.dispatch.techMove) {
     badges.push("Move");
+  }
+
+  if (row.dispatch.bpLow) {
+    badges.push("BP-Low");
   }
 
   if (row.dispatch.incidentCount > 0) {

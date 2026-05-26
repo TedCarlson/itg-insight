@@ -104,6 +104,7 @@ function emptySummary(date: string): ScheduleDailySummary {
     callOutCount: 0,
     addInCount: 0,
     techMoveCount: 0,
+    bpLowCount: 0,
     incidentCount: 0,
     noteCount: 0,
     isFiscalMonthEnd: date.endsWith("-21"),
@@ -237,6 +238,11 @@ export default function ScheduleMonthView({
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">Add-in</span>
                   <span className="font-semibold tabular-nums">{summary.addInCount}</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">BP-low</span>
+                  <span className="font-semibold tabular-nums">{summary.bpLowCount}</span>
                 </div>
               </div>
             </Card>

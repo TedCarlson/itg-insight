@@ -604,6 +604,9 @@ export async function loadScheduleRows(
         techMove:
           dispatchEvents.some((event) => clean(event.event_type) === "TECH_MOVE"),
 
+        bpLow:
+          dispatchEvents.some((event) => clean(event.event_type) === "BP_LOW"),
+
         incidentCount:
           dispatchEvents.filter((event) => clean(event.event_type) === "INCIDENT").length,
 
