@@ -16,6 +16,11 @@ import type {
   WorkforceTab,
 } from "../lib/types";
 import { labelForEvent, routeLabel, chipClassForEvent } from "../lib/labels";
+import {
+  dispatchSignalToneClass,
+  dispatchSignalWeight,
+  sortDispatchSignals,
+} from "@/shared/schedule/lib/dispatchScheduleSignals";
 import { DispatchInlineRowDrawer } from "./DispatchInlineRowDrawer";
 
 function cls(...parts: Array<string | false | undefined>) {
@@ -68,6 +73,8 @@ function WorkforceRowButton(props: {
 }) {
   const left = `${props.row.full_name ?? ""} (${String(props.row.tech_id ?? "").trim()})`;
   const right = routeLabel(props.row);
+  const sortedChips = sortDispatchSignals(props.chips);
+  const signalTone = dispatchSignalToneClass(sortedChips);
 
   return (
     <button
@@ -75,6 +82,7 @@ function WorkforceRowButton(props: {
       onClick={props.onClick}
       className={cls(
         "w-full rounded-xl border px-3 py-2 text-left transition",
+        signalTone,
         props.active ? "ring-2 ring-[var(--to-focus)] bg-[var(--to-row-hover)]" : "hover:bg-[var(--to-row-hover)]",
       )}
       style={{ borderColor: "var(--to-border)" }}
@@ -87,9 +95,9 @@ function WorkforceRowButton(props: {
           </div>
         </div>
 
-        {props.chips.length ? (
+        {sortedChips.length ? (
           <div className="flex flex-wrap justify-end gap-1.5">
-            {props.chips.map((t) => (
+            {sortedChips.map((t) => (
               <EventChip key={t} t={t} />
             ))}
           </div>
@@ -200,8 +208,24 @@ export function WorkforcePanel(props: {
     return true;
   };
 
-  const scheduledFiltered = props.scheduledRows.filter(matchesFilters);
-  const notScheduledFiltered = props.notScheduledRows.filter(matchesFilters);
+  function sortRowsForSignalFocus(rows: WorkforceRow[]) {
+    return rows.slice().sort((a, b) => {
+      const aSignals = props.chipsByAssignment.get(a.assignment_id) ?? [];
+      const bSignals = props.chipsByAssignment.get(b.assignment_id) ?? [];
+      const aWeight = Math.min(...aSignals.map(dispatchSignalWeight), 10);
+      const bWeight = Math.min(...bSignals.map(dispatchSignalWeight), 10);
+
+      if (aWeight !== bWeight) return aWeight - bWeight;
+
+      const affiliate = String(a.co_name ?? "").localeCompare(String(b.co_name ?? ""));
+      if (affiliate !== 0) return affiliate;
+
+      return String(a.tech_id ?? "").localeCompare(String(b.tech_id ?? ""));
+    });
+  }
+
+  const scheduledFiltered = sortRowsForSignalFocus(props.scheduledRows.filter(matchesFilters));
+  const notScheduledFiltered = sortRowsForSignalFocus(props.notScheduledRows.filter(matchesFilters));
 
   const renderRows = (rows: WorkforceRow[], workforceTab: WorkforceTab) =>
     rows.map((r) => {

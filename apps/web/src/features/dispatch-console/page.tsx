@@ -20,7 +20,7 @@ import type {
   WorkforceTab,
   LogRow,
 } from "./lib/types";
-import { EVENT_ORDER } from "./lib/labels";
+import { DISPATCH_SCHEDULE_SIGNAL_ORDER } from "@/shared/schedule/lib/dispatchScheduleSignals";
 
 import { useDispatchConsoleData } from "./hooks/useDispatchConsoleData";
 import { useDispatchConsoleDraft } from "./hooks/useDispatchConsoleDraft";
@@ -128,7 +128,7 @@ export default function DispatchConsolePage() {
 
     const out = new Map<string, EntryType[]>();
     for (const [aid, set] of m.entries()) {
-      const ordered = EVENT_ORDER.filter((t) => set.has(t));
+      const ordered = DISPATCH_SCHEDULE_SIGNAL_ORDER.filter((t) => set.has(t as EntryType)) as EntryType[];
       out.set(aid, ordered);
     }
     return out;

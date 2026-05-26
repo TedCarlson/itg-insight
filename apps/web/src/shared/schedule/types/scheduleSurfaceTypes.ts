@@ -137,8 +137,8 @@ export type ScheduleDailySummary = {
 
   callOutCount: number;
   addInCount: number;
-  techMoveCount: number;
   bpLowCount: number;
+  techMoveCount: number;
   incidentCount: number;
   noteCount: number;
 
@@ -151,8 +151,8 @@ export type ScheduleSurfaceSummary = {
   offCount: number;
   callOutCount: number;
   addInCount: number;
-  techMoveCount: number;
   bpLowCount: number;
+  techMoveCount: number;
 };
 
 export type ScheduleSurfacePayload = {

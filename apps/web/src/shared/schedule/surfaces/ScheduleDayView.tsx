@@ -9,6 +9,11 @@ import ScheduleStatusPill from "../components/ScheduleStatusPill";
 
 import ScheduleDayStatsStrip from "./ScheduleDayStatsStrip";
 
+import {
+  buildDispatchBadges,
+  sortRowsForDispatchFocus,
+} from "../lib/dispatchScheduleSignals";
+
 import type {
   ScheduleSurfacePayload,
   ScheduleSurfaceRow,
@@ -50,64 +55,7 @@ function needsActualAttention(
   );
 }
 
-function dispatchSortWeight(row: ScheduleSurfaceRow) {
-  if (row.dispatch.callOut) return 0;
-  if (row.dispatch.incidentCount > 0) return 1;
-  if (row.dispatch.bpLow) return 2;
-  if (row.dispatch.techMove) return 3;
-  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 4;
-  if (row.dispatch.addIn) return 5;
-  return 10;
-}
 
-function sortRowsForDispatchFocus(rows: ScheduleSurfaceRow[]) {
-  return rows.slice().sort((a, b) => {
-    const weight =
-      dispatchSortWeight(a) - dispatchSortWeight(b);
-
-    if (weight !== 0) return weight;
-
-    const affiliate =
-      String(a.affiliationCode ?? a.contractorName ?? a.affiliationName ?? "")
-        .localeCompare(String(b.affiliationCode ?? b.contractorName ?? b.affiliationName ?? ""));
-
-    if (affiliate !== 0) return affiliate;
-
-    return String(a.techId ?? "").localeCompare(String(b.techId ?? ""));
-  });
-}
-
-function buildDispatchBadges(
-  row: ScheduleSurfaceRow,
-) {
-  const badges: string[] = [];
-
-  if (row.dispatch.callOut) {
-    badges.push("Coverage Gap");
-  }
-
-  if (row.dispatch.addIn) {
-    badges.push("Add-In");
-  }
-
-  if (row.dispatch.techMove) {
-    badges.push("Move");
-  }
-
-  if (row.dispatch.bpLow) {
-    badges.push("BP-Low");
-  }
-
-  if (row.dispatch.incidentCount > 0) {
-    badges.push("Incident");
-  }
-
-  if (row.dispatch.noteCount > 0) {
-    badges.push("Note");
-  }
-
-  return badges;
-}
 
 export default function ScheduleDayView({
   payload,

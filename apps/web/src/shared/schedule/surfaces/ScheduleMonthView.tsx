@@ -241,6 +241,20 @@ export default function ScheduleMonthView({
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">BP-Low</span>
+                  <span className="font-semibold tabular-nums text-amber-700">
+                    {summary.bpLowCount}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Moves</span>
+                  <span className="font-semibold tabular-nums">
+                    {summary.techMoveCount}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">BP-low</span>
                   <span className="font-semibold tabular-nums">{summary.bpLowCount}</span>
                 </div>

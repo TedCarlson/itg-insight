@@ -4,6 +4,11 @@
 
 import { Card } from "@/components/ui/Card";
 
+import {
+  buildDispatchBadges,
+  sortRowsForDispatchFocus,
+} from "../lib/dispatchScheduleSignals";
+
 import type {
   ScheduleDailySummary,
   ScheduleSurfacePayload,
@@ -55,32 +60,6 @@ function rowUnits(row: ScheduleSurfaceRow) {
   );
 }
 
-function dispatchSortWeight(row: ScheduleSurfaceRow) {
-  if (row.dispatch.callOut) return 0;
-  if (row.dispatch.incidentCount > 0) return 1;
-  if (row.dispatch.bpLow) return 2;
-  if (row.dispatch.techMove) return 3;
-  if (row.dispatch.noteCount > 0 || row.dispatch.latestNote) return 4;
-  if (row.dispatch.addIn) return 5;
-  return 10;
-}
-
-function sortRowsForDispatchFocus(rows: ScheduleSurfaceRow[]) {
-  return rows.slice().sort((a, b) => {
-    const weight =
-      dispatchSortWeight(a) - dispatchSortWeight(b);
-
-    if (weight !== 0) return weight;
-
-    const affiliate =
-      String(a.affiliationCode ?? a.contractorName ?? a.affiliationName ?? "")
-        .localeCompare(String(b.affiliationCode ?? b.contractorName ?? b.affiliationName ?? ""));
-
-    if (affiliate !== 0) return affiliate;
-
-    return String(a.techId ?? "").localeCompare(String(b.techId ?? ""));
-  });
-}
 
 function needsActualAttention(
   row: ScheduleSurfaceRow,
@@ -103,18 +82,6 @@ function needsActualAttention(
   );
 }
 
-function dispatchBadges(row: ScheduleSurfaceRow) {
-  const badges: string[] = [];
-
-  if (row.dispatch.callOut) badges.push("No Show");
-  if (row.dispatch.addIn) badges.push("Add-In");
-  if (row.dispatch.techMove) badges.push("Move");
-  if (row.dispatch.bpLow) badges.push("BP-Low");
-  if (row.dispatch.incidentCount > 0) badges.push(`Incident ${row.dispatch.incidentCount}`);
-  if (row.dispatch.noteCount > 0) badges.push(`Note ${row.dispatch.noteCount}`);
-
-  return badges;
-}
 
 function phaseShort(row: ScheduleSurfaceRow) {
   if (row.routeLock.phase === "actual") return "ACT";
@@ -338,6 +305,24 @@ export default function ScheduleWeekView({
                               </span>
                             ) : null}
 
+                            {row.dispatch.incidentCount > 0 ? (
+                              <span className="rounded-sm bg-orange-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-orange-700">
+                                INC
+                              </span>
+                            ) : null}
+
+                            {row.dispatch.bpLow ? (
+                              <span className="rounded-sm bg-amber-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-700">
+                                BPL
+                              </span>
+                            ) : null}
+
+                            {row.dispatch.techMove ? (
+                              <span className="rounded-sm bg-sky-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-sky-700">
+                                MOV
+                              </span>
+                            ) : null}
+
                             {row.dispatch.noteCount > 0 ? (
                               <span className="rounded-sm bg-zinc-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-700">
                                 N
@@ -386,14 +371,14 @@ export default function ScheduleWeekView({
                                 {hours ? ` [${hours}h]` : ""}
                               </div>
 
-                              {dispatchBadges(row).length ? (
+                              {buildDispatchBadges(row).length ? (
                                 <div className="pt-1">
                                   <div className="font-semibold uppercase tracking-wide text-foreground">
                                     Dispatch
                                   </div>
 
                                   <div className="mt-1 flex flex-wrap justify-center gap-1">
-                                    {dispatchBadges(row).map((badge) => (
+                                    {buildDispatchBadges(row).map((badge) => (
                                       <span
                                         key={badge}
                                         className="rounded-full border px-1.5 py-0.5 text-[10px]"
