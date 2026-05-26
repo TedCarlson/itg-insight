@@ -32,7 +32,16 @@ function resolveRole(assignments: Array<{ position_title?: string | null }>): Ap
   if (titles.has("BP Supervisor")) return "BP_SUPERVISOR";
   if (titles.has("Director") || titles.has("Regional Director") || titles.has("Senior Director")) return "DIRECTOR";
   if (titles.has("Manager") || titles.has("Project Manager") || titles.has("Regional Manager")) return "COMPANY_MANAGER";
-  if (titles.has("ITG Supervisor")) return "ITG_SUPERVISOR";
+  if (
+    titles.has("ITG Supervisor") ||
+    titles.has("Supervisor") ||
+    titles.has("Company Supervisor") ||
+    titles.has("Fulfillment Supervisor") ||
+    titles.has("Locate Supervisor")
+  ) {
+    return "ITG_SUPERVISOR";
+  }
+
   if (titles.has("Technician")) return "TECH";
 
   return "UNKNOWN";

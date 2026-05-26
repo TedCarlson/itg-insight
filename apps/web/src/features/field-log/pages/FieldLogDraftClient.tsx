@@ -8,6 +8,7 @@ import { createClient } from "@/shared/data/supabase/client";
 import { useOrg } from "@/state/org";
 import { useFieldLogRuntime } from "../hooks/useFieldLogRuntime";
 import type { FieldLogRule } from "../lib/fieldLog.types";
+import { buildFieldLogWorkflow, useFieldLogEntrySource } from "../workflow";
 
 type FieldLogDraftClientProps = {
   reportId: string;
@@ -120,9 +121,18 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
 
   const { selectedOrgId } = useOrg();
   const { getRuleForSelection } = useFieldLogRuntime();
+  const entrySource = useFieldLogEntrySource();
   const supabase = useMemo(() => createClient(), []);
 
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
+  const workflow = useMemo(
+    () =>
+      buildFieldLogWorkflow({
+        entrySource,
+        status: initialStatus,
+      }),
+    [entrySource, initialStatus],
+  );
   const isFollowupMode =
     initialStatus === "tech_followup_required" && initialEditUnlocked === true;
 
@@ -482,7 +492,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     <div className="space-y-6">
       <section className="rounded-2xl border bg-card p-4">
         <div className="text-sm text-muted-foreground">
-          {isFollowupMode ? "Field Log Follow-Up" : "Field Log Draft"}
+          {isFollowupMode ? "Field Log Follow-Up" : workflow.reviewLabel}
         </div>
         <div className="mt-1 text-lg font-semibold">
           {rule?.category_label ?? categoryKey}
@@ -657,7 +667,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
             ? "Saving…"
             : isFollowupMode
               ? "Resubmit Follow-Up"
-              : "Submit Field Log"}
+              : workflow.primaryActionLabel}
       </button>
     </div>
   );

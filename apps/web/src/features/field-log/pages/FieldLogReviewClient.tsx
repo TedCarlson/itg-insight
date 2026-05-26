@@ -203,7 +203,7 @@ export function FieldLogReviewClient() {
         {rows.map((row) => {
           const chip = getStatusChip(row.status, row.last_action_type);
           const borderClass = getStatusBorder(row.status, row.last_action_type);
-          const showApprovedBy = row.status === "approved" && !!row.approved_by_full_name;
+          const showClosedBy = row.status === "approved" && !!row.approved_by_full_name;
           const showReturnedTag =
             row.status === "pending_review" && isReturnedForReview(row.last_action_type);
 
@@ -249,9 +249,9 @@ export function FieldLogReviewClient() {
                 </div>
               ) : null}
 
-              {showApprovedBy ? (
+              {showClosedBy ? (
                 <div className="mt-2 text-sm text-muted-foreground">
-                  Approved by {row.approved_by_full_name}
+                  Closed by {row.approved_by_full_name}
                 </div>
               ) : null}
 
@@ -351,7 +351,7 @@ export function FieldLogReviewClient() {
             rows={grouped.sup_followup_required}
             status="sup_followup_required"
           />
-          <Section title="Approved" rows={grouped.approved} status="approved" />
+          <Section title="Closed / Finalized" rows={grouped.approved} status="approved" />
         </div>
       )}
     </div>

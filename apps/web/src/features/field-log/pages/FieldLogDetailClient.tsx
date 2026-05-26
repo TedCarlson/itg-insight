@@ -19,6 +19,7 @@ import { FieldLogSubmissionCard } from "../components/FieldLogSubmissionCard";
 import { FieldLogNotDoneDetailCard } from "../components/FieldLogNotDoneDetailCard";
 import { FieldLogPostCallDetailCard } from "../components/FieldLogPostCallDetailCard";
 import { ALLOW_SUPERVISOR_PROXY_UPLOAD } from "../lib/rolloutFlags";
+import { buildFieldLogWorkflow, useFieldLogEntrySource } from "../workflow";
 import type {
   FieldLogApiResponse,
   FieldLogDetailPayload,
@@ -54,6 +55,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const { userId } = useSession();
   const { selectedOrgId } = useOrg();
   const { accessPass } = useAccessPass();
+  const entrySource = useFieldLogEntrySource();
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<FieldLogDetailPayload>(initialData);
@@ -67,9 +69,19 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
   const showTimeline = useMemo(() => canViewTimeline(accessPass), [accessPass]);
 
+  const workflow = useMemo(
+    () =>
+      buildFieldLogWorkflow({
+        entrySource,
+        status: data.status,
+      }),
+    [entrySource, data.status],
+  );
+
   const canApprove = useMemo(() => {
+    if (!workflow.canApprove) return false;
     return data.status === "pending_review" || data.status === "sup_followup_required";
-  }, [data.status]);
+  }, [data.status, workflow.canApprove]);
 
   const isTechFollowup = data.status === "tech_followup_required";
   const canResubmit = isTechFollowup && data.edit_unlocked && data.created_by_user_id === userId;
@@ -403,6 +415,8 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
               error={timelineError}
             />
           ) : null}
+
+          {!workflow.isTechSourced ? null : null}
 
           <FieldLogSupervisorActionsCard
             busy={busy}

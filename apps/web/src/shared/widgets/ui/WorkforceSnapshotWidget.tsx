@@ -83,12 +83,22 @@ function AlertRow(props: {
   );
 }
 
+const EMPTY_WORKFORCE_PAYLOAD: HomeWidgetPayload["workforce_snapshot"] = {
+  title: "Workforce",
+  headline: "No workforce data available",
+  subhead: "This widget is not available for the current role or org scope.",
+  items: [],
+  alerts: [],
+  links: [],
+};
+
 export function WorkforceSnapshotWidget(props: {
-  payload: HomeWidgetPayload["workforce_snapshot"];
+  payload?: HomeWidgetPayload["workforce_snapshot"];
   widget?: HomeWidgetConfig;
 }) {
   const size = props.widget?.size ?? "wide";
-  const visibleItems = props.payload.items.slice(0, visibleItemCount(size));
+  const payload = props.payload ?? EMPTY_WORKFORCE_PAYLOAD;
+  const visibleItems = payload.items.slice(0, visibleItemCount(size));
   const isRail = size === "rail_half" || size === "rail_full";
   const isSmall = size === "small";
 
@@ -96,16 +106,16 @@ export function WorkforceSnapshotWidget(props: {
     <div className="flex h-full flex-col">
       <div>
         <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-muted)]">
-          {props.payload.title}
+          {payload.title}
         </div>
 
         <div className="mt-1 text-lg font-semibold text-[var(--to-foreground)]">
-          {props.payload.headline}
+          {payload.headline}
         </div>
 
-        {!isSmall && props.payload.subhead ? (
+        {!isSmall && payload.subhead ? (
           <div className="mt-1 text-sm text-[var(--to-muted)]">
-            {props.payload.subhead}
+            {payload.subhead}
           </div>
         ) : null}
       </div>
@@ -127,9 +137,9 @@ export function WorkforceSnapshotWidget(props: {
         })}
       </div>
 
-      {!isSmall && props.payload.alerts?.length ? (
+      {!isSmall && payload.alerts?.length ? (
         <div className="mt-4 space-y-2">
-          {props.payload.alerts.slice(0, isRail ? 2 : 1).map((item) => {
+          {payload.alerts.slice(0, isRail ? 2 : 1).map((item) => {
             return (
               <AlertRow
                 key={item.id}
@@ -140,9 +150,9 @@ export function WorkforceSnapshotWidget(props: {
         </div>
       ) : null}
 
-      {!isSmall && props.payload.links?.length ? (
+      {!isSmall && payload.links?.length ? (
         <div className="mt-auto flex flex-wrap gap-2 pt-4">
-          {props.payload.links.slice(0, isRail ? 1 : 2).map((link) => {
+          {payload.links.slice(0, isRail ? 1 : 2).map((link) => {
             return (
               <a
                 key={link.href}
