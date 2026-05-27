@@ -34,12 +34,18 @@ function fmtSigned(n: number) {
 }
 
 function scheduleDelta(row: ExceptionRow) {
-  const type = String(row.exception_type ?? "").toUpperCase();
+  const current = (row as any).current_delta;
+  const projected = (row as any).projected_delta;
 
-  if (type.includes("ADD")) return { current: 0, projected: 1 };
-  if (type.includes("OVERRIDE")) return { current: 0, projected: 0 };
+  return {
+    current: typeof current === "number" && Number.isFinite(current) ? current : null,
+    projected: typeof projected === "number" && Number.isFinite(projected) ? projected : null,
+  };
+}
 
-  return { current: 0, projected: -1 };
+function fmtMaybeSigned(n: number | null) {
+  if (n === null) return "—";
+  return n > 0 ? `+${n}` : String(n);
 }
 
 function impactFromReadiness(projectedGap: number) {
@@ -345,14 +351,14 @@ export default function ExceptionsTable(props: {
                 <td className="px-3 py-2 text-center font-medium">
                   {(() => {
                     const delta = scheduleDelta(r);
-                    return `${fmtSigned(delta.current)} → ${fmtSigned(delta.projected)}`;
+                    return `${fmtMaybeSigned(delta.current)} → ${fmtMaybeSigned(delta.projected)}`;
                   })()}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex justify-center">
                     {(() => {
                       const delta = scheduleDelta(r);
-                      const impact = impactFromReadiness(delta.projected);
+                      const impact = impactFromReadiness(delta.projected ?? -1);
 
                       return (
                         <span

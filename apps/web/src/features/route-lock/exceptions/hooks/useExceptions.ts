@@ -18,6 +18,11 @@ export type ExceptionRow = {
   decision_notes: string | null;
   decision_at: string | null;
   created_at: string | null;
+
+  current_delta?: number | null;
+  projected_delta?: number | null;
+  impact_change?: number | null;
+  impact_state?: "SAFE" | "TIGHT" | "RISK" | string | null;
 };
 
 export function useExceptions(from?: string, to?: string) {

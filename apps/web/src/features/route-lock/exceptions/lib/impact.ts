@@ -1,12 +1,9 @@
 export type ExceptionType =
-  | "PTO"
-  | "FORCE_OFF"
-  | "SICK"
   | "VACATION"
+  | "PERSONAL_DAY"
+  | "FMLA"
   | "ADD_DAY"
-  | "COVER_DAY"
-  | "ROUTE_OVERRIDE"
-  | "SHIFT_OVERRIDE"
+  | "COVERAGE_ADD"
   | string;
 
 export type ImpactState = "SAFE" | "TIGHT" | "RISK";
@@ -37,18 +34,13 @@ function removesCapacity(row: DraftExceptionRow) {
 
   const type = row.type?.toUpperCase();
 
-  return (
-    type === "PTO" ||
-    type === "SICK" ||
-    type === "VACATION" ||
-    type === "FORCE_OFF"
-  );
+  return type === "VACATION" || type === "PERSONAL_DAY" || type === "FMLA";
 }
 
 function addsCapacity(row: DraftExceptionRow) {
   const type = row.type?.toUpperCase();
 
-  return type === "ADD_DAY" || type === "COVER_DAY";
+  return type === "ADD_DAY" || type === "COVERAGE_ADD";
 }
 
 function deriveState(delta: number | null): ImpactState {
@@ -59,26 +51,10 @@ function deriveState(delta: number | null): ImpactState {
 }
 
 function deriveCurrentDelta(day: RouteLockDay): number | null {
-
-  // 1️⃣ Use explicit delta if present
   if (typeof day.delta_forecast === "number" && Number.isFinite(day.delta_forecast)) {
     return day.delta_forecast;
   }
 
-  // 2️⃣ Support capacity/quota fields used by calendar tiles
-  const capacity = (day as any).capacity;
-  const quota = (day as any).quota;
-
-  if (
-    typeof capacity === "number" &&
-    Number.isFinite(capacity) &&
-    typeof quota === "number" &&
-    Number.isFinite(quota)
-  ) {
-    return capacity - quota;
-  }
-
-  // 3️⃣ Fallback to routes if present
   if (
     typeof day.scheduled_routes === "number" &&
     Number.isFinite(day.scheduled_routes) &&
@@ -100,23 +76,16 @@ export function computeExceptionImpact(
   let projectedDelta = currentDelta;
 
   if (currentDelta !== null) {
-    if (removesCapacity(row)) {
-      projectedDelta = currentDelta - 1;
-    } else if (addsCapacity(row)) {
-      projectedDelta = currentDelta + 1;
-    }
+    if (removesCapacity(row)) projectedDelta = currentDelta - 1;
+    else if (addsCapacity(row)) projectedDelta = currentDelta + 1;
   }
-
-  const change =
-    currentDelta !== null && projectedDelta !== null
-      ? projectedDelta - currentDelta
-      : null;
 
   return {
     date: row.date,
     current_delta: currentDelta,
     projected_delta: projectedDelta,
-    impact_change: change,
+    impact_change:
+      currentDelta !== null && projectedDelta !== null ? projectedDelta - currentDelta : null,
     state: deriveState(projectedDelta),
   };
 }
