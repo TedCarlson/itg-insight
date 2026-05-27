@@ -47,6 +47,33 @@ function timeToMinutes(time: string | null) {
   return hh * 60 + mm;
 }
 
+function formatTimeFrame(
+  start: string | null | undefined,
+  end: string | null | undefined
+) {
+  if (!start || !end) return null;
+
+  const parseHour = (value: string) => {
+    const m = value.match(/^(\d{1,2})/);
+    if (!m) return null;
+
+    const hour = Number(m[1]);
+    if (!Number.isFinite(hour)) return null;
+
+    if (hour === 0) return 12;
+    if (hour > 12) return hour - 12;
+
+    return hour;
+  };
+
+  const startHour = parseHour(start);
+  const endHour = parseHour(end);
+
+  if (startHour === null || endHour === null) return null;
+
+  return `${startHour}-${endHour}`;
+}
+
 async function resolveAffiliationName(admin: any, personId: string | null) {
   if (!personId) return null;
 
@@ -130,6 +157,8 @@ export async function getTechCheckInDayHistory(input: Input) {
         "start_time",
         "cp_time",
         "job_duration",
+        "time_slot_start_time",
+        "time_slot_end_time",
         "is_sla_bptrl",
         "source_tech_last_name",
       ].join(",")
@@ -172,6 +201,13 @@ export async function getTechCheckInDayHistory(input: Input) {
 
       start_time: row.start_time ? String(row.start_time) : null,
       cp_time: row.cp_time ? String(row.cp_time) : null,
+
+      time_slot_start_time: row.time_slot_start_time ? String(row.time_slot_start_time) : null,
+      time_slot_end_time: row.time_slot_end_time ? String(row.time_slot_end_time) : null,
+      time_frame: formatTimeFrame(
+        row.time_slot_start_time ? String(row.time_slot_start_time) : null,
+        row.time_slot_end_time ? String(row.time_slot_end_time) : null
+      ),
 
       job_duration: Number(row.job_duration ?? 0) || 0,
 

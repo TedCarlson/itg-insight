@@ -78,6 +78,7 @@ function jobRows(row: CheckInWeeklyRow) {
           <td>${escapeHtml(job.job_type ?? "")}</td>
           <td class="num">${formatDecimal(job.job_units)}</td>
           <td>${escapeHtml(job.resolution_code ?? "")}</td>
+          <td>${escapeHtml(job.time_frame ?? "")}</td>
           <td>${escapeHtml(job.start_time ?? "—")}</td>
           <td>${escapeHtml(job.cp_time ?? "—")}</td>
           <td class="num">${formatHoursMinutes(job.job_duration)}</td>

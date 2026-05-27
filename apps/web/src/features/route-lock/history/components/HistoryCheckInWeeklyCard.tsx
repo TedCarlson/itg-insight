@@ -71,6 +71,51 @@ function weekdayColumns(row: CheckInWeeklyRow) {
   });
 }
 
+function jobSignalPills(
+  signals: Array<{ code: string; label: string; severity: "warn" | "danger" }> | undefined
+) {
+  const values = Array.isArray(signals) ? signals : [];
+
+  if (!values.length) return null;
+
+  return (
+    <div className="flex flex-nowrap items-center gap-1">
+      {values.map((signal) => {
+        const className =
+          signal.severity === "danger"
+            ? "border-red-300 bg-red-50 text-red-800"
+            : "border-amber-300 bg-amber-50 text-amber-800";
+
+        return (
+          <span
+            key={signal.code}
+            className={`inline-flex whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide ${className}`}
+            title={signal.code}
+          >
+            {signal.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function jobRowClassName(
+  signals: Array<{ code: string; label: string; severity: "warn" | "danger" }> | undefined
+) {
+  const values = Array.isArray(signals) ? signals : [];
+
+  if (values.some((signal) => signal.severity === "danger")) {
+    return "bg-red-50/45";
+  }
+
+  if (values.some((signal) => signal.severity === "warn")) {
+    return "bg-amber-50/45";
+  }
+
+  return "";
+}
+
 function jobSignal(job: CheckInWeekJobRow) {
   if (job.is_sla_bptrl) {
     return (
@@ -293,6 +338,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                       <th className="border-b px-3 py-2 text-left">Type</th>
                       <th className="border-b px-3 py-2 text-right">Units</th>
                       <th className="border-b px-3 py-2 text-left">Res Code</th>
+                      <th className="border-b px-3 py-2 text-left">Time Frame</th>
                       <th className="border-b px-3 py-2 text-left">Start</th>
                       <th className="border-b px-3 py-2 text-left">End</th>
                       <th className="border-b px-3 py-2 text-right">Duration</th>
@@ -309,7 +355,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                         <Fragment key={`${job.shift_date}:${job.job_num}:${job.start_time ?? index}`}>
                           {isFirstForDate ? (
                             <tr key={`${job.shift_date}:divider`}>
-                              <td colSpan={10} className="bg-[var(--to-surface-2)] px-3 py-2">
+                              <td colSpan={11} className="bg-[var(--to-surface-2)] px-3 py-2">
                                 <div className="flex items-center gap-3">
                                   <div className="h-px flex-1 bg-[var(--to-border)]" />
                                   <div className="rounded-full border border-[var(--to-border)] bg-[var(--to-surface)] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
@@ -321,7 +367,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                             </tr>
                           ) : null}
 
-                          <tr key={`${job.shift_date}:${job.job_num}:${job.start_time ?? ""}`}>
+                          <tr key={`${job.shift_date}:${job.job_num}:${job.start_time ?? ""}`} className={jobRowClassName(job.job_signals)}>
                             <td className="border-b px-3 py-2 font-medium">
                               {formatWorkedDate(job.shift_date)}
                             </td>
@@ -329,6 +375,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                             <td className="border-b px-3 py-2">{job.job_type ?? "—"}</td>
                             <td className="border-b px-3 py-2 text-right">{formatDecimal(job.job_units)}</td>
                             <td className="border-b px-3 py-2">{job.resolution_code ?? "—"}</td>
+                            <td className="border-b px-3 py-2">{job.time_frame ?? "—"}</td>
                             <td className="border-b px-3 py-2">{job.start_time ?? "—"}</td>
                             <td className="border-b px-3 py-2">{job.cp_time ?? "—"}</td>
                             <td className="border-b px-3 py-2 text-right">
@@ -337,7 +384,7 @@ export default function HistoryCheckInWeeklyCard(props: {
                             <td className="border-b px-3 py-2 text-right">
                               {job.between_job_minutes === null ? "—" : `${job.between_job_minutes} min`}
                             </td>
-                            <td className="border-b px-3 py-2">{jobSignal(job)}</td>
+                            <td className="border-b px-3 py-2">{job.is_sla_bptrl ? jobSignal(job) : jobSignalPills(job.job_signals)}</td>
                           </tr>
                         </Fragment>
                       );

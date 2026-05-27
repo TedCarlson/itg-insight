@@ -58,6 +58,7 @@ export function exportTechHistoryExcel(input: {
       Type: job.job_type ?? "",
       Units: formatDecimal(job.job_units),
       "Resolution Code": job.resolution_code ?? "",
+      "Time Frame": job.time_frame ?? "",
       Start: job.start_time ?? "",
       End: job.cp_time ?? "",
       Duration: formatDecimal(job.job_duration),

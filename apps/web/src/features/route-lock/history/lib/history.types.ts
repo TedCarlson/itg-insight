@@ -92,10 +92,16 @@ export type CheckInWeekJobRow = {
   start_time: string | null;
   cp_time: string | null;
 
+  time_slot_start_time: string | null;
+  time_slot_end_time: string | null;
+  time_frame: string | null;
+
   job_duration: number;
 
   is_sla_bptrl: boolean;
   source_tech_last_name: string | null;
+
+  job_signals: Array<{ code: string; label: string; severity: "warn" | "danger" }>;
 
   between_job_minutes: number | null;
   resolution_code: string | null;
@@ -168,6 +174,10 @@ export type CheckInDayJobRow = {
 
   start_time: string | null;
   cp_time: string | null;
+
+  time_slot_start_time: string | null;
+  time_slot_end_time: string | null;
+  time_frame: string | null;
 
   job_duration: number;
 

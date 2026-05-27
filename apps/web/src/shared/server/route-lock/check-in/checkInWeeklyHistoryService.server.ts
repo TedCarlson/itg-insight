@@ -72,6 +72,64 @@ function timeToMinutes(time: string | null) {
   return hh * 60 + mm;
 }
 
+function formatTimeFrame(
+  start: string | null | undefined,
+  end: string | null | undefined
+) {
+  if (!start || !end) return null;
+
+  const parseHour = (value: string) => {
+    const m = value.match(/^(\d{1,2})/);
+    if (!m) return null;
+
+    const hour = Number(m[1]);
+    if (!Number.isFinite(hour)) return null;
+
+    if (hour === 0) return 12;
+    if (hour > 12) return hour - 12;
+
+    return hour;
+  };
+
+  const startHour = parseHour(start);
+  const endHour = parseHour(end);
+
+  if (startHour === null || endHour === null) return null;
+
+  return `${startHour}-${endHour}`;
+}
+
+function getJobSignals(row: any, index: number) {
+  const signals: Array<{ code: string; label: string; severity: "warn" | "danger" }> = [];
+
+  const resolutionCode = String(row.resolution_code ?? "").toUpperCase();
+  const durationMinutes = (Number(row.job_duration ?? 0) || 0) * 60;
+
+  if (resolutionCode.includes("U12:CUST NOT HOME") && durationMinutes > 20) {
+    signals.push({ code: "POTENTIAL_FTR_HIT", label: "FTR", severity: "warn" });
+  }
+
+  if (index === 0) {
+    const slotStartMinutes = timeToMinutes(row.time_slot_start_time ? String(row.time_slot_start_time) : null);
+    const actualStartMinutes = timeToMinutes(row.start_time ? String(row.start_time) : null);
+
+    if (
+      slotStartMinutes !== null &&
+      actualStartMinutes !== null &&
+      actualStartMinutes > slotStartMinutes + 15
+    ) {
+      const minutesBeyondGrace = actualStartMinutes - slotStartMinutes - 15;
+      signals.push({
+        code: "OTA_TTFJ_RISK",
+        label: `TTFJ +${minutesBeyondGrace}`,
+        severity: "danger",
+      });
+    }
+  }
+
+  return signals;
+}
+
 function betweenValuesForJobs(jobs: any[]) {
   const sorted = [...jobs].sort((a, b) => {
     const aStart = String(a.start_time ?? "99:99:99");
@@ -209,6 +267,8 @@ export async function getTechCheckInWeeklyHistory(input: Input) {
         "start_time",
         "cp_time",
         "job_duration",
+        "time_slot_start_time",
+        "time_slot_end_time",
         "is_sla_bptrl",
         "source_tech_last_name",
       ].join(",")
@@ -298,22 +358,32 @@ export async function getTechCheckInWeeklyHistory(input: Input) {
 
     const betweenValues = betweenValuesForJobs(sorted);
 
-    return sorted.map((row, index) => ({
-      shift_date: shiftDate,
-      weekday_label: weekdayLabel(shiftDate),
-      tech_id: String(row.tech_id ?? techId),
-      job_num: String(row.job_num ?? ""),
-      work_order_number: row.work_order_number ? String(row.work_order_number) : null,
-      job_type: row.job_type ? String(row.job_type) : null,
-      job_units: Number(row.job_units ?? 0) || 0,
-      resolution_code: row.resolution_code ? String(row.resolution_code) : null,
-      start_time: row.start_time ? String(row.start_time) : null,
-      cp_time: row.cp_time ? String(row.cp_time) : null,
-      job_duration: Number(row.job_duration ?? 0) || 0,
-      is_sla_bptrl: Boolean(row.is_sla_bptrl),
-      source_tech_last_name: row.source_tech_last_name ? String(row.source_tech_last_name) : null,
-      between_job_minutes: betweenValues[index] ?? null,
-    }));
+    return sorted.map((row, index) => {
+      const timeSlotStartTime = row.time_slot_start_time ? String(row.time_slot_start_time) : null;
+      const timeSlotEndTime = row.time_slot_end_time ? String(row.time_slot_end_time) : null;
+      const timeFrame = formatTimeFrame(timeSlotStartTime, timeSlotEndTime);
+
+      return {
+        shift_date: shiftDate,
+        weekday_label: weekdayLabel(shiftDate),
+        tech_id: String(row.tech_id ?? techId),
+        job_num: String(row.job_num ?? ""),
+        work_order_number: row.work_order_number ? String(row.work_order_number) : null,
+        job_type: row.job_type ? String(row.job_type) : null,
+        job_units: Number(row.job_units ?? 0) || 0,
+        resolution_code: row.resolution_code ? String(row.resolution_code) : null,
+        start_time: row.start_time ? String(row.start_time) : null,
+        cp_time: row.cp_time ? String(row.cp_time) : null,
+        time_slot_start_time: timeSlotStartTime,
+        time_slot_end_time: timeSlotEndTime,
+        time_frame: timeFrame,
+        job_duration: Number(row.job_duration ?? 0) || 0,
+        is_sla_bptrl: Boolean(row.is_sla_bptrl),
+        source_tech_last_name: row.source_tech_last_name ? String(row.source_tech_last_name) : null,
+        job_signals: getJobSignals(row, index),
+        between_job_minutes: betweenValues[index] ?? null,
+      };
+    });
   });
 
   const actualJobs = daySummaries.reduce((sum, row) => sum + row.actual_jobs, 0);
