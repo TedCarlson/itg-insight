@@ -91,6 +91,24 @@ function clean(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function addDays(isoDate: string, days: number) {
+  const date = new Date(`${isoDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function datesBetween(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  let cursor = startDate;
+
+  while (cursor <= endDate) {
+    dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+
+  return dates;
+}
+
 export async function loadScheduleRows(
   args: LoadScheduleRowsArgs,
 ): Promise<ScheduleSurfaceRow[]> {
@@ -159,33 +177,6 @@ export async function loadScheduleRows(
       );
   }
 
-  let factQuery =
-    admin
-      .from("schedule_day_fact")
-      .select(
-        [
-          "assignment_id",
-          "pc_org_id",
-          "shift_date",
-          "planned_route_id",
-          "plan_source",
-        ].join(","),
-      )
-      .in("pc_org_id", args.pcOrgIds)
-      .gte("shift_date", args.startDate)
-      .lte("shift_date", args.endDate);
-
-  if (
-    (
-      args.scope === "BP_SUPERVISOR" ||
-      args.scope === "TECH_SELF"
-    ) &&
-    args.assignmentIds.length
-  ) {
-    factQuery =
-      factQuery.in("assignment_id", args.assignmentIds);
-  }
-
   const search =
     clean(args.search).toLowerCase();
 
@@ -206,12 +197,47 @@ export async function loadScheduleRows(
       });
   }
 
-  const { data: factRows, error: factError } =
-    await factQuery;
+  const factRows: ScheduleFactRow[] = [];
 
-  if (factError) {
-    throw new Error(
-      `schedule fact lookup failed: ${factError.message}`,
+  for (const shiftDate of datesBetween(args.startDate, args.endDate)) {
+    let dayFactQuery =
+      admin
+        .from("schedule_day_fact")
+        .select(
+          [
+            "assignment_id",
+            "pc_org_id",
+            "shift_date",
+            "planned_route_id",
+            "plan_source",
+          ].join(","),
+        )
+        .in("pc_org_id", args.pcOrgIds)
+        .eq("shift_date", shiftDate)
+        .range(0, 999);
+
+    if (
+      (
+        args.scope === "BP_SUPERVISOR" ||
+        args.scope === "TECH_SELF"
+      ) &&
+      args.assignmentIds.length
+    ) {
+      dayFactQuery =
+        dayFactQuery.in("assignment_id", args.assignmentIds);
+    }
+
+    const { data: dayFactRows, error: dayFactError } =
+      await dayFactQuery;
+
+    if (dayFactError) {
+      throw new Error(
+        `schedule fact lookup failed for ${shiftDate}: ${dayFactError.message}`,
+      );
+    }
+
+    factRows.push(
+      ...((dayFactRows ?? []) as unknown as ScheduleFactRow[]),
     );
   }
 
@@ -231,7 +257,8 @@ export async function loadScheduleRows(
       )
       .in("pc_org_id", args.pcOrgIds)
       .gte("shift_date", args.startDate)
-      .lte("shift_date", args.endDate);
+      .lte("shift_date", args.endDate)
+      .range(0, 9999);
 
   if (dispatchError) {
     throw new Error(
@@ -239,33 +266,41 @@ export async function loadScheduleRows(
     );
   }
 
-  const { data: svRows, error: svError } =
-    await admin
-      .from("shift_validation_row")
-      .select(
-        [
-          "shift_date",
-          "tech_num",
-          "is_work",
-          "is_bplow",
-          "is_prjt",
-          "work_units",
-        ].join(","),
-      )
-      .in("pc_org_id", args.pcOrgIds)
-      .gte("shift_date", args.startDate)
-      .lte("shift_date", args.endDate);
+  const svRows: ShiftValidationRow[] = [];
 
-  if (svError) {
-    throw new Error(
-      `schedule shift validation lookup failed: ${svError.message}`,
+  for (const shiftDate of datesBetween(args.startDate, args.endDate)) {
+    const { data: daySvRows, error: daySvError } =
+      await admin
+        .from("shift_validation_row")
+        .select(
+          [
+            "shift_date",
+            "tech_num",
+            "is_work",
+            "is_bplow",
+            "is_prjt",
+            "work_units",
+          ].join(","),
+        )
+        .in("pc_org_id", args.pcOrgIds)
+        .eq("shift_date", shiftDate)
+        .range(0, 999);
+
+    if (daySvError) {
+      throw new Error(
+        `schedule shift validation lookup failed for ${shiftDate}: ${daySvError.message}`,
+      );
+    }
+
+    svRows.push(
+      ...((daySvRows ?? []) as unknown as ShiftValidationRow[]),
     );
   }
 
   const svByTechDate =
     new Map<string, { builtUnits: number }>();
 
-  for (const row of ((svRows ?? []) as unknown as ShiftValidationRow[])) {
+  for (const row of svRows) {
     const shiftDate =
       clean(row.shift_date);
 
@@ -302,30 +337,38 @@ export async function loadScheduleRows(
     svByTechDate.set(key, existing);
   }
 
-  const { data: checkInRows, error: checkInError } =
-    await admin
-      .from("check_in_day_fact")
-      .select(
-        [
-          "shift_date",
-          "tech_id",
-          "actual_units",
-        ].join(","),
-      )
-      .in("pc_org_id", args.pcOrgIds)
-      .gte("shift_date", args.startDate)
-      .lte("shift_date", args.endDate);
+  const checkInRows: CheckInDayFactRow[] = [];
 
-  if (checkInError) {
-    throw new Error(
-      `schedule check-in lookup failed: ${checkInError.message}`,
+  for (const shiftDate of datesBetween(args.startDate, args.endDate)) {
+    const { data: dayCheckInRows, error: dayCheckInError } =
+      await admin
+        .from("check_in_day_fact")
+        .select(
+          [
+            "shift_date",
+            "tech_id",
+            "actual_units",
+          ].join(","),
+        )
+        .in("pc_org_id", args.pcOrgIds)
+        .eq("shift_date", shiftDate)
+        .range(0, 999);
+
+    if (dayCheckInError) {
+      throw new Error(
+        `schedule check-in lookup failed for ${shiftDate}: ${dayCheckInError.message}`,
+      );
+    }
+
+    checkInRows.push(
+      ...((dayCheckInRows ?? []) as unknown as CheckInDayFactRow[]),
     );
   }
 
   const checkInByTechDate =
     new Map<string, { actualUnits: number }>();
 
-  for (const row of ((checkInRows ?? []) as unknown as CheckInDayFactRow[])) {
+  for (const row of checkInRows) {
     const shiftDate =
       clean(row.shift_date);
 
@@ -384,7 +427,7 @@ export async function loadScheduleRows(
   const routeIds =
     Array.from(
       new Set(
-        ((factRows ?? []) as unknown as ScheduleFactRow[])
+        factRows
           .map((row) => clean(row.planned_route_id))
           .filter(Boolean),
       ),
@@ -483,7 +526,7 @@ export async function loadScheduleRows(
   const existingTechDateKeys =
     new Set<string>();
 
-  for (const fact of ((factRows ?? []) as unknown as ScheduleFactRow[])) {
+  for (const fact of factRows) {
 
     const assignmentId =
       clean(fact.assignment_id);

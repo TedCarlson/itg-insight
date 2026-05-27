@@ -78,21 +78,14 @@ function emptySummary(date: string): ScheduleDailySummary {
   };
 }
 
-function missingActualCountForDate(payload: ScheduleSurfacePayload, date: string) {
-  return payload.rows.filter((row) => {
-    if (row.date !== date) return false;
+function missingActualCountForDate(
+  summary: ScheduleDailySummary,
+) {
+  if (summary.actualBookedCount <= 0) {
+    return 0;
+  }
 
-    const hasDispatchExplanation =
-      row.dispatch.callOut ||
-      row.dispatch.addIn ||
-      row.dispatch.techMove ||
-      row.dispatch.bpLow ||
-      row.dispatch.incidentCount > 0 ||
-      row.dispatch.noteCount > 0 ||
-      Boolean(String(row.dispatch.latestNote ?? "").trim());
-
-    return row.routeLock.hasShiftValidation && !row.routeLock.hasCheckIn && !hasDispatchExplanation;
-  }).length;
+  return Math.max(summary.builtBookedCount - summary.actualBookedCount, 0);
 }
 
 function cardClass(args: {
@@ -105,7 +98,7 @@ function cardClass(args: {
     "min-h-[112px] rounded-lg border bg-background px-2 py-2",
     args.isCurrentMonth ? "" : "opacity-40",
     args.isBlackout ? "bg-zinc-950/[0.035]" : "",
-    args.isToday ? "border-l-4 border-l-blue-500 bg-blue-50/30 shadow-sm" : "",
+    args.isToday ? "border-2 border-blue-500 bg-blue-50/30" : "",
     !args.isToday && args.isFiscalMonthEnd ? "border-2 border-amber-400 bg-amber-50/20" : "",
   ].filter(Boolean).join(" ");
 }
@@ -127,14 +120,8 @@ export default function ScheduleMonthView({ payload }: Props) {
           const blackoutDay = payload.blackoutByDate?.[date] ?? null;
           const blackoutLabel = blackoutDay?.rules?.[0]?.label ?? null;
           const isBlackout = Boolean(blackoutDay?.rules?.length);
-          const missingActualCount = missingActualCountForDate(payload, date);
-
-          const primaryBookedLabel =
-            summary.actualBookedCount > 0
-              ? "Actual"
-              : summary.builtBookedCount > 0
-                ? "Built"
-                : "Planned";
+          const missingActualCount =
+            missingActualCountForDate(summary);
 
           const primaryBookedCount =
             summary.actualBookedCount > 0
@@ -158,8 +145,13 @@ export default function ScheduleMonthView({ payload }: Props) {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {weekday}
+                  <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <span>{weekday}</span>
+                    {isToday ? (
+                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+                        Today
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -192,10 +184,24 @@ export default function ScheduleMonthView({ payload }: Props) {
               </div>
 
               <div className="mt-3 grid gap-1 text-[11px]">
-                {primaryBookedCount > 0 ? (
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                    <span className="text-muted-foreground">{primaryBookedLabel}</span>
-                    <span className="font-semibold tabular-nums">{primaryBookedCount}</span>
+                {(summary.plannedBookedCount > 0 ||
+                  summary.builtBookedCount > 0 ||
+                  summary.actualBookedCount > 0) ? (
+                  <div className="grid grid-cols-3 rounded-sm border border-zinc-200 text-center text-[10px]">
+                    <div className="border-r border-zinc-200 px-1 py-0.5">
+                      <div className="font-semibold text-zinc-500">PLN</div>
+                      <div className="font-semibold tabular-nums text-zinc-900">{summary.plannedBookedCount}</div>
+                    </div>
+
+                    <div className="border-r border-zinc-200 px-1 py-0.5">
+                      <div className="font-semibold text-zinc-500">BLD</div>
+                      <div className="font-semibold tabular-nums text-zinc-900">{summary.builtBookedCount}</div>
+                    </div>
+
+                    <div className="px-1 py-0.5">
+                      <div className="font-semibold text-zinc-500">ACT</div>
+                      <div className="font-semibold tabular-nums text-zinc-900">{summary.actualBookedCount}</div>
+                    </div>
                   </div>
                 ) : null}
 

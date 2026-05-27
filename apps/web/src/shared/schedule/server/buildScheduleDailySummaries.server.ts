@@ -8,14 +8,6 @@ import type {
   ScheduleDailySummary,
   ScheduleSurfaceRow,
 } from "../types/scheduleSurfaceTypes";
-
-export type ScheduleDailySourceCount = {
-  date: string;
-  plannedBookedCount: number;
-  builtBookedCount: number;
-  actualBookedCount: number;
-};
-
 function addDays(
   isoDate: string,
   days: number,
@@ -53,7 +45,6 @@ export function buildScheduleDailySummaries(args: {
   rows: ScheduleSurfaceRow[];
   dispatchFacts?: DispatchDayFactRow[];
   activeCapacityCount?: number;
-  sourceCounts?: ScheduleDailySourceCount[];
 }): ScheduleDailySummary[] {
 
   const dispatchByDate =
@@ -62,14 +53,6 @@ export function buildScheduleDailySummaries(args: {
   for (const fact of args.dispatchFacts ?? []) {
     dispatchByDate.set(fact.shift_date, fact);
   }
-
-  const sourceCountByDate =
-    new Map<string, ScheduleDailySourceCount>();
-
-  for (const sourceCount of args.sourceCounts ?? []) {
-    sourceCountByDate.set(sourceCount.date, sourceCount);
-  }
-
   return datesBetween(
     args.startDate,
     args.endDate,
@@ -81,20 +64,23 @@ export function buildScheduleDailySummaries(args: {
     const dispatchFact =
       dispatchByDate.get(date) ?? null;
 
-    const sourceCount =
-      sourceCountByDate.get(date);
-
+    // planned = visible scheduled rows
     const plannedBookedCount =
-      sourceCount?.plannedBookedCount
-      ?? rowsForDate.filter((row) => row.baseSchedule.scheduled).length;
+      rowsForDate.filter((row) => row.baseSchedule.scheduled).length;
 
+    // built = rows actively rendered from SV overlay
     const builtBookedCount =
-      sourceCount?.builtBookedCount
-      ?? rowsForDate.filter((row) => row.routeLock.hasShiftValidation).length;
+      rowsForDate.filter(
+        (row) =>
+          row.routeLock.hasShiftValidation &&
+          !row.routeLock.hasCheckIn,
+      ).length;
 
+    // actual = rows actively rendered from check-in overlay
     const actualBookedCount =
-      sourceCount?.actualBookedCount
-      ?? rowsForDate.filter((row) => row.routeLock.hasCheckIn).length;
+      rowsForDate.filter(
+        (row) => row.routeLock.hasCheckIn,
+      ).length;
 
     const activeBookedCount =
       actualBookedCount > 0

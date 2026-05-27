@@ -216,7 +216,11 @@ export default function ScheduleWeekView({
                     ) : null}
 
                     <div>
-                      {summary.scheduledCount} booked
+                      {summary.actualBookedCount > 0
+                        ? `${summary.actualBookedCount} actual`
+                        : summary.builtBookedCount > 0
+                          ? `${summary.builtBookedCount} built`
+                          : `${summary.plannedBookedCount} planned`}
                     </div>
                   </div>
                 </div>
