@@ -2,6 +2,16 @@ import { getTechShellContext } from "@/features/tech/lib/getTechShellContext";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { resolveMetricsRangeBatchIds } from "@/shared/server/metrics/resolveMetricsRangeBatchIds.server";
 import { loadMetricScoreRows } from "@/shared/server/metrics/loadMetricScoreRows.server";
+import { getMetricTnpsPayload } from "./getMetricTnpsPayload.server";
+import { getMetricFtrPayload } from "./getMetricFtrPayload.server";
+import { getMetricToolUsagePayload } from "./getMetricToolUsagePayload.server";
+import { getMetricPurePassPayload } from "./getMetricPurePassPayload.server";
+import { getMetric48HrPayload } from "./getMetric48HrPayload.server";
+import { getMetricRepeatPayload } from "./getMetricRepeatPayload.server";
+import { getMetricSoiPayload } from "./getMetricSoiPayload.server";
+import { getMetricReworkPayload } from "./getMetricReworkPayload.server";
+import { getMetricMetPayload } from "./getMetricMetPayload.server";
+
 import type { ScorecardTile, ScorecardHeader } from "@/shared/kpis/core/scorecardTypes";
 import type { KpiBandKey, KpiBandPaint, MetricsRangeKey } from "@/shared/kpis/core/types";
 
@@ -12,15 +22,15 @@ type OkPayload = {
   range: MetricsRangeKey;
   header: ScorecardHeader;
   tiles: ScorecardTile[];
-  ftrDebug: null;
-  tnpsDebug: null;
-  toolUsageDebug: null;
-  purePassDebug: null;
-  callback48HrDebug: null;
-  repeatDebug: null;
-  soiDebug: null;
-  reworkDebug: null;
-  metDebug: null;
+  ftrDebug: unknown | null;
+  tnpsDebug: unknown | null;
+  toolUsageDebug: unknown | null;
+  purePassDebug: unknown | null;
+  callback48HrDebug: unknown | null;
+  repeatDebug: unknown | null;
+  soiDebug: unknown | null;
+  reworkDebug: unknown | null;
+  metDebug: unknown | null;
 };
 
 type FailPayload = {
@@ -78,10 +88,8 @@ function bandLabel(key: KpiBandKey) {
 
 function formatValue(metricKey: string, value: number | null) {
   if (value == null || !Number.isFinite(value)) return null;
-
   const key = metricKey.toLowerCase();
   if (key.includes("tnps")) return Math.round(value).toString();
-
   return `${value.toFixed(1)}%`;
 }
 
@@ -102,10 +110,7 @@ function deriveTnpsDetractors(args: {
     return null;
   }
 
-  return Math.max(
-    0,
-    Math.round(args.promoters - (args.value / 100) * args.surveys)
-  );
+  return Math.max(0, Math.round(args.promoters - (args.value / 100) * args.surveys));
 }
 
 export async function getTechMetricsRangePayload(
@@ -152,6 +157,34 @@ export async function getTechMetricsRangePayload(
   ]);
 
   if (profileKpiRes.error) throw new Error(profileKpiRes.error.message);
+
+  const metricPayloadArgs = {
+    person_id: shell.person_id,
+    tech_id: techId,
+    range: rangeResolution.active_range,
+  };
+
+  const [
+    tnpsPayload,
+    ftrPayload,
+    toolUsagePayload,
+    purePassPayload,
+    callback48HrPayload,
+    repeatPayload,
+    soiPayload,
+    reworkPayload,
+    metPayload,
+  ] = await Promise.all([
+    getMetricTnpsPayload(metricPayloadArgs),
+    getMetricFtrPayload(metricPayloadArgs),
+    getMetricToolUsagePayload(metricPayloadArgs),
+    getMetricPurePassPayload(metricPayloadArgs),
+    getMetric48HrPayload(metricPayloadArgs),
+    getMetricRepeatPayload(metricPayloadArgs),
+    getMetricSoiPayload(metricPayloadArgs),
+    getMetricReworkPayload(metricPayloadArgs),
+    getMetricMetPayload(metricPayloadArgs),
+  ]);
 
   const scoreRows = await loadMetricScoreRows({
     pc_org_id: shell.pc_org_id,
@@ -238,14 +271,14 @@ export async function getTechMetricsRangePayload(
       fiscal_end_date: rangeResolution.as_of_date ?? undefined,
     },
     tiles,
-    ftrDebug: null,
-    tnpsDebug: null,
-    toolUsageDebug: null,
-    purePassDebug: null,
-    callback48HrDebug: null,
-    repeatDebug: null,
-    soiDebug: null,
-    reworkDebug: null,
-    metDebug: null,
+    ftrDebug: ftrPayload?.debug ?? null,
+    tnpsDebug: tnpsPayload?.debug ?? null,
+    toolUsageDebug: toolUsagePayload?.debug ?? null,
+    purePassDebug: purePassPayload?.debug ?? null,
+    callback48HrDebug: callback48HrPayload?.debug ?? null,
+    repeatDebug: repeatPayload?.debug ?? null,
+    soiDebug: soiPayload?.debug ?? null,
+    reworkDebug: reworkPayload?.debug ?? null,
+    metDebug: metPayload?.debug ?? null,
   };
 }
