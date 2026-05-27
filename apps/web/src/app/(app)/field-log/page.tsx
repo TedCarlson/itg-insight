@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FieldLogActivityTable } from "@/features/field-log/components/FieldLogActivityTable";
 
 export const runtime = "nodejs";
 
@@ -45,6 +46,8 @@ export default function FieldLogHomePage() {
           </div>
         </Link>
       </section>
+
+      <FieldLogActivityTable />
     </div>
   );
 }

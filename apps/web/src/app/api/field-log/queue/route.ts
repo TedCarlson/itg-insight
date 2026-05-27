@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { requireAccessPass } from "@/shared/access/requireAccessPass";
+import { isTechExperienceUser } from "@/shared/access/access";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,14 @@ type QueueRow = {
   job_type: string | null;
   submitted_at: string | null;
   last_action_at?: string | null;
+  created_by_user_id?: string | null;
+  tech_person_id?: string | null;
+};
+
+type WorkforceAffiliationRow = {
+  person_id: string;
+  affiliation_id: string | null;
+  affiliation_code: string | null;
 };
 
 function startOfDayIso(dateStr: string) {
@@ -60,8 +69,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  let accessPass;
+
   try {
-    await requireAccessPass(req, pcOrgId);
+    accessPass = await requireAccessPass(req, pcOrgId);
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, error: err?.message || "Forbidden" },
@@ -103,7 +114,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const rows =
+  const timeScopedRows =
     startIso && endIso
       ? ((data ?? []) as QueueRow[]).filter((row) =>
           inRange(row.submitted_at ?? row.last_action_at ?? null, startIso, endIso),
@@ -111,6 +122,87 @@ export async function GET(req: NextRequest) {
       : ((data ?? []) as QueueRow[]).filter((row) =>
           ["pending_review", "tech_followup_required", "sup_followup_required"].includes(row.status),
         );
+
+  const isTechUser = isTechExperienceUser(accessPass);
+  const permissions = Array.isArray(accessPass.permissions) ? accessPass.permissions : [];
+  const isElevatedCompanyUser =
+    accessPass.is_admin === true ||
+    accessPass.is_owner === true ||
+    accessPass.is_app_owner === true ||
+    permissions.includes("leadership_manage") ||
+    permissions.includes("permissions_manage") ||
+    permissions.includes("org_console_manage") ||
+    permissions.includes("admin_console_manage");
+
+  let rows = timeScopedRows;
+
+  if (!isElevatedCompanyUser) {
+    const viewerPersonId = String(accessPass.person_id ?? "").trim();
+    const personIds = Array.from(
+      new Set(
+        [
+          viewerPersonId,
+          ...timeScopedRows.map((row) => String(row.tech_person_id ?? "").trim()),
+        ].filter(Boolean),
+      ),
+    );
+
+    const affiliationByPersonId = new Map<string, WorkforceAffiliationRow>();
+
+    if (personIds.length > 0) {
+      const { data: workforceRows, error: workforceError } = await supabase
+        .from("workforce_current_v")
+        .select("person_id,affiliation_id,affiliation_code")
+        .eq("pc_org_id", pcOrgId)
+        .in("person_id", personIds);
+
+      if (workforceError) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: workforceError.message || "Failed to resolve Field Log queue visibility.",
+          },
+          { status: 500 },
+        );
+      }
+
+      for (const row of (workforceRows ?? []) as WorkforceAffiliationRow[]) {
+        affiliationByPersonId.set(String(row.person_id), row);
+      }
+    }
+
+    const viewerAffiliation = viewerPersonId
+      ? affiliationByPersonId.get(viewerPersonId)
+      : null;
+
+    const viewerAffiliationId = String(viewerAffiliation?.affiliation_id ?? "").trim();
+    const viewerAffiliationCode = String(viewerAffiliation?.affiliation_code ?? "").trim();
+
+    if (isTechUser) {
+      rows = timeScopedRows.filter((row) => {
+        const createdByViewer = String(row.created_by_user_id ?? "") === accessPass.auth_user_id;
+        const linkedToViewer =
+          viewerPersonId.length > 0 &&
+          String(row.tech_person_id ?? "") === viewerPersonId;
+
+        return createdByViewer || linkedToViewer;
+      });
+    } else if (viewerAffiliationCode === "ITG") {
+      rows = timeScopedRows;
+    } else {
+      rows = timeScopedRows.filter((row) => {
+        const createdByViewer = String(row.created_by_user_id ?? "") === accessPass.auth_user_id;
+        const techPersonId = String(row.tech_person_id ?? "").trim();
+        const techAffiliation = techPersonId ? affiliationByPersonId.get(techPersonId) : null;
+        const techAffiliationId = String(techAffiliation?.affiliation_id ?? "").trim();
+
+        return (
+          createdByViewer ||
+          (viewerAffiliationId.length > 0 && techAffiliationId === viewerAffiliationId)
+        );
+      });
+    }
+  }
 
   return NextResponse.json({
     ok: true,
