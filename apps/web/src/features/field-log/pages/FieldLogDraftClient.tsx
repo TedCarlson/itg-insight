@@ -8,7 +8,15 @@ import { createClient } from "@/shared/data/supabase/client";
 import { useOrg } from "@/state/org";
 import { useFieldLogRuntime } from "../hooks/useFieldLogRuntime";
 import type { FieldLogRule } from "../lib/fieldLog.types";
-import { buildFieldLogWorkflow, useFieldLogEntrySource } from "../workflow";
+import {
+  buildFieldLogWorkflow,
+  type FieldLogVerdict,
+  useFieldLogEntrySource,
+} from "../workflow";
+import {
+  getFieldLogOutcomeProfile,
+  outcomeActionToVerdict,
+} from "../workflow/fieldLogOutcomeProfiles";
 
 type FieldLogDraftClientProps = {
   reportId: string;
@@ -144,7 +152,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   );
   const [comment, setComment] = useState(initialComment ?? "");
   const [useXm, setUseXm] = useState(
-    initialXmDeclared || initialEvidenceDeclared === "xm_platform",
+    workflow.requiresApprovalToClose &&
+      (initialXmDeclared || initialEvidenceDeclared === "xm_platform"),
   );
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [existingPhotoCount] = useState(Math.max(0, initialPhotoCount ?? 0));
@@ -161,7 +170,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   });
 
   const requiredPhotoCount = rule?.min_photo_count ?? 0;
-  const canUseXm = rule?.xm_allowed ?? false;
+  const canUseXm = (rule?.xm_allowed ?? false) && workflow.requiresApprovalToClose;
+  const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
   const photoRequirements = rule?.photo_requirements ?? [];
   const locationRequired = !!rule?.location_required;
   const totalPhotoCount = existingPhotoCount + photos.length;
@@ -390,7 +400,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     }
   }
 
-  async function onSubmit() {
+  async function onSubmit(verdict?: FieldLogVerdict) {
     if (!rule) {
       alert("No active rule found for this record.");
       return;
@@ -428,6 +438,26 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
 
       if (locationRequired && !hasCapturedLocation(activeLocation)) {
         throw new Error("Location capture is required before submit.");
+      }
+
+      if (!workflow.requiresApprovalToClose && !isFollowupMode) {
+        const finalizeRes = await fetch("/api/field-log/finalize-verdict", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            reportId,
+            verdict: verdict ?? "pass",
+            note: comment.trim() || null,
+          }),
+        });
+
+        const finalizeJson = (await finalizeRes.json()) as ApiResponse;
+        if (!finalizeRes.ok || !finalizeJson.ok) {
+          throw new Error(finalizeJson.error || "Failed to finalize Field Log verdict.");
+        }
+
+        window.location.href = completionHref;
+        return;
       }
 
       const endpoint = isFollowupMode ? "/api/field-log/resubmit" : "/api/field-log/submit";
@@ -653,22 +683,51 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         />
       </section>
 
-      <button
-        type="button"
-        disabled={saving || submitting || (locationRequired && capturingLocation)}
-        onClick={() => void onSubmit()}
-        className="w-full rounded-2xl bg-blue-600 px-4 py-4 font-semibold text-white disabled:opacity-60"
-      >
-        {submitting
-          ? isFollowupMode
-            ? "Resubmitting…"
-            : "Submitting…"
-          : saving
-            ? "Saving…"
-            : isFollowupMode
-              ? "Resubmit Follow-Up"
-              : workflow.primaryActionLabel}
-      </button>
+      {workflow.requiresApprovalToClose || isFollowupMode ? (
+        <button
+          type="button"
+          disabled={saving || submitting || (locationRequired && capturingLocation)}
+          onClick={() => void onSubmit()}
+          className="w-full rounded-2xl bg-blue-600 px-4 py-4 font-semibold text-white disabled:opacity-60"
+        >
+          {submitting
+            ? isFollowupMode
+              ? "Resubmitting…"
+              : "Submitting…"
+            : saving
+              ? "Saving…"
+              : isFollowupMode
+                ? "Resubmit Follow-Up"
+                : workflow.primaryActionLabel}
+        </button>
+      ) : (
+        <section className="rounded-2xl border bg-card p-4">
+          <div className="text-base font-semibold">Finalize Entry</div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            This entry will be finalized now and retained for audit review.
+          </div>
+
+          <div className="mt-4 grid gap-2">
+            {outcomeProfile.primaryActions.map((action) => (
+              <button
+                key={action.action}
+                type="button"
+                disabled={saving || submitting || (locationRequired && capturingLocation)}
+                onClick={() => void onSubmit(outcomeActionToVerdict(action.action))}
+                className={`rounded-xl px-4 py-3 font-semibold disabled:opacity-60 ${
+                  action.tone === "success"
+                    ? "bg-green-600 text-white"
+                    : action.tone === "danger"
+                      ? "border border-red-300 text-red-700"
+                      : "border"
+                }`}
+              >
+                {submitting ? "Finalizing…" : action.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

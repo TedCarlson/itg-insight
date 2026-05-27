@@ -10,15 +10,18 @@ import { FieldLogTimelineCard } from "../components/FieldLogTimelineCard";
 import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { getStatusChip, niceStatus } from "../lib/statusStyles";
 import { FieldLogReviewActionsCard } from "../components/FieldLogReviewActionsCard";
-import { FieldLogSupervisorActionsCard } from "../components/FieldLogSupervisorActionsCard";
+import { FieldLogTechReviewActionsCard } from "../components/FieldLogTechReviewActionsCard";
+import { FieldLogVerdictActionsCard } from "../components/FieldLogVerdictActionsCard";
 import { FieldLogAttachmentsCard } from "../components/FieldLogAttachmentsCard";
 import { FieldLogTechFollowupCard } from "../components/FieldLogTechFollowupCard";
 import { FieldLogDetailHeaderCard } from "../components/FieldLogDetailHeaderCard";
 import { FieldLogCommentCard } from "../components/FieldLogCommentCard";
 import { FieldLogSubmissionCard } from "../components/FieldLogSubmissionCard";
+import { FieldLogWorkflowCard } from "../components/FieldLogWorkflowCard";
 import { FieldLogNotDoneDetailCard } from "../components/FieldLogNotDoneDetailCard";
 import { FieldLogPostCallDetailCard } from "../components/FieldLogPostCallDetailCard";
 import { ALLOW_SUPERVISOR_PROXY_UPLOAD } from "../lib/rolloutFlags";
+import type { FieldLogVerdict } from "../workflow";
 import { buildFieldLogWorkflow, useFieldLogEntrySource } from "../workflow";
 import type {
   FieldLogApiResponse,
@@ -74,14 +77,36 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       buildFieldLogWorkflow({
         entrySource,
         status: data.status,
+        recordEntrySource: data.entry_source_role,
+        recordWorkflowMode: data.workflow_mode,
+        recordRequiresApprovalToClose: data.requires_approval_to_close,
+        recordCanCloseOnEntry: data.can_close_on_entry,
       }),
-    [entrySource, data.status],
+    [
+      entrySource,
+      data.status,
+      data.entry_source_role,
+      data.workflow_mode,
+      data.requires_approval_to_close,
+      data.can_close_on_entry,
+    ],
   );
 
+  const hasRecordWorkflowTruth =
+    data.entry_source_role != null ||
+    data.workflow_mode != null ||
+    data.requires_approval_to_close != null ||
+    data.can_close_on_entry != null;
+
+  const showsTechReviewActions =
+    hasRecordWorkflowTruth
+      ? workflow.requiresApprovalToClose
+      : data.status === "pending_review" || data.status === "sup_followup_required";
+
   const canApprove = useMemo(() => {
-    if (!workflow.canApprove) return false;
+    if (!showsTechReviewActions) return false;
     return data.status === "pending_review" || data.status === "sup_followup_required";
-  }, [data.status, workflow.canApprove]);
+  }, [data.status, showsTechReviewActions]);
 
   const isTechFollowup = data.status === "tech_followup_required";
   const canResubmit = isTechFollowup && data.edit_unlocked && data.created_by_user_id === userId;
@@ -202,6 +227,53 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       setFollowupNote("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to approve.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function finalizeVerdict(verdict: FieldLogVerdict) {
+    if (!userId) {
+      alert("No signed-in user found.");
+      return;
+    }
+
+    const note = followupNote.trim();
+
+    if (verdict === "fail_tech_followup" && !note) {
+      alert("Tech follow-up verdict requires a note.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/field-log/finalize-verdict", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reportId: data.report_id,
+          verdict,
+          note: note || null,
+        }),
+      });
+
+      const json = (await res.json()) as FieldLogApiResponse;
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to finalize verdict.");
+      }
+
+      if (fromReview) {
+        window.location.href = "/field-log/review";
+        return;
+      }
+
+      await refreshDetail();
+      if (showTimeline) {
+        await loadTimeline();
+      }
+      setFollowupNote("");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to finalize verdict.");
     } finally {
       setBusy(false);
     }
@@ -362,6 +434,14 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">
+          <FieldLogWorkflowCard
+            workflow={workflow}
+            recordEntrySourceRole={data.entry_source_role}
+            recordWorkflowMode={data.workflow_mode}
+            requiresApprovalToClose={data.requires_approval_to_close}
+            canCloseOnEntry={data.can_close_on_entry}
+          />
+
           <FieldLogSubmissionCard
             createdAt={data.created_at}
             submittedAt={data.submitted_at}
@@ -418,9 +498,21 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
           {!workflow.isTechSourced ? null : null}
 
-          <FieldLogSupervisorActionsCard
-            busy={busy}
-            canApprove={canApprove}
+          {!showsTechReviewActions ? (
+            <FieldLogVerdictActionsCard
+              busy={busy}
+              workflow={workflow}
+              categoryKey={data.category_key}
+              note={followupNote}
+              onNoteChange={setFollowupNote}
+              onFinalizeVerdict={finalizeVerdict}
+            />
+          ) : null}
+
+          {showsTechReviewActions ? (
+            <FieldLogTechReviewActionsCard
+              busy={busy}
+              canApprove={canApprove}
             xmAllowed={!!data.rule?.xm_allowed}
             xmDeclared={!!data.xm_declared}
             xmLinkValid={!!data.xm_link_valid}
@@ -431,9 +523,10 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             onXmLinkChange={setXmLink}
             onFollowupNoteChange={setFollowupNote}
             onApprove={approve}
-            onRequestTechFollowup={() => requestFollowup("tech")}
-            onRequestSupervisorFollowup={() => requestFollowup("supervisor")}
-          />
+              onRequestTechFollowup={() => requestFollowup("tech")}
+              onRequestSupervisorFollowup={() => requestFollowup("supervisor")}
+            />
+          ) : null}
 
           {canUseSupervisorProxyUpload ? (
             <section className="rounded-2xl border bg-card p-5">

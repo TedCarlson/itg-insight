@@ -51,10 +51,16 @@ function nonTechActions(): FieldLogWorkflowAction[] {
 export function buildFieldLogWorkflow(args: {
   entrySource: FieldLogEntrySource;
   status?: string | null;
+  recordEntrySource?: string | null;
+  recordWorkflowMode?: string | null;
+  recordRequiresApprovalToClose?: boolean | null;
+  recordCanCloseOnEntry?: boolean | null;
 }): FieldLogWorkflowModel {
-  const { entrySource } = args;
+  const entrySource = (args.recordEntrySource || args.entrySource) as FieldLogEntrySource;
 
-  const workflowMode = resolveWorkflowMode(entrySource);
+  const workflowMode =
+    (args.recordWorkflowMode as FieldLogWorkflowMode | null | undefined) ??
+    resolveWorkflowMode(entrySource);
   const isTechSourced = entrySource === "TECH";
   const isUnavailable = workflowMode === "unavailable";
 
@@ -63,10 +69,10 @@ export function buildFieldLogWorkflow(args: {
       entrySource,
       workflowMode,
       isTechSourced: false,
-      requiresApprovalToClose: false,
+      requiresApprovalToClose: args.recordRequiresApprovalToClose ?? false,
       canSubmitEntry: false,
       canApprove: false,
-      canCloseOnEntry: false,
+      canCloseOnEntry: args.recordCanCloseOnEntry ?? false,
       canAssignFinalVerdict: false,
       allowedActions: [],
       verdictOptions: [],
@@ -80,10 +86,10 @@ export function buildFieldLogWorkflow(args: {
       entrySource,
       workflowMode,
       isTechSourced: true,
-      requiresApprovalToClose: true,
+      requiresApprovalToClose: args.recordRequiresApprovalToClose ?? true,
       canSubmitEntry: true,
       canApprove: false,
-      canCloseOnEntry: false,
+      canCloseOnEntry: args.recordCanCloseOnEntry ?? false,
       canAssignFinalVerdict: false,
       allowedActions: ["submit", "resubmit"],
       verdictOptions: [],
@@ -96,10 +102,10 @@ export function buildFieldLogWorkflow(args: {
     entrySource,
     workflowMode,
     isTechSourced: false,
-    requiresApprovalToClose: false,
+    requiresApprovalToClose: args.recordRequiresApprovalToClose ?? false,
     canSubmitEntry: true,
     canApprove: true,
-    canCloseOnEntry: true,
+    canCloseOnEntry: args.recordCanCloseOnEntry ?? true,
     canAssignFinalVerdict: true,
     allowedActions: nonTechActions(),
     verdictOptions: nonTechVerdicts(),

@@ -81,6 +81,10 @@ export type FieldLogDetailPayload = {
   subcategory_key: string | null;
   subcategory_label: string | null;
   status: string;
+  entry_source_role?: string | null;
+  workflow_mode?: string | null;
+  requires_approval_to_close?: boolean | null;
+  can_close_on_entry?: boolean | null;
   created_at: string | null;
   updated_at: string | null;
   created_by_user_id: string | null;
