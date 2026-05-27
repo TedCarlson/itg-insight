@@ -72,12 +72,19 @@ export async function GET(req: NextRequest) {
   const supabase = await supabaseServer();
 
   const searchMode = !!jobNumber;
+  const hasDayFilter = !!day;
+
   const startIso = searchMode
     ? daysAgoIso(35)
-    : day
+    : hasDayFilter
       ? startOfDayIso(day)
-      : startOfDayIso(todayYmd());
-  const endIso = searchMode ? new Date().toISOString() : day ? endOfDayIso(day) : endOfDayIso(todayYmd());
+      : null;
+
+  const endIso = searchMode
+    ? new Date().toISOString()
+    : hasDayFilter
+      ? endOfDayIso(day)
+      : null;
 
   const { data, error } = await supabase.rpc("field_log_get_review_queue", {
     p_pc_org_id: pcOrgId,
@@ -96,15 +103,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const rows = ((data ?? []) as QueueRow[]).filter((row) =>
-    inRange(row.submitted_at ?? row.last_action_at ?? null, startIso, endIso),
-  );
+  const rows =
+    startIso && endIso
+      ? ((data ?? []) as QueueRow[]).filter((row) =>
+          inRange(row.submitted_at ?? row.last_action_at ?? null, startIso, endIso),
+        )
+      : ((data ?? []) as QueueRow[]).filter((row) =>
+          ["pending_review", "tech_followup_required", "sup_followup_required"].includes(row.status),
+        );
 
   return NextResponse.json({
     ok: true,
     data: rows,
     meta: {
-      mode: searchMode ? "search" : day ? "day" : "today",
+      mode: searchMode ? "search" : day ? "day" : "open",
       start_iso: startIso,
       end_iso: endIso,
       selected_day: day,

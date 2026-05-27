@@ -33,7 +33,7 @@ type QueueResponse = {
   data?: QueueRow[];
   error?: string;
   meta?: {
-    mode?: "today" | "day" | "search";
+    mode?: "today" | "day" | "search" | "open";
     selected_day?: string | null;
     job_number?: string | null;
   };
@@ -80,7 +80,7 @@ export function FieldLogReviewClient() {
   const [jobSearchInput, setJobSearchInput] = useState("");
   const [jobSearch, setJobSearch] = useState("");
   const [selectedDay, setSelectedDay] = useState(todayYmd());
-  const [mode, setMode] = useState<"today" | "day" | "search">("today");
+  const [mode, setMode] = useState<"today" | "day" | "search" | "open">("open");
 
   const load = useCallback(
     async (showLoading = false) => {
@@ -178,6 +178,7 @@ export function FieldLogReviewClient() {
 
   const scopeText = useMemo(() => {
     if (mode === "search") return "Searching last 35 days";
+    if (mode === "open") return "Showing all open review items";
     if (selectedDay === todayYmd()) return "Showing today";
     return `Showing ${prettyDay(selectedDay)}`;
   }, [mode, selectedDay]);
