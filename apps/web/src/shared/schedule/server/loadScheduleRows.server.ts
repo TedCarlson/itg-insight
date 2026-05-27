@@ -447,6 +447,9 @@ export async function loadScheduleRows(
   const workforceByAssignment =
     new Map<string, WorkforceRow>();
 
+  const workforceByTech =
+    new Map<string, WorkforceRow>();
+
   for (const row of scopedWorkforceRows) {
 
     const assignmentId =
@@ -454,6 +457,9 @@ export async function loadScheduleRows(
 
     const personId =
       clean(row.person_id);
+
+    const techId =
+      clean(row.tech_id);
 
     if (!assignmentId || !personId) {
       continue;
@@ -463,9 +469,19 @@ export async function loadScheduleRows(
       assignmentId,
       row,
     );
+
+    if (techId) {
+      workforceByTech.set(
+        techId,
+        row,
+      );
+    }
   }
 
   const rows: ScheduleSurfaceRow[] = [];
+
+  const existingTechDateKeys =
+    new Set<string>();
 
   for (const fact of ((factRows ?? []) as unknown as ScheduleFactRow[])) {
 
@@ -527,6 +543,14 @@ export async function loadScheduleRows(
         const n = Number(event.capacity_delta_routes ?? 0);
         return Number.isFinite(n) ? sum + n : sum;
       }, 0);
+
+    if (techId && factDate) {
+      existingTechDateKeys.add(`${techId}:${factDate}`);
+    }
+
+    if (techId && factDate) {
+      existingTechDateKeys.add(`${techId}:${factDate}`);
+    }
 
     rows.push({
       date:
@@ -592,6 +616,153 @@ export async function loadScheduleRows(
 
         hasShiftValidation,
         hasCheckIn,
+      },
+
+      dispatch: {
+        callOut:
+          dispatchEvents.some((event) => clean(event.event_type) === "CALL_OUT"),
+
+        addIn:
+          dispatchEvents.some((event) => clean(event.event_type) === "ADD_IN"),
+
+        techMove:
+          dispatchEvents.some((event) => clean(event.event_type) === "TECH_MOVE"),
+
+        bpLow:
+          dispatchEvents.some((event) => clean(event.event_type) === "BP_LOW"),
+
+        incidentCount:
+          dispatchEvents.filter((event) => clean(event.event_type) === "INCIDENT").length,
+
+        noteCount:
+          dispatchEvents.filter((event) => clean(event.event_type) === "NOTE").length,
+
+        capacityDeltaRoutes:
+          capacityDelta === 0 ? null : capacityDelta,
+
+        latestNote,
+      },
+    });
+  }
+
+  const overlayTechDateKeys =
+    new Set<string>([
+      ...Array.from(svByTechDate.keys()),
+      ...Array.from(checkInByTechDate.keys()),
+    ]);
+
+  for (const key of overlayTechDateKeys) {
+    if (existingTechDateKeys.has(key)) {
+      continue;
+    }
+
+    const [techId, factDate] =
+      key.split(":");
+
+    if (!techId || !factDate) {
+      continue;
+    }
+
+    const workforce =
+      workforceByTech.get(techId);
+
+    if (!workforce) {
+      continue;
+    }
+
+    const assignmentId =
+      clean(workforce.assignment_id);
+
+    if (!assignmentId) {
+      continue;
+    }
+
+    const sv =
+      svByTechDate.get(key) ?? null;
+
+    const checkIn =
+      checkInByTechDate.get(key) ?? null;
+
+    const dispatchEvents =
+      dispatchByAssignmentDate.get(`${assignmentId}:${factDate}`) ?? [];
+
+    const latestNote =
+      dispatchEvents
+        .map((event) => clean(event.message))
+        .filter(Boolean)
+        .at(-1)
+      ?? null;
+
+    const capacityDelta =
+      dispatchEvents.reduce((sum, event) => {
+        const n = Number(event.capacity_delta_routes ?? 0);
+        return Number.isFinite(n) ? sum + n : sum;
+      }, 0);
+
+    if (techId && factDate) {
+      existingTechDateKeys.add(`${techId}:${factDate}`);
+    }
+
+    rows.push({
+      date:
+        factDate,
+
+      personId:
+        clean(workforce.person_id),
+
+      assignmentId,
+
+      techId,
+
+      fullName:
+        clean(workforce.full_name) || "Unknown",
+
+      pcOrgId:
+        clean(workforce.pc_org_id),
+
+      pcOrgName:
+        orgNameById.get(clean(workforce.pc_org_id))
+        ?? null,
+
+      officeId:
+        clean(workforce.office_id) || null,
+
+      officeName: null,
+
+      supervisorName: null,
+
+      contractorId:
+        clean(workforce.affiliation_id) || null,
+
+      contractorName:
+        clean(workforce.affiliation) || null,
+
+      affiliationCode:
+        clean(workforce.affiliation_code) || null,
+
+      affiliationName:
+        clean(workforce.affiliation) || null,
+
+      baseSchedule: {
+        scheduled: true,
+        routeArea: null,
+        startTime: null,
+        endTime: null,
+        source: "none",
+      },
+
+      routeLock: {
+        phase:
+          checkIn
+            ? "actual"
+            : "built",
+
+        plannedUnits: null,
+        builtUnits: sv?.builtUnits ?? null,
+        actualUnits: checkIn?.actualUnits ?? null,
+
+        hasShiftValidation: !!sv,
+        hasCheckIn: !!checkIn,
       },
 
       dispatch: {

@@ -123,6 +123,10 @@ export type ScheduleDailySummary = {
   scheduledCount: number;
   offCount: number;
 
+  plannedBookedCount: number;
+  builtBookedCount: number;
+  actualBookedCount: number;
+
   plannedRouteCount: number | null;
   plannedUnitCount: number | null;
 

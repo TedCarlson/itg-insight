@@ -23,37 +23,6 @@ const WEEKDAYS = [
   "Saturday",
 ];
 
-function missingActualCountForDate(
-  payload: ScheduleSurfacePayload,
-  date: string,
-) {
-  const rowsForDate =
-    payload.rows.filter((row) => row.date === date);
-
-  const dayHasActuals =
-    rowsForDate.some((row) => row.routeLock.phase === "actual");
-
-  if (!dayHasActuals) {
-    return 0;
-  }
-
-  return rowsForDate.filter((row) => {
-    const hasDispatchExplanation =
-      row.dispatch.callOut ||
-      row.dispatch.addIn ||
-      row.dispatch.techMove ||
-      row.dispatch.incidentCount > 0 ||
-      row.dispatch.noteCount > 0 ||
-      Boolean(String(row.dispatch.latestNote ?? "").trim());
-
-    return (
-      row.routeLock.phase === "built" &&
-      !row.routeLock.hasCheckIn &&
-      !hasDispatchExplanation
-    );
-  }).length;
-}
-
 function addDays(isoDate: string, days: number) {
   const date = new Date(`${isoDate}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -79,13 +48,7 @@ function buildCalendarDates(startDate: string, endDate: string) {
 }
 
 function summaryByDate(summaries: ScheduleDailySummary[]) {
-  const out = new Map<string, ScheduleDailySummary>();
-
-  for (const summary of summaries) {
-    out.set(summary.date, summary);
-  }
-
-  return out;
+  return new Map(summaries.map((summary) => [summary.date, summary]));
 }
 
 function emptySummary(date: string): ScheduleDailySummary {
@@ -93,6 +56,9 @@ function emptySummary(date: string): ScheduleDailySummary {
     date,
     scheduledCount: 0,
     offCount: 0,
+    plannedBookedCount: 0,
+    builtBookedCount: 0,
+    actualBookedCount: 0,
     plannedRouteCount: null,
     plannedUnitCount: null,
     quotaRouteCount: null,
@@ -112,37 +78,42 @@ function emptySummary(date: string): ScheduleDailySummary {
   };
 }
 
+function missingActualCountForDate(payload: ScheduleSurfacePayload, date: string) {
+  return payload.rows.filter((row) => {
+    if (row.date !== date) return false;
+
+    const hasDispatchExplanation =
+      row.dispatch.callOut ||
+      row.dispatch.addIn ||
+      row.dispatch.techMove ||
+      row.dispatch.bpLow ||
+      row.dispatch.incidentCount > 0 ||
+      row.dispatch.noteCount > 0 ||
+      Boolean(String(row.dispatch.latestNote ?? "").trim());
+
+    return row.routeLock.hasShiftValidation && !row.routeLock.hasCheckIn && !hasDispatchExplanation;
+  }).length;
+}
+
 function cardClass(args: {
   isToday: boolean;
   isFiscalMonthEnd: boolean;
   isCurrentMonth: boolean;
   isBlackout: boolean;
 }) {
-  const base = [
+  return [
     "min-h-[112px] rounded-lg border bg-background px-2 py-2",
     args.isCurrentMonth ? "" : "opacity-40",
-    args.isBlackout ? "bg-zinc-950/[0.035] shadow-[inset_0_0_0_9999px_rgba(113,113,122,0.035)]" : "",
-  ];
-
-  if (args.isToday) {
-    base.push("border-2 border-blue-500 bg-blue-50/30 shadow-sm");
-  } else if (args.isFiscalMonthEnd) {
-    base.push("border-2 border-amber-400 bg-amber-50/20");
-  }
-
-  return base.filter(Boolean).join(" ");
+    args.isBlackout ? "bg-zinc-950/[0.035]" : "",
+    args.isToday ? "border-l-4 border-l-blue-500 bg-blue-50/30 shadow-sm" : "",
+    !args.isToday && args.isFiscalMonthEnd ? "border-2 border-amber-400 bg-amber-50/20" : "",
+  ].filter(Boolean).join(" ");
 }
 
-export default function ScheduleMonthView({
-  payload,
-}: Props) {
+export default function ScheduleMonthView({ payload }: Props) {
   const today = new Date().toISOString().slice(0, 10);
   const lookup = summaryByDate(payload.dailySummaries);
-  const dates = buildCalendarDates(
-    payload.filters.startDate,
-    payload.filters.endDate,
-  );
-
+  const dates = buildCalendarDates(payload.filters.startDate, payload.filters.endDate);
   const currentMonth = payload.filters.startDate.slice(0, 7);
 
   return (
@@ -153,15 +124,27 @@ export default function ScheduleMonthView({
           const weekday = WEEKDAYS[new Date(`${date}T00:00:00.000Z`).getUTCDay()];
           const isToday = date === today;
           const isCurrentMonth = date.slice(0, 7) === currentMonth;
-          const blackoutDay =
-            payload.blackoutByDate?.[date] ?? null;
-          const blackoutLabel =
-            blackoutDay?.rules?.[0]?.label ?? null;
-          const isBlackout =
-            Boolean(blackoutDay?.rules?.length);
+          const blackoutDay = payload.blackoutByDate?.[date] ?? null;
+          const blackoutLabel = blackoutDay?.rules?.[0]?.label ?? null;
+          const isBlackout = Boolean(blackoutDay?.rules?.length);
+          const missingActualCount = missingActualCountForDate(payload, date);
 
-          const missingActualCount =
-            missingActualCountForDate(payload, date);
+          const primaryBookedLabel =
+            summary.actualBookedCount > 0
+              ? "Actual"
+              : summary.builtBookedCount > 0
+                ? "Built"
+                : "Planned";
+
+          const primaryBookedCount =
+            summary.actualBookedCount > 0
+              ? summary.actualBookedCount
+              : summary.builtBookedCount > 0
+                ? summary.builtBookedCount
+                : summary.plannedBookedCount;
+
+          const isUnderQuota =
+            (summary.quotaRouteCount ?? 0) > primaryBookedCount;
 
           return (
             <Card
@@ -179,9 +162,9 @@ export default function ScheduleMonthView({
                     {weekday}
                   </div>
 
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
                     {summary.fiscalAnchorLabel ? (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
                         FM End
                       </span>
                     ) : null}
@@ -189,75 +172,91 @@ export default function ScheduleMonthView({
                     {isBlackout ? (
                       <span
                         title={blackoutLabel ?? "Blackout"}
-                        className="rounded-sm border border-zinc-300 bg-zinc-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-700"
+                        className="rounded-full bg-black px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white"
                       >
                         Blackout
                       </span>
                     ) : null}
 
                     {missingActualCount > 0 ? (
-                      <span
-                        title="Built rows missing actual check-in"
-                        className="rounded-sm border border-amber-300 bg-amber-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-amber-800"
-                      >
-                        Missing Actual {missingActualCount}
+                      <span className="rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                        Missing {missingActualCount}
                       </span>
                     ) : null}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 text-right">
-                  {isToday ? (
-                    <div className="rounded-full bg-blue-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
-                      Today
-                    </div>
-                  ) : null}
-
-                  <div className="text-lg font-semibold leading-none">
-                    {Number(date.slice(8, 10))}
-                  </div>
+                <div className="text-lg font-semibold leading-none">
+                  {Number(date.slice(8, 10))}
                 </div>
               </div>
 
               <div className="mt-3 grid gap-1 text-[11px]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Booked</span>
-                  <span className="font-semibold tabular-nums">{summary.scheduledCount}</span>
-                </div>
+                {primaryBookedCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-muted-foreground">{primaryBookedLabel}</span>
+                    <span className="font-semibold tabular-nums">{primaryBookedCount}</span>
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Off</span>
-                  <span className="font-semibold tabular-nums">{summary.offCount}</span>
-                </div>
+                {(summary.quotaRouteCount ?? 0) > 0 ? (
+                  <div className={[
+                    "grid grid-cols-[1fr_auto] items-center gap-2 rounded-sm px-1 py-0.5",
+                    isUnderQuota ? "border border-red-300 bg-red-50/30" : "",
+                  ].join(" ")}>
+                    <span className="text-muted-foreground">Quota</span>
+                    <span className="font-semibold tabular-nums">{summary.quotaRouteCount}</span>
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">No-show</span>
-                  <span className="font-semibold tabular-nums text-red-600">{summary.callOutCount}</span>
-                </div>
+                {summary.offCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-muted-foreground">Off</span>
+                    <span className="font-semibold tabular-nums">{summary.offCount}</span>
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Add-in</span>
-                  <span className="font-semibold tabular-nums">{summary.addInCount}</span>
-                </div>
+                {summary.callOutCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-sm bg-red-50 px-1 py-0.5">
+                    <span className="font-medium text-red-600">No-show</span>
+                    <span className="font-semibold tabular-nums text-red-600">{summary.callOutCount}</span>
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">BP-Low</span>
-                  <span className="font-semibold tabular-nums text-amber-700">
-                    {summary.bpLowCount}
-                  </span>
-                </div>
+                {summary.addInCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-muted-foreground">Add-in</span>
+                    <span className="font-semibold tabular-nums">{summary.addInCount}</span>
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Moves</span>
-                  <span className="font-semibold tabular-nums">
-                    {summary.techMoveCount}
-                  </span>
-                </div>
+                {summary.bpLowCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-amber-700">BP-low</span>
+                    <span className="font-semibold tabular-nums text-amber-700">{summary.bpLowCount}</span>
+                  </div>
+                ) : null}
 
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">BP-low</span>
-                  <span className="font-semibold tabular-nums">{summary.bpLowCount}</span>
-                </div>
+                {summary.techMoveCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-muted-foreground">Moves</span>
+                    <span className="font-semibold tabular-nums">{summary.techMoveCount}</span>
+                  </div>
+                ) : null}
+
+                {summary.incidentCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-orange-700">Incidents</span>
+                    <span className="font-semibold tabular-nums text-orange-700">{summary.incidentCount}</span>
+                  </div>
+                ) : null}
+
+                {summary.noteCount > 0 ? (
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                    <span className="text-muted-foreground">Notes</span>
+                    <span className="font-semibold tabular-nums">{summary.noteCount}</span>
+                  </div>
+                ) : null}
               </div>
             </Card>
           );
