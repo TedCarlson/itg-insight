@@ -9,6 +9,7 @@ type FinalizeVerdictBody = {
   reportId?: string;
   verdict?: Verdict;
   note?: string | null;
+  xmLink?: string | null;
 };
 
 const VERDICTS: Verdict[] = [
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
   const reportId = body.reportId?.trim();
   const verdict = body.verdict;
   const note = body.note?.trim() || null;
+  const xmLink = body.xmLink?.trim() || null;
 
   if (!reportId) return badRequest("reportId is required.");
   if (!verdict || !VERDICTS.includes(verdict)) {
@@ -53,6 +55,22 @@ export async function POST(req: NextRequest) {
 
   if (userErr || !user) {
     return forbidden("Unauthorized.");
+  }
+
+  if (xmLink) {
+    const { error: xmError } = await supabase.rpc("field_log_append_xm_link", {
+      p_report_id: reportId,
+      p_action_by_user_id: user.id,
+      p_xm_link: xmLink,
+      p_note: note,
+    });
+
+    if (xmError) {
+      return NextResponse.json(
+        { ok: false, error: xmError.message || "Failed to append XM link." },
+        { status: 500 },
+      );
+    }
   }
 
   const { data, error } = await supabase.rpc("field_log_finalize_verdict", {

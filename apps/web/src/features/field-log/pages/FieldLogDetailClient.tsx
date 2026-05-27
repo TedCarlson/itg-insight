@@ -254,6 +254,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           reportId: data.report_id,
           verdict,
           note: note || null,
+          xmLink: xmLink.trim() || data.xm_link || null,
         }),
       });
 
@@ -271,6 +272,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       if (showTimeline) {
         await loadTimeline();
       }
+      setXmLink("");
       setFollowupNote("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to finalize verdict.");
@@ -504,6 +506,13 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
               workflow={workflow}
               categoryKey={data.category_key}
               note={followupNote}
+              xmAllowed={!!data.rule?.xm_allowed}
+              xmDeclared={!!data.xm_declared}
+              evidenceDeclared={data.evidence_declared}
+              existingXmLink={data.xm_link}
+              xmLinkValid={!!data.xm_link_valid}
+              xmLink={xmLink}
+              onXmLinkChange={setXmLink}
               onNoteChange={setFollowupNote}
               onFinalizeVerdict={finalizeVerdict}
             />

@@ -8,6 +8,8 @@ type FieldLogTechReviewActionsCardProps = {
   canApprove: boolean;
   xmAllowed: boolean;
   xmDeclared: boolean;
+  evidenceDeclared?: string | null;
+  existingXmLink?: string | null;
   xmLinkValid: boolean;
   xmLink: string;
   followupNote: string;
@@ -30,6 +32,8 @@ export function FieldLogTechReviewActionsCard(
     canApprove,
     xmAllowed,
     xmDeclared,
+    evidenceDeclared,
+    existingXmLink,
     xmLinkValid,
     xmLink,
     followupNote,
@@ -44,8 +48,11 @@ export function FieldLogTechReviewActionsCard(
 
   if (!canApprove) return null;
 
-  const xmApprovalRequired = xmAllowed && xmDeclared;
-  const hasXmCandidate = xmLinkValid || xmLink.trim().length > 0;
+  const xmApprovalRequired =
+    xmAllowed && (xmDeclared || evidenceDeclared === "xm_platform");
+
+  const effectiveXmLink = xmLink.trim() || String(existingXmLink ?? "").trim();
+  const hasXmCandidate = xmLinkValid || effectiveXmLink.length > 0;
 
   const photosRequired = !xmApprovalRequired && minPhotoCount > 0;
   const photoGap = Math.max(0, minPhotoCount - photoCount);
@@ -103,7 +110,7 @@ export function FieldLogTechReviewActionsCard(
       {xmApprovalRequired ? (
         <div className="mt-3 space-y-3">
           <input
-            value={xmLink}
+            value={xmLink || existingXmLink || ""}
             onChange={(e) => onXmLinkChange(e.target.value)}
             placeholder="https://xm.optek.comcast.net/..."
             className="w-full rounded-xl border px-3 py-3"
