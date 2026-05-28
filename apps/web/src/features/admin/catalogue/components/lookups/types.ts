@@ -9,6 +9,7 @@ export type PcOrgLookups = {
   mso: LookupOption[];
   division: LookupOption[];
   region: LookupOption[];
+  state: LookupOption[];
 };
 
 export type AssignmentLookups = {

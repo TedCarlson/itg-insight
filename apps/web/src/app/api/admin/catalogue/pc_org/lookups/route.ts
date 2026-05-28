@@ -15,14 +15,15 @@ export async function GET() {
 
   const admin = supabaseAdmin();
 
-  const [pcs, msos, divisions, regions] = await Promise.all([
+  const [pcs, msos, divisions, regions, states] = await Promise.all([
     admin.from("pc").select("pc_id, pc_number").order("pc_number", { ascending: true }).limit(5000),
     admin.from("mso").select("mso_id, mso_name, mso_lob").order("mso_name", { ascending: true }).limit(5000),
     admin.from("division").select("division_id, division_name, division_code").order("division_name", { ascending: true }).limit(5000),
     admin.from("region").select("region_id, region_name, region_code").order("region_name", { ascending: true }).limit(5000),
+    admin.from("locate_state_resource").select("state_code, state_name").order("state_code", { ascending: true }).limit(5000),
   ]);
 
-  const firstErr = pcs.error || msos.error || divisions.error || regions.error;
+  const firstErr = pcs.error || msos.error || divisions.error || regions.error || states.error;
   if (firstErr) return NextResponse.json({ error: firstErr.message }, { status: 500 });
 
   return NextResponse.json({
@@ -45,6 +46,11 @@ export async function GET() {
       id: String(r.region_id),
       label: r.region_code ? `${r.region_name} (${r.region_code})` : String(r.region_name),
       sublabel: String(r.region_id),
+    })),
+    state: (states.data ?? []).map((r: any) => ({
+      id: String(r.state_code),
+      label: r.state_name ? `${r.state_code} — ${r.state_name}` : String(r.state_code),
+      sublabel: String(r.state_code),
     })),
   });
 }

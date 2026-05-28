@@ -10,7 +10,7 @@ export function CatalogueLayout(props: {
   const { selectedTable, onSelectTable, children } = props;
 
   return (
-    <div className="grid gap-4 md:grid-cols-[320px_1fr] items-start">
+    <div className="grid gap-4 pt-4 md:grid-cols-[320px_1fr] items-start">
       {/* Left: fixed-width rail card */}
       <Card variant="elevated" className="p-4">
         <div className="mb-3">

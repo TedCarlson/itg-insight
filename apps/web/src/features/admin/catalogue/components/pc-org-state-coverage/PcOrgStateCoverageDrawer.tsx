@@ -1,46 +1,40 @@
-// path: apps/web/src/features/admin/catalogue/components/pc-org/PcOrgDrawer.tsx
-
 "use client";
 
 import { RecordDrawer } from "@/features/admin/catalogue/components/RecordDrawer";
 import {
-  PcOrgForm,
+  PcOrgStateCoverageForm,
   type LookupOption,
-  type PcOrgDraft,
-} from "@/features/admin/catalogue/components/forms/PcOrgForm";
-import type { PcOrgAdminRow } from "@/features/admin/catalogue/hooks/usePcOrgAdmin";
-import { shortId } from "./pcOrgDisplay";
+  type PcOrgStateCoverageDraft,
+} from "@/features/admin/catalogue/components/forms/PcOrgStateCoverageForm";
+import type { PcOrgStateCoverageAdminRow } from "@/features/admin/catalogue/hooks/usePcOrgStateCoverageAdmin";
+import { labelOrId } from "./pcOrgStateCoverageDisplay";
 
 type Props = {
   open: boolean;
-  mode: "create" | "edit";
-  active: PcOrgAdminRow | null;
-  draft: PcOrgDraft | null;
+  mode: "add" | "edit";
+  active: PcOrgStateCoverageAdminRow | null;
+  draft: PcOrgStateCoverageDraft | null;
   saving: boolean;
   saveErr: string | null;
+  lookupsErr: string | null;
   canSave: boolean;
-  pcOptions: LookupOption[];
-  msoOptions: LookupOption[];
-  divisionOptions: LookupOption[];
-  regionOptions: LookupOption[];
+  pcOrgOptions: LookupOption[];
   stateOptions: LookupOption[];
   onClose: () => void;
   onSave: () => void;
-  onDraftChange: (next: PcOrgDraft) => void;
+  onDraftChange: (next: PcOrgStateCoverageDraft) => void;
 };
 
-export default function PcOrgDrawer({
+export default function PcOrgStateCoverageDrawer({
   open,
   mode,
   active,
   draft,
   saving,
   saveErr,
+  lookupsErr,
   canSave,
-  pcOptions,
-  msoOptions,
-  divisionOptions,
-  regionOptions,
+  pcOrgOptions,
   stateOptions,
   onClose,
   onSave,
@@ -51,22 +45,21 @@ export default function PcOrgDrawer({
       open={open}
       onClose={onClose}
       title={
-        mode === "create"
-          ? "Add PC-ORG"
+        mode === "add"
+          ? "Add PC-ORG State Coverage"
           : active
-            ? `Edit PC-ORG • ${active.pc_org_name ?? shortId(active.pc_org_id)}`
-            : "Edit PC-ORG"
+            ? `Edit coverage • ${labelOrId(active.pc_org_name, active.pc_org_id)}`
+            : "Edit coverage"
       }
       subtitle={
-        mode === "edit" && active ? `UUID: ${active.pc_org_id}` : undefined
+        mode === "edit" && active
+          ? `UUID: ${active.pc_org_state_coverage_id}`
+          : "This creates a Locate state coverage row."
       }
       footer={
         <div className="flex items-center justify-between gap-3">
-          <div
-            className="min-h-[20px] text-sm"
-            style={{ color: "var(--to-danger)" }}
-          >
-            {saveErr ?? ""}
+          <div className="min-h-[20px] text-sm" style={{ color: "var(--to-danger)" }}>
+            {saveErr ?? lookupsErr ?? ""}
           </div>
 
           <div className="flex items-center gap-2">
@@ -86,25 +79,19 @@ export default function PcOrgDrawer({
               style={{ borderColor: "var(--to-border)" }}
               onClick={onSave}
               disabled={!canSave}
+              title={!draft?.pc_org_id || !draft?.state_code ? "Select both PC-ORG and State" : undefined}
             >
-              {saving
-                ? "Saving…"
-                : mode === "create"
-                  ? "Create"
-                  : "Save changes"}
+              {saving ? "Saving…" : mode === "add" ? "Create coverage" : "Save changes"}
             </button>
           </div>
         </div>
       }
     >
       {draft ? (
-        <PcOrgForm
+        <PcOrgStateCoverageForm
           value={draft}
           onChange={onDraftChange}
-          pcOptions={pcOptions}
-          msoOptions={msoOptions}
-          divisionOptions={divisionOptions}
-          regionOptions={regionOptions}
+          pcOrgOptions={pcOrgOptions}
           stateOptions={stateOptions}
         />
       ) : null}

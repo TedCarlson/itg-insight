@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     mso_id,
     division_id,
     region_id,
+    state_code,
     fulfillment_center_id,
     fulfillment_center_name,
 
@@ -67,6 +68,11 @@ export async function GET(req: NextRequest) {
       region_id,
       region_name,
       region_code
+    ),
+
+    state:state_code (
+      state_code,
+      state_name
     )
   `;
 
@@ -93,6 +99,7 @@ export async function GET(req: NextRequest) {
       mso_id: r.mso_id ?? null,
       division_id: r.division_id ?? null,
       region_id: r.region_id ?? null,
+      state_code: r.state_code ?? null,
 
       pc_number: r.pc?.pc_number ?? null,
       mso_name: r.mso?.mso_name ?? null,
@@ -103,6 +110,8 @@ export async function GET(req: NextRequest) {
 
       region_name: r.region?.region_name ?? null,
       region_code: r.region?.region_code ?? null,
+
+      state_name: r.state?.state_name ?? null,
 
       fulfillment_center_id: r.fulfillment_center_id == null ? null : String(r.fulfillment_center_id),
       fulfillment_center_name: r.fulfillment_center_name ?? null,
@@ -144,6 +153,7 @@ export async function POST(req: NextRequest) {
       mso_id: strOrNull(body.mso_id),
       division_id: strOrNull(body.division_id),
       region_id: strOrNull(body.region_id),
+      state_code: strOrNull(body.state_code),
     };
 
     const admin = supabaseAdmin();

@@ -4,6 +4,8 @@ import { PersonTableView } from "./views/PersonTableView";
 import { UserProfileTableView } from "./views/UserProfileTableView";
 import { PcOrgTableView } from "./views/PcOrgTableView";
 import { PcOrgOfficeTableView } from "./views/PcOrgOfficeTableView";
+import { PcOrgStateCoverageTableView } from "./views/PcOrgStateCoverageTableView";
+import { LocateStateResourceTableView } from "./views/LocateStateResourceTableView";
 import { RegionTableView } from "./views/RegionTableView";
 import { DivisionTableView } from "./views/DivisionTableView";
 import { OfficeTableView } from "./views/OfficeTableView";
@@ -19,6 +21,8 @@ export function TablePlaceholder(props: { tableKey: string }) {
   if (table.key === "user_profile") return <UserProfileTableView />;
   if (table.key === "pc_org") return <PcOrgTableView />;
   if (table.key === "pc_org_office") return <PcOrgOfficeTableView />;
+  if (table.key === "pc_org_state_coverage") return <PcOrgStateCoverageTableView />;
+  if (table.key === "locate_state_resource") return <LocateStateResourceTableView />;
   if (table.key === "region") return <RegionTableView />;
   if (table.key === "division") return <DivisionTableView />;
   if (table.key === "office") return <OfficeTableView />;

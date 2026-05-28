@@ -29,6 +29,7 @@ function emptyDraft(): PcOrgDraft {
     mso_id: null,
     division_id: null,
     region_id: null,
+    state_code: null,
   };
 }
 
@@ -76,6 +77,8 @@ export function PcOrgTableView() {
   const regionOptions =
     ((lookups as any)?.region as LookupOption[] | undefined) ??
     fallback.regionOptions;
+  const stateOptions =
+    ((lookups as any)?.state as LookupOption[] | undefined) ?? [];
 
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("edit");
@@ -113,6 +116,7 @@ export function PcOrgTableView() {
       mso_id: row.mso_id ?? null,
       division_id: row.division_id ?? null,
       region_id: row.region_id ?? null,
+      state_code: row.state_code ?? null,
     });
     setSaveErr(null);
     setSaving(false);
@@ -240,6 +244,7 @@ export function PcOrgTableView() {
         msoOptions={msoOptions}
         divisionOptions={divisionOptions}
         regionOptions={regionOptions}
+        stateOptions={stateOptions}
         onClose={close}
         onSave={() => void onSave()}
         onDraftChange={setDraft}

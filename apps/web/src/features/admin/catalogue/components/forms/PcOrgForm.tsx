@@ -15,6 +15,7 @@ export type PcOrgDraft = {
   mso_id: string | null;
   division_id: string | null;
   region_id: string | null;
+  state_code: string | null;
 };
 
 export function PcOrgForm(props: {
@@ -25,8 +26,9 @@ export function PcOrgForm(props: {
   msoOptions: LookupOption[];
   divisionOptions: LookupOption[];
   regionOptions: LookupOption[];
+  stateOptions: LookupOption[];
 }) {
-  const { value, onChange, pcOptions, msoOptions, divisionOptions, regionOptions } = props;
+  const { value, onChange, pcOptions, msoOptions, divisionOptions, regionOptions, stateOptions } = props;
 
   // Local draft so we never call parent setState during render
   const [draft, setDraft] = useState<PcOrgDraft>(value);
@@ -136,6 +138,23 @@ export function PcOrgForm(props: {
           >
             <option value="">— Select —</option>
             {regionOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {renderOptionLabel(o)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field label="State">
+          <Select
+            value={draft.state_code ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setDraft((d) => ({ ...d, state_code: v ? v : null }));
+            }}
+          >
+            <option value="">— Select —</option>
+            {stateOptions.map((o) => (
               <option key={o.id} value={o.id}>
                 {renderOptionLabel(o)}
               </option>

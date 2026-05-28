@@ -2,42 +2,32 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-export type PcOrgAdminRow = {
-  pc_org_id: string;
-
-  // raw ids
-  pc_id: string | null;
-  mso_id: string | null;
-  division_id: string | null;
-  region_id: string | null;
-  state_code: string | null;
-
-  // human labels
-  pc_number?: number | null;
-  mso_name?: string | null;
-  division_name?: string | null;
-  division_code?: string | null;
-  region_name?: string | null;
-  region_code?: string | null;
-  state_name?: string | null;
-
-  // table's own fields
+export type PcOrgStateCoverageAdminRow = {
+  pc_org_state_coverage_id: string;
+  pc_org_id: string | null;
   pc_org_name: string | null;
-  fulfillment_center_id: string | null; // bigint serialized as string from API
-  fulfillment_center_name: string | null;
+  pc_id: string | null;
+  pc_number: number | null;
+  mso_id: string | null;
+  mso_name: string | null;
+  state_code: string | null;
+  state_name: string | null;
+  is_primary: boolean;
+  coverage_status: "active" | "inactive";
+  created_at: string | null;
+  updated_at: string | null;
 };
 
-type PcOrgAdminResponse = {
-  rows: PcOrgAdminRow[];
+type ResponseShape = {
+  rows: PcOrgStateCoverageAdminRow[];
   page: { pageIndex: number; pageSize: number; totalRows?: number };
 };
 
-export function usePcOrgAdmin(opts?: { pageSize?: number }) {
+export function usePcOrgStateCoverageAdmin(opts?: { pageSize?: number }) {
   const [q, setQ] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(opts?.pageSize ?? 25);
-
-  const [data, setData] = useState<PcOrgAdminResponse | null>(null);
+  const [data, setData] = useState<ResponseShape | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -52,9 +42,8 @@ export function usePcOrgAdmin(opts?: { pageSize?: number }) {
       sp.set("pageIndex", String(params.pageIndex));
       sp.set("pageSize", String(params.pageSize));
 
-      const res = await fetch(`/api/admin/catalogue/pc_org?${sp.toString()}`);
-      const json = (await res.json()) as { rows?: PcOrgAdminRow[]; page?: any; error?: string };
-
+      const res = await fetch(`/api/admin/catalogue/pc_org_state_coverage?${sp.toString()}`);
+      const json = (await res.json()) as { rows?: PcOrgStateCoverageAdminRow[]; page?: any; error?: string };
       if (!res.ok) throw new Error(json.error ?? "Request failed");
 
       setData({
@@ -79,16 +68,13 @@ export function usePcOrgAdmin(opts?: { pageSize?: number }) {
       setPageIndex(0);
       setQ(v);
     },
-
     pageIndex,
     setPageIndex,
-
     pageSize,
     setPageSize: (n: number) => {
       setPageIndex(0);
       setPageSize(n);
     },
-
     data,
     loading,
     err,

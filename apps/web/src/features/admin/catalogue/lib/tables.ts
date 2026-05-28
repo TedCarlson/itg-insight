@@ -11,6 +11,7 @@ export const ADMIN_TABLES: AdminTableDef[] = [
   { key: "pc_org", label: "PC-Org", group: "Organization" },
   { key: "pc", label: "PC", group: "Organization" },
   { key: "pc_org_office", label: "PC-Org Office", group: "Organization" },
+  { key: "pc_org_state_coverage", label: "PC-Org State Coverage", group: "Organization" },
   { key: "division", label: "Division", group: "Organization" },
   { key: "region", label: "Region", group: "Organization" },
   { key: "office", label: "Office", group: "Organization" },
@@ -24,4 +25,5 @@ export const ADMIN_TABLES: AdminTableDef[] = [
 
   { key: "position_title", label: "Position Title", group: "Reference" },
   { key: "fiscal_month_dim", label: "Fiscal Month", group: "Reference" },
+  { key: "locate_state_resource", label: "Locate States", group: "Reference" },
 ];

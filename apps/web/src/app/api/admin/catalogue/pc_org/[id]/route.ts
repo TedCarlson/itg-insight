@@ -8,6 +8,7 @@ type PatchBody = {
   pc_org_name?: string | null;
   fulfillment_center_name?: string | null;
   fulfillment_center_id?: string | number | null;
+  state_code?: string | null;
 };
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     if ("fulfillment_center_name" in body) patch.fulfillment_center_name = body.fulfillment_center_name ?? null;
     if ("fulfillment_center_id" in body)
       patch.fulfillment_center_id = body.fulfillment_center_id == null ? null : String(body.fulfillment_center_id);
+    if ("state_code" in body) patch.state_code = body.state_code ?? null;
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });

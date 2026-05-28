@@ -1,20 +1,18 @@
-// path: apps/web/src/features/admin/catalogue/components/pc-org/PcOrgRowsTable.tsx
-
 "use client";
 
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { PcOrgAdminRow } from "@/features/admin/catalogue/hooks/usePcOrgAdmin";
-import { labelOrId, shortId } from "./pcOrgDisplay";
+import type { PcOrgStateCoverageAdminRow } from "@/features/admin/catalogue/hooks/usePcOrgStateCoverageAdmin";
+import { labelOrId, shortId } from "./pcOrgStateCoverageDisplay";
 
 type Props = {
-  rows: PcOrgAdminRow[];
+  rows: PcOrgStateCoverageAdminRow[];
   loading: boolean;
   pageIndex: number;
   pageSize: number;
   totalRows?: number;
   canPrev: boolean;
   canNext: boolean;
-  onEdit: (row: PcOrgAdminRow) => void;
+  onEdit: (row: PcOrgStateCoverageAdminRow) => void;
   onPageIndexChange: (next: number) => void;
   onPageSizeChange: (next: number) => void;
 };
@@ -35,12 +33,11 @@ function CopyUuidButton(props: { value: string }) {
   );
 }
 
-export default function PcOrgRowsTable({
+export default function PcOrgStateCoverageRowsTable({
   rows,
   loading,
   pageIndex,
   pageSize,
-  totalRows,
   canPrev,
   canNext,
   onEdit,
@@ -50,8 +47,8 @@ export default function PcOrgRowsTable({
   if (!loading && rows.length === 0) {
     return (
       <EmptyState
-        title="No PC-ORGs found"
-        message="Try adjusting your search."
+        title="No state coverage rows found"
+        message="Add a coverage row to connect a PC-ORG to a Locate state."
         compact
       />
     );
@@ -59,103 +56,45 @@ export default function PcOrgRowsTable({
 
   return (
     <>
-      <div
-        className="overflow-auto rounded border"
-        style={{ borderColor: "var(--to-border)" }}
-      >
+      <div className="overflow-auto rounded border" style={{ borderColor: "var(--to-border)" }}>
         <table className="w-full text-sm">
           <thead className="bg-[var(--to-surface-2)]">
             <tr className="text-left">
               <th className="whitespace-nowrap px-3 py-2">PC-ORG</th>
-              <th className="whitespace-nowrap px-3 py-2">FC</th>
-              <th className="whitespace-nowrap px-3 py-2">PC</th>
               <th className="whitespace-nowrap px-3 py-2">MSO</th>
-              <th className="whitespace-nowrap px-3 py-2">Division</th>
-              <th className="whitespace-nowrap px-3 py-2">Region</th>
               <th className="whitespace-nowrap px-3 py-2">State</th>
+              <th className="whitespace-nowrap px-3 py-2">Coverage</th>
               <th className="whitespace-nowrap px-3 py-2">UUID</th>
-              <th className="whitespace-nowrap px-3 py-2 text-right">
-                Actions
-              </th>
+              <th className="whitespace-nowrap px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
 
           <tbody>
             {rows.map((row, index) => {
-              const anyRow = row as any;
-
-              const fcLabel = labelOrId(
-                row.fulfillment_center_name,
-                row.fulfillment_center_id
-              );
-
-              const pcLabel =
-                anyRow.pc_number != null
-                  ? `PC ${anyRow.pc_number}`
-                  : labelOrId(anyRow.pc_name, row.pc_id);
-
-              const msoLabel = labelOrId(anyRow.mso_name, row.mso_id);
-
-              const divisionLabel =
-                anyRow.division_name && anyRow.division_code
-                  ? `${anyRow.division_name} (${anyRow.division_code})`
-                  : labelOrId(
-                      anyRow.division_name ?? anyRow.division_code,
-                      row.division_id
-                    );
-
-              const regionLabel =
-                anyRow.region_name && anyRow.region_code
-                  ? `${anyRow.region_name} (${anyRow.region_code})`
-                  : labelOrId(
-                      anyRow.region_name ?? anyRow.region_code,
-                      row.region_id
-                    );
-
+              const pcOrgLabel = labelOrId(row.pc_org_name, row.pc_org_id);
+              const msoLabel = labelOrId(row.mso_name, row.mso_id);
               const stateLabel =
-                row.state_code && anyRow.state_name
-                  ? `${row.state_code} — ${anyRow.state_name}`
-                  : labelOrId(anyRow.state_name, row.state_code);
+                row.state_code && row.state_name
+                  ? `${row.state_code} — ${row.state_name}`
+                  : labelOrId(row.state_name, row.state_code);
 
               return (
                 <tr
-                  key={row.pc_org_id}
-                  className={
-                    index % 2 === 1
-                      ? "bg-[var(--to-surface)]"
-                      : "bg-[var(--to-surface-soft)]"
-                  }
+                  key={row.pc_org_state_coverage_id}
+                  className={index % 2 === 1 ? "bg-[var(--to-surface)]" : "bg-[var(--to-surface-soft)]"}
                 >
-                  <td className="px-3 py-2 font-medium">
-                    <div className="grid">
-                      <div>{row.pc_org_name ?? "—"}</div>
-                      <div className="text-xs text-[var(--to-ink-muted)]">
-                        {fcLabel}
-                      </div>
-                    </div>
-                  </td>
-
                   <td className="px-3 py-2">
                     <div className="grid">
-                      <div className="text-sm">{fcLabel}</div>
+                      <div className="font-medium">{pcOrgLabel}</div>
                       <div className="font-mono text-xs text-[var(--to-ink-muted)]">
-                        {shortId(row.fulfillment_center_id)}
+                        {shortId(row.pc_org_id)}
                       </div>
                     </div>
                   </td>
 
                   <td className="px-3 py-2">
                     <div className="grid">
-                      <div className="text-sm">{pcLabel}</div>
-                      <div className="font-mono text-xs text-[var(--to-ink-muted)]">
-                        {shortId(row.pc_id)}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-3 py-2">
-                    <div className="grid">
-                      <div className="text-sm">{msoLabel}</div>
+                      <div className="font-medium">{msoLabel}</div>
                       <div className="font-mono text-xs text-[var(--to-ink-muted)]">
                         {shortId(row.mso_id)}
                       </div>
@@ -164,37 +103,32 @@ export default function PcOrgRowsTable({
 
                   <td className="px-3 py-2">
                     <div className="grid">
-                      <div className="text-sm">{divisionLabel}</div>
-                      <div className="font-mono text-xs text-[var(--to-ink-muted)]">
-                        {shortId(row.division_id)}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-3 py-2">
-                    <div className="grid">
-                      <div className="text-sm">{regionLabel}</div>
-                      <div className="font-mono text-xs text-[var(--to-ink-muted)]">
-                        {shortId(row.region_id)}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-3 py-2">
-                    <div className="grid">
-                      <div className="text-sm">{stateLabel}</div>
+                      <div className="font-medium">{stateLabel}</div>
                       <div className="font-mono text-xs text-[var(--to-ink-muted)]">
                         {row.state_code ?? "—"}
                       </div>
                     </div>
                   </td>
 
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border px-2 py-1 text-xs" style={{ borderColor: "var(--to-border)" }}>
+                        {row.coverage_status}
+                      </span>
+                      {row.is_primary ? (
+                        <span className="rounded-full border px-2 py-1 text-xs" style={{ borderColor: "var(--to-border)" }}>
+                          Primary
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+
                   <td className="whitespace-nowrap px-3 py-2">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-[var(--to-ink-muted)]">
-                        {shortId(row.pc_org_id)}
+                        {shortId(row.pc_org_state_coverage_id)}
                       </span>
-                      <CopyUuidButton value={row.pc_org_id} />
+                      <CopyUuidButton value={row.pc_org_state_coverage_id} />
                     </div>
                   </td>
 
@@ -216,9 +150,7 @@ export default function PcOrgRowsTable({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs text-[var(--to-ink-muted)]">
-          Page {(pageIndex + 1).toString()}
-        </div>
+        <div className="text-xs text-[var(--to-ink-muted)]">Page {(pageIndex + 1).toString()}</div>
 
         <div className="flex items-center gap-2">
           <select
