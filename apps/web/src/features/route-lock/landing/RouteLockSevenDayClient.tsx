@@ -302,7 +302,6 @@ function MiniStat(props: { label: string; value: string; note?: string; danger?:
 
 export function RouteLockSevenDayClient(props: { days: Day[]; todayIso: string }) {
   const days = useMemo(() => props.days ?? [], [props.days]);
-  const [mode, setMode] = useState<UnitMode>("routes");
   const [weekStart, setWeekStart] = useState(() => previousCompletedSunday(props.todayIso));
 
   const weekEnd = addDaysISO(weekStart, 6);
@@ -328,11 +327,7 @@ export function RouteLockSevenDayClient(props: { days: Day[]; todayIso: string }
     () =>
       fiscalRows
         .filter((r) => isMiss(r.verdict))
-        .sort((a, b) => {
-          const aGap = a.routeDelta ?? 0;
-          const bGap = b.routeDelta ?? 0;
-          return aGap - bGap;
-        }),
+        .sort((a, b) => a.day.date.localeCompare(b.day.date)),
     [fiscalRows]
   );
 
@@ -350,11 +345,6 @@ export function RouteLockSevenDayClient(props: { days: Day[]; todayIso: string }
             </div>
           </div>
 
-          <select className="to-input h-8 text-xs" value={mode} onChange={(e) => setMode(e.target.value as UnitMode)}>
-            <option value="routes">Routes</option>
-            <option value="hours">Hours</option>
-            <option value="units">Units</option>
-          </select>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
