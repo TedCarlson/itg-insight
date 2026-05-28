@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Exceptions", href: "/route-lock/exceptions" },
   { label: "Shift Validations", href: "/route-lock/shift-validation" },
   { label: "Check-In Uploads", href: "/route-lock/check-in" },
+  { label: "OTA", href: "/route-lock/ota" },
   { label: "Manage Quota", href: "/route-lock/quota" },
   { label: "Manage Routes", href: "/route-lock/routes" },
   { label: "Tech Route History", href: "/route-lock/history" },
