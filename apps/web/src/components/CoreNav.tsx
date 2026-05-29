@@ -76,7 +76,7 @@ export default function CoreNav({ lob }: CoreNavProps) {
   const fromReview = searchParams.get("from") === "review";
 
   const { ready, signedIn, email, isOwner, isAdmin } = useSession();
-  const { selectedOrgId, orgs } = useOrg();
+  const { selectedOrgId, orgs, orgsLoading } = useOrg();
   const { accessPass } = useAccessPass();
   const { canManageConsole } = useOrgConsoleAccess();
 
@@ -158,23 +158,6 @@ export default function CoreNav({ lob }: CoreNavProps) {
     return buildGrantChips(accessPass?.permissions);
   }, [accessPass?.permissions]);
 
-  const selectedOrgLabel = useMemo(() => {
-    if (!selectedOrgId) return "No org selected";
-
-    const match = (orgs ?? []).find((org: any) => {
-      const id = org?.pc_org_id ?? org?.id ?? org?.org_id ?? null;
-      return String(id ?? "").trim() === String(selectedOrgId).trim();
-    }) as any | undefined;
-
-    return (
-      match?.pc_org_name ??
-      match?.org_name ??
-      match?.name ??
-      match?.display_name ??
-      selectedOrgId
-    );
-  }, [orgs, selectedOrgId]);
-
   const showFieldLogBack =
     pathname.startsWith("/field-log") && pathname !== "/field-log";
   const fieldLogBackHref = getFieldLogBackHref(pathname, fromReview);
@@ -252,66 +235,6 @@ export default function CoreNav({ lob }: CoreNavProps) {
         </button>
       </div>
 
-      {nav.showLobSwitch ? (
-        <div className="mt-4 rounded-lg border bg-background/60 p-2">
-          <div className="px-1 pb-1 text-[11px] text-muted-foreground">LOB</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={switching}
-              onClick={() => switchLob("FULFILLMENT")}
-              className={cls(
-                "rounded-md border px-2 py-2 text-sm",
-                lob === "FULFILLMENT"
-                  ? "bg-muted font-medium"
-                  : "text-muted-foreground hover:bg-muted/60"
-              )}
-            >
-              Fulfillment
-            </button>
-            <button
-              type="button"
-              disabled={switching}
-              onClick={() => switchLob("LOCATE")}
-              className={cls(
-                "rounded-md border px-2 py-2 text-sm",
-                lob === "LOCATE"
-                  ? "bg-muted font-medium"
-                  : "text-muted-foreground hover:bg-muted/60"
-              )}
-            >
-              Locate
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {nav.showOrgSelector ? (
-        <div className="mt-4 rounded-lg border bg-background/60 p-3">
-          <div className="mb-2 text-[11px] text-muted-foreground">Scope</div>
-
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <OrgSelector label="PC" />
-            </div>
-
-            {grantChips.length ? (
-              <div className="flex flex-wrap justify-end gap-1 pt-0.5">
-                {grantChips.map((chip) => (
-                  <GrantChipPill key={chip.key} chip={chip} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          {!selectedOrgId ? (
-            <div className="mt-2 text-[11px] text-muted-foreground">
-              Select a PC to unlock scoped pages.
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="mb-2 px-1 text-[11px] text-muted-foreground">
           Navigate
@@ -380,27 +303,72 @@ export default function CoreNav({ lob }: CoreNavProps) {
       ) : null}
 
       <div className="fixed inset-x-0 top-0 z-50 h-14 border-b bg-background/95 shadow-sm backdrop-blur">
-        <div className="flex h-full items-center gap-3 px-3">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-background hover:bg-muted"
-            aria-label="Open navigation menu"
-          >
-            <Menu className="h-4 w-4" />
-          </button>
-
-          <div className="min-w-0 rounded-lg border bg-background/70 px-3 py-1">
-            <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Current org
-            </div>
-
-            <div
-              className="max-w-[280px] truncate text-sm font-bold leading-4 text-foreground"
-              title={selectedOrgLabel}
+        <div className="flex h-full items-center justify-between gap-3 px-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-background hover:bg-muted"
+              aria-label="Open navigation menu"
             >
-              {selectedOrgLabel}
-            </div>
+              <Menu className="h-4 w-4" />
+            </button>
+
+            <Link
+              href={nav.workspaceHomeHref}
+              prefetch={false}
+              className="hidden min-w-0 items-center gap-2 rounded-lg border bg-background/70 px-3 py-2 text-sm font-semibold sm:inline-flex"
+            >
+              <MapPin className="h-4 w-4 shrink-0" />
+              <span className="truncate">Insight</span>
+            </Link>
+          </div>
+
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            {nav.showLobSwitch ? (
+              <div className="hidden items-center gap-1 rounded-lg border bg-background/70 p-1 sm:flex">
+                <button
+                  type="button"
+                  disabled={switching}
+                  onClick={() => switchLob("FULFILLMENT")}
+                  className={cls(
+                    "rounded-md px-2 py-1.5 text-xs",
+                    lob === "FULFILLMENT"
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:bg-muted/60"
+                  )}
+                >
+                  Fulfillment
+                </button>
+                <button
+                  type="button"
+                  disabled={switching}
+                  onClick={() => switchLob("LOCATE")}
+                  className={cls(
+                    "rounded-md px-2 py-1.5 text-xs",
+                    lob === "LOCATE"
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:bg-muted/60"
+                  )}
+                >
+                  Locate
+                </button>
+              </div>
+            ) : null}
+
+            {nav.showOrgSelector && (orgsLoading || (orgs ?? []).length > 1) ? (
+              <div className="min-w-0 max-w-[360px] rounded-lg border bg-background/70 px-2 py-1">
+                <OrgSelector label="PC" />
+              </div>
+            ) : null}
+
+            {grantChips.length ? (
+              <div className="hidden flex-wrap justify-end gap-1 lg:flex">
+                {grantChips.map((chip) => (
+                  <GrantChipPill key={chip.key} chip={chip} />
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

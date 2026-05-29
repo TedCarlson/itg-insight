@@ -61,6 +61,7 @@ export function OrgProvider({ children, lob }: OrgProviderProps) {
   const lastPersistedRef = useRef<string | null>(null);
   const didInitRef = useRef(false);
   const lobRef = useRef<Lob>(lob);
+  const refreshSeqRef = useRef(0);
 
   // Load persisted org selection for THIS LOB (client-only fallback)
   useEffect(() => {
@@ -80,6 +81,8 @@ export function OrgProvider({ children, lob }: OrgProviderProps) {
   const refreshOrgs = useCallback(async () => {
     if (!ready || !signedIn) return;
 
+    const refreshSeq = ++refreshSeqRef.current;
+
     setOrgsLoading(true);
     setOrgsError(null);
 
@@ -97,6 +100,8 @@ export function OrgProvider({ children, lob }: OrgProviderProps) {
         mso_lob: r.mso_lob,
       })) as unknown as PcOrgChoice[];
 
+      if (refreshSeq !== refreshSeqRef.current) return;
+
       setOrgs(choices);
 
       const serverSelected = await getServerSelectedOrg();
@@ -112,12 +117,15 @@ export function OrgProvider({ children, lob }: OrgProviderProps) {
         (isValid(localSelected) ? localSelected : null) ??
         null;
 
+      if (refreshSeq !== refreshSeqRef.current) return;
+
       setSelectedOrgIdState(next);
 
       // Heal server if invalid for this LOB
       if ((serverSelected ?? null) !== (next ?? null)) {
         try {
           await setServerSelectedOrg(next);
+          if (refreshSeq !== refreshSeqRef.current) return;
           lastPersistedRef.current = next;
         } catch (e: any) {
           setOrgsError(e?.message ?? "Failed to persist org selection");
