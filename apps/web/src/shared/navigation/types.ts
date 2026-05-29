@@ -48,6 +48,7 @@ export type NavigationItemKey =
   | "bp_lead_people"
   | "bp_lead_onboarding"
   | "bp_lead_metrics"
+  | "bp_supervisor_overview"
   | "bp_supervisor_metrics"
   | "tech_home"
   | "tech_schedule"

@@ -194,6 +194,16 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
   },
 
   {
+    key: "bp_supervisor_overview",
+    label: "Home",
+    href: "/bp-supervisor",
+    icon: "home",
+    visibility: "default",
+    defaultRoles: ["BP_SUPERVISOR"],
+    sortOrder: 149,
+  },
+
+  {
     key: "bp_supervisor_metrics",
     label: "Metrics",
     href: "/bp-supervisor/metrics",
@@ -302,7 +312,14 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     label: "Dispatch Console",
     href: "/dispatch-console",
     icon: "clipboard",
-    visibility: "grant",
+    visibility: "default",
+    defaultRoles: [
+      "ITG_SUPERVISOR",
+      "COMPANY_MANAGER",
+      "BP_SUPERVISOR",
+      "BP_LEAD",
+      "BP_OWNER",
+    ],
     exposeWhenPermissions: ["dispatch_console_access", "dispatch_manage"],
     sortOrder: 320,
   },
