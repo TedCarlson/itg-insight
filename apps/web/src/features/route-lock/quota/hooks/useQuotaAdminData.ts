@@ -49,6 +49,21 @@ export type QuotaUpsertRow = {
   qh_fri: number;
   qh_sat: number;
 };
+export type QuotaMonthlySummaryRow = {
+  fiscal_month_id: string;
+  fiscal_month_key: string | null;
+  fiscal_month_label: string | null;
+  fiscal_month_start_date: string | null;
+  fiscal_month_end_date: string | null;
+  route_count: number;
+  row_count: number;
+  total_hours: number;
+  total_units: number;
+  tech_days: number;
+  estimated_headcount: number;
+  hours_delta_mom: number | null;
+};
+
 
 export function useQuotaAdminData() {
   const [loading, setLoading] = useState(true);
@@ -62,6 +77,8 @@ export function useQuotaAdminData() {
 
   const [monthRows, setMonthRows] = useState<QuotaRow[]>([]);
   const [historyRows, setHistoryRows] = useState<QuotaRow[]>([]);
+  const [historyMonthlySummary, setHistoryMonthlySummary] = useState<QuotaMonthlySummaryRow[]>([]);
+  const [canWriteQuota, setCanWriteQuota] = useState(false);
 
   /**
    * /api/route-lock/quota/lookups
@@ -83,6 +100,7 @@ export function useQuotaAdminData() {
 
       setRoutes(nextRoutes);
       setMonths(nextMonths);
+      setCanWriteQuota(json?.access?.can_write_quota === true);
 
       return { routes: nextRoutes, months: nextMonths };
     } catch (e: any) {
@@ -90,6 +108,9 @@ export function useQuotaAdminData() {
       setMonths([]);
       setMonthRows([]);
       setHistoryRows([]);
+      setHistoryMonthlySummary([]);
+      setHistoryMonthlySummary([]);
+      setCanWriteQuota(false);
       setErr(e?.message ?? String(e ?? "Lookups failed"));
       return null;
     } finally {
@@ -149,10 +170,13 @@ export function useQuotaAdminData() {
       if (!res.ok) throw new Error(json?.error ?? `History failed (${res.status})`);
 
       const items = (json?.items ?? []) as QuotaRow[];
+      const monthlySummary = (json?.monthly_summary ?? []) as QuotaMonthlySummaryRow[];
       setHistoryRows(items);
-      return { ok: true as const, items };
+      setHistoryMonthlySummary(monthlySummary);
+      return { ok: true as const, items, monthlySummary };
     } catch (e: any) {
       setHistoryRows([]);
+      setHistoryMonthlySummary([]);
       setErr(e?.message ?? String(e ?? "History failed"));
       return { ok: false as const, items: [] as QuotaRow[] };
     }
@@ -211,6 +235,8 @@ export function useQuotaAdminData() {
     months,
     monthRows,
     historyRows,
+    historyMonthlySummary,
+    canWriteQuota,
 
     // setters
     setErr,

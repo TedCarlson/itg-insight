@@ -88,13 +88,81 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
+    const rows = data ?? [];
+
+    const summaryByMonth = new Map<string, any>();
+
+    for (const row of rows as any[]) {
+      const fiscalMonthId = String(row.fiscal_month_id ?? row.fiscal_month_key ?? row.fiscal_month_label ?? "");
+      if (!fiscalMonthId) continue;
+
+      const current = summaryByMonth.get(fiscalMonthId) ?? {
+        fiscal_month_id: fiscalMonthId,
+        fiscal_month_key: row.fiscal_month_key ?? null,
+        fiscal_month_label: row.fiscal_month_label ?? null,
+        fiscal_month_start_date: row.fiscal_month_start_date ?? null,
+        fiscal_month_end_date: row.fiscal_month_end_date ?? null,
+        route_count: 0,
+        row_count: 0,
+        total_hours: 0,
+        total_units: 0,
+        tech_days: 0,
+        estimated_headcount: 0,
+        hours_delta_mom: null,
+      };
+
+      current.row_count += 1;
+      current.route_count += row.route_id ? 1 : 0;
+
+      const hours =
+        Number(row.qt_hours ?? 0) ||
+        Number(row.qh_sun ?? 0) +
+          Number(row.qh_mon ?? 0) +
+          Number(row.qh_tue ?? 0) +
+          Number(row.qh_wed ?? 0) +
+          Number(row.qh_thu ?? 0) +
+          Number(row.qh_fri ?? 0) +
+          Number(row.qh_sat ?? 0);
+
+      current.total_hours += hours;
+      current.total_units += Number(row.qt_units ?? hours * 12);
+
+      current.tech_days +=
+        Math.ceil(Number(row.qh_sun ?? 0) / 8) +
+        Math.ceil(Number(row.qh_mon ?? 0) / 8) +
+        Math.ceil(Number(row.qh_tue ?? 0) / 8) +
+        Math.ceil(Number(row.qh_wed ?? 0) / 8) +
+        Math.ceil(Number(row.qh_thu ?? 0) / 8) +
+        Math.ceil(Number(row.qh_fri ?? 0) / 8) +
+        Math.ceil(Number(row.qh_sat ?? 0) / 8);
+
+      summaryByMonth.set(fiscalMonthId, current);
+    }
+
+    const monthlySummaryAsc = Array.from(summaryByMonth.values()).sort((a, b) =>
+      String(a.fiscal_month_start_date ?? a.fiscal_month_key ?? "").localeCompare(
+        String(b.fiscal_month_start_date ?? b.fiscal_month_key ?? "")
+      )
+    );
+
+    for (let i = 0; i < monthlySummaryAsc.length; i += 1) {
+      const current = monthlySummaryAsc[i];
+      const prior = monthlySummaryAsc[i - 1] ?? null;
+      current.estimated_headcount = current.total_hours / 40;
+      current.hours_delta_mom = prior ? current.total_hours - prior.total_hours : null;
+    }
+
+    const monthly_summary = monthlySummaryAsc;
+
     return NextResponse.json({
       ok: true,
-      items: data ?? [],
+      items: rows,
+      monthly_summary,
       debug: {
         selected_pc_org_id: guard.pc_org_id,
         auth_user_id: guard.auth_user_id,
-        returned: (data ?? []).length,
+        returned: rows.length,
+        monthly_summary_count: monthly_summary.length,
       },
     });
   } catch (e: any) {

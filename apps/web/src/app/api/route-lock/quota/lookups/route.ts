@@ -135,14 +135,24 @@ async function handler() {
     return NextResponse.json({ ok: false, error: monthsErr.message, debug: dbg({ step: "months_read_error", monthsErr }) }, { status: 500 });
   }
 
+  const { data: canWriteQuota, error: writeAccessErr } = await guard.apiClient.rpc("has_any_pc_org_permission", {
+    p_pc_org_id: guard.pc_org_id,
+    p_permission_keys: ["route_lock_manage"],
+  });
+
   return NextResponse.json({
     ok: true,
     routes: routes ?? [],
     months: months ?? [],
+    access: {
+      can_write_quota: !writeAccessErr && canWriteQuota === true,
+    },
     debug: dbg({
       selected_pc_org_id: guard.pc_org_id,
       auth_user_id: guard.auth_user_id,
       month_window: { start: windowStartISO, end: windowEndISO },
+      can_write_quota: !writeAccessErr && canWriteQuota === true,
+      write_access_error: writeAccessErr ?? null,
     }),
   });
 }

@@ -84,6 +84,7 @@ type Props = {
   };
 
   write: {
+    canWriteQuota: boolean;
     writeMonthId: string;
     setWriteMonthId: (v: string) => void;
     writeRows: WriteRow[];
@@ -154,7 +155,7 @@ export function QuotaAdminView(props: Props) {
             value={read.selectedMonthId}
             onChange={(e) => read.setSelectedMonthId(e.target.value)}
             className="w-60"
-            disabled={months.length === 0}
+            disabled={months.length === 0 || !write.canWriteQuota}
           >
             {months.length === 0 ? <option value="">No months</option> : null}
             {months.map((m) => (
@@ -258,21 +259,35 @@ export function QuotaAdminView(props: Props) {
 
       <Card className="mt-3">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-semibold">Write</div>
-          <div className="text-xs text-[var(--to-ink-muted)]">Block upsert grid (add rows + commit)</div>
+          <div className="text-sm font-semibold">{write.canWriteQuota ? "Write" : "Read-only access"}</div>
+          <div className="text-xs text-[var(--to-ink-muted)]">
+            {write.canWriteQuota
+              ? "Block upsert grid (add rows + commit)"
+              : "Quota editing requires route_lock_manage permission."}
+          </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={write.onAddWriteRow}>
+            <Button
+              variant="secondary"
+              className="h-8 px-3 text-xs"
+              onClick={write.onAddWriteRow}
+              disabled={!write.canWriteQuota}
+            >
               Add row
             </Button>
-            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={write.onClearWrite}>
+            <Button
+              variant="secondary"
+              className="h-8 px-3 text-xs"
+              onClick={write.onClearWrite}
+              disabled={!write.canWriteQuota}
+            >
               Clear
             </Button>
             <Button
               variant="secondary"
               className="h-8 px-3 text-xs"
               onClick={write.onSaveRows}
-              disabled={saving || loading || !write.writeMonthId}
+              disabled={!write.canWriteQuota || saving || loading || !write.writeMonthId}
             >
               {saving ? "Saving..." : "Save rows"}
             </Button>
@@ -322,7 +337,7 @@ export function QuotaAdminView(props: Props) {
                           const v = e.target.value;
                           write.setWriteRows((prev) => prev.map((x, i) => (i === idx ? { ...x, route_id: v } : x)));
                         }}
-                        disabled={routes.length === 0}
+                        disabled={routes.length === 0 || !write.canWriteQuota}
                         className="w-56"
                       >
                         <option value="">Select a route...</option>
@@ -343,6 +358,7 @@ export function QuotaAdminView(props: Props) {
                           className="h-9 w-20 rounded border border-[var(--to-border)] px-2 text-right"
                           value={r[d.key]}
                           inputMode="numeric"
+                          disabled={!write.canWriteQuota}
                           onChange={(e) => {
                             const v = toInt(e.target.value);
                             write.setWriteRows((prev) => prev.map((x, i) => (i === idx ? { ...x, [d.key]: v } : x)));
@@ -358,7 +374,7 @@ export function QuotaAdminView(props: Props) {
                         variant="ghost"
                         className="h-8 px-2 text-xs"
                         onClick={() => write.setWriteRows((prev) => prev.filter((_, i) => i !== idx))}
-                        disabled={write.writeRows.length <= 1}
+                        disabled={!write.canWriteQuota || write.writeRows.length <= 1}
                       >
                         Remove
                       </Button>

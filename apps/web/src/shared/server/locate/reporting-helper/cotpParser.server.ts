@@ -34,30 +34,23 @@ function changeDisplay(changePoints: number) {
 }
 
 function classify(row: Omit<CotpParsedRow, "status">): CotpStatus {
-  if (row.weekEndingValue === 100 && row.currentWeekTrend === 100) return "Excellent";
-  if (row.changePoints <= -10 && row.currentWeekTrend >= 95) return "Recovery trending";
-  if (row.changePoints >= 10 && row.weekEndingValue >= 90) return "Strong improvement";
+  const finalValue = row.weekEndingValue;
+  const trend = row.currentWeekTrend;
+  const recoveryLift = trend - finalValue;
 
-  if (
-    row.weekEndingValue < 80 ||
-    row.changePoints <= -10 ||
-    row.currentWeekTrend < 80
-  ) {
-    return "Needs attention";
+  // Current trend is the operational signal.
+  if (finalValue === 100 && trend === 100) return "Excellent";
+
+  if (trend < 90) return "Needs attention";
+
+  if (trend >= 96) {
+    if (finalValue < 90 && recoveryLift >= 10) return "Recovery trending";
+    if (row.changePoints >= 10 && finalValue >= 96) return "Strong improvement";
+    if (finalValue < 96) return "Improving trend";
+    return "Strong";
   }
 
-  if (row.weekEndingValue >= 96 && row.currentWeekTrend >= 96) return "Strong";
-
-  if (
-    row.currentWeekTrend <= row.weekEndingValue - 8 ||
-    (row.changePoints < 0 && row.currentWeekTrend < 90)
-  ) {
-    return "Watch closely";
-  }
-
-  if (row.currentWeekTrend >= row.weekEndingValue + 5 || row.changePoints > 0) {
-    return "Improving trend";
-  }
+  if (trend >= 90 && trend <= 95) return "Watch closely";
 
   return "Stable";
 }
@@ -142,13 +135,17 @@ function listStates(rows: CotpParsedRow[]) {
 function generateKeyTakeaways(rows: CotpParsedRow[]) {
   return {
     "Strong / Stable Performance": rows
-      .filter((r) => ["Excellent", "Strong", "Strong improvement", "Stable"].includes(r.status))
+      .filter((r) => ["Excellent", "Strong", "Strong improvement"].includes(r.status))
       .map((r) => r.state),
     "Improving Trend": rows
-      .filter((r) => ["Improving trend", "Recovery trending"].includes(r.status))
+      .filter((r) => ["Recovery trending", "Improving trend"].includes(r.status))
       .map((r) => r.state),
-    "Watch Closely": rows.filter((r) => r.status === "Watch closely").map((r) => r.state),
-    "Needs Attention": rows.filter((r) => r.status === "Needs attention").map((r) => r.state),
+    "Watch Closely": rows
+      .filter((r) => r.status === "Watch closely")
+      .map((r) => r.state),
+    "Needs Attention": rows
+      .filter((r) => r.status === "Needs attention")
+      .map((r) => r.state),
   };
 }
 
@@ -163,6 +160,9 @@ function generateExecutiveSummary(report: {
   const attention = report.rows.filter((row) =>
     ["Needs attention", "Watch closely", "Recovery trending"].includes(row.status)
   );
+  const recovery = report.rows
+    .filter((row) => row.status === "Recovery trending")
+    .map((row) => row.state);
 
   const parts = [
     `COTP performance${report.weekEnding ? ` for the week ending ${report.weekEnding}` : ""} finished${report.overallPerformance != null ? ` at ${report.overallPerformance}% all-in` : ""}.`,
@@ -180,8 +180,12 @@ function generateExecutiveSummary(report: {
     parts.push(`Largest improvement came from ${improved.map((r) => `${r.state} (${r.changeDisplay})`).join(", ")}.`);
   }
 
+  if (recovery.length) {
+    parts.push(`Recovery states include ${recovery.join(", ")}, where current-week trend has materially improved from the week-ending result.`);
+  }
+
   if (attention.length) {
-    parts.push(`Focus areas include ${listStates(attention)} based on decline, below-target performance, or current-week trend risk.`);
+    parts.push(`Focus areas include ${listStates(attention)} based on current-week trend risk.`);
   }
 
   return parts.join(" ");

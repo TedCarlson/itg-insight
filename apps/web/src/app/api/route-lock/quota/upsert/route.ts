@@ -57,8 +57,8 @@ async function hasAnyRole(admin: any, auth_user_id: string, roleKeys: string[]):
  * Guard for Quota WRITE operations.
  * Must be scoped to selected_pc_org_id and allow:
  * - owner
- * - ITG leadership roles (admin/dev/director/manager/vp)
- * - explicit org-scoped grants: route_lock_manage (preferred) OR roster_manage (legacy compatibility)
+ * - owner/app-admin technical bypass
+ * - explicit org-scoped grant: route_lock_manage
  *
  * Always requires baseline org access via api.can_access_pc_org(selected_org).
  */
@@ -102,14 +102,14 @@ async function guardSelectedOrgQuotaWrite(): Promise<GuardOk | GuardFail> {
   if (ownerErr) return { ok: false, status: 500, error: ownerErr.message };
   if (ownerRow?.auth_user_id) return { ok: true, pc_org_id, auth_user_id: userId };
 
-  // ✅ Role bypass (ITG management roles)
-  const roleAllowed = await hasAnyRole(admin, userId, ["admin", "dev", "director", "manager", "vp"]);
+  // ✅ Technical/admin bypass only. Directors/managers need explicit route_lock_manage to write quota.
+  const roleAllowed = await hasAnyRole(admin, userId, ["admin", "dev", "vp"]);
   if (roleAllowed) return { ok: true, pc_org_id, auth_user_id: userId };
 
-  // ✅ Canonical grants check via boolean RPC (no direct table read)
+  // ✅ Canonical write grant check via boolean RPC (no direct table read)
   const { data: allowedByGrant, error: grantRpcErr } = await apiClient.rpc("has_any_pc_org_permission", {
     p_pc_org_id: pc_org_id,
-    p_permission_keys: ["route_lock_manage", "roster_manage"],
+    p_permission_keys: ["route_lock_manage"],
   });
 
   if (grantRpcErr || !allowedByGrant) return { ok: false, status: 403, error: "forbidden" };

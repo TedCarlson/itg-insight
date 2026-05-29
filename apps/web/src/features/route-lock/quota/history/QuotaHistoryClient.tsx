@@ -17,6 +17,7 @@ export default function QuotaHistoryClient() {
     notice,
     months,
     historyRows,
+    historyMonthlySummary,
     fetchLookups,
     fetchHistory,
   } = data;
@@ -63,6 +64,7 @@ export default function QuotaHistoryClient() {
         historyQuery: state.historyFilter,
         setHistoryQuery: state.setHistoryFilter,
         filteredHistoryRows: state.filteredHistoryRows,
+        monthlySummary: historyMonthlySummary,
         onRefreshHistory,
       }}
     />

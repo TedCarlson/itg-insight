@@ -27,6 +27,7 @@ export default function QuotaAdminClient() {
     months,
     monthRows,
     historyRows, // still passed into state hook signature, but we no longer fetch on this page
+    canWriteQuota,
     fetchLookups,
     fetchMonth,
     // fetchHistory, // removed from boot + props
@@ -157,6 +158,7 @@ export default function QuotaAdminClient() {
         onRefreshLookups: () => void fetchLookups(),
       }}
       write={{
+        canWriteQuota,
         writeMonthId,
         setWriteMonthId: onSetWriteMonthId,
         writeRows,
