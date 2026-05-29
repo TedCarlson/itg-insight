@@ -6,6 +6,7 @@ export const CAP = {
 
   ROUTE_LOCK_VIEW: "route_lock_view",
   ROUTE_LOCK_MANAGE: "route_lock_manage",
+  SCHEDULE_EXCEPTION_SUBMIT: "schedule_exception_submit",
 
   METRICS_VIEW: "metrics_view",
   METRICS_MANAGE: "metrics_manage",

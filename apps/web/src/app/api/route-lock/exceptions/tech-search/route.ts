@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { requireAccessPass } from "@/shared/access/requireAccessPass";
-import { requireModule } from "@/shared/access/access";
+import { requireScheduleExceptionSubmitAccess } from "@/shared/access/scheduleExceptionSubmitAccess";
 
 export const runtime = "nodejs";
 
@@ -68,7 +68,7 @@ async function resolveSelectedPcOrg(req: NextRequest): Promise<GuardResult> {
 
   try {
     const pass = await requireAccessPass(req, pc_org_id);
-    requireModule(pass, "route_lock");
+    requireScheduleExceptionSubmitAccess(pass);
 
     return {
       ok: true,

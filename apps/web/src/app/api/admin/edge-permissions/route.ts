@@ -59,7 +59,7 @@ async function hasAnyRole(admin: any, auth_user_id: string, roleKeys: string[]) 
  * Canonical "big gates" for the app.
  * Everything else is future-only and should NOT show up as a column in the console yet.
  */
-const CORE_PERMISSION_KEYS = ["roster_manage", "route_lock_manage", "metrics_manage"] as const;
+const CORE_PERMISSION_KEYS = ["roster_manage", "route_lock_manage", "schedule_exception_submit", "metrics_manage"] as const;
 
 export async function GET(req: Request) {
   try {

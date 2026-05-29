@@ -1,6 +1,9 @@
 // path: apps/web/src/app/(app)/schedule/page.tsx
 
 import ScheduleSurface from "@/shared/schedule/surfaces/ScheduleSurface";
+import { hasScheduleExceptionSubmitAccess } from "@/shared/access/scheduleExceptionSubmitAccess";
+import { isTechExperienceUser } from "@/shared/access/access";
+import { supabaseServer } from "@/shared/data/supabase/server";
 
 import {
   loadScheduleSurfacePayload,
@@ -41,9 +44,31 @@ export default async function Page({
       search: params?.search ?? null,
     });
 
+  let canSubmitExceptionRequest = false;
+
+  const pcOrgId =
+    String(payload.filters.pcOrgId ?? "").trim();
+
+  if (pcOrgId) {
+    const supabase =
+      await supabaseServer();
+
+    const { data: pass } =
+      await supabase.rpc("get_access_pass", {
+        p_pc_org_id: pcOrgId,
+      });
+
+    canSubmitExceptionRequest =
+      !isTechExperienceUser(pass as any) ||
+      hasScheduleExceptionSubmitAccess(pass as any);
+  }
+
   return (
     <main className="p-4 md:p-6">
-      <ScheduleSurface payload={payload} />
+      <ScheduleSurface
+        payload={payload}
+        canSubmitExceptionRequest={true}
+      />
     </main>
   );
 }

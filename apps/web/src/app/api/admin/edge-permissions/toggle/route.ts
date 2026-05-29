@@ -15,7 +15,7 @@ function isUuid(v: string) {
  * Canonical "big gates" ONLY.
  * If it isn't one of these, the console cannot toggle it.
  */
-const CORE_PERMISSION_KEYS = ["roster_manage", "route_lock_manage", "metrics_manage"] as const;
+const CORE_PERMISSION_KEYS = ["roster_manage", "route_lock_manage", "schedule_exception_submit", "metrics_manage"] as const;
 type CorePermissionKey = (typeof CORE_PERMISSION_KEYS)[number];
 
 type Body = {

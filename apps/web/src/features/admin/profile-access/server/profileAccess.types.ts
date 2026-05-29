@@ -1,6 +1,7 @@
 export const PROFILE_ACCESS_PERMISSION_KEYS = [
   "roster_manage",
   "route_lock_manage",
+  "schedule_exception_submit",
   "metrics_manage",
   "dispatch_manage",
 ] as const;
