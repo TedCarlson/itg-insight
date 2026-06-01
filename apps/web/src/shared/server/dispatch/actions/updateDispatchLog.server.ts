@@ -1,4 +1,3 @@
-import { supabaseServer } from "@/shared/data/supabase/server";
 import { DISPATCH_LOG_SELECT_COLS } from "../constants/dispatchEventTypes";
 import type { DispatchLogSelectRow, DispatchLogUpdateInput, SupabaseAdminClient } from "../types/dispatchLog.types";
 import { dispatchBadRequest, dispatchForbidden, dispatchNotFound } from "../utils/dispatchErrors";
@@ -18,9 +17,7 @@ export async function updateDispatchLog(
   if (String(pre.data.pc_org_id) !== String(input.pc_org_id)) dispatchBadRequest("pc_org_mismatch");
   if (String(pre.data.created_by_user_id) !== String(input.updated_by_user_id)) dispatchForbidden("edit_forbidden");
 
-  const sb = await supabaseServer();
-
-  const upd = await sb
+  const upd = await admin
     .from("dispatch_console_log")
     .update({
       event_type: input.event_type,
@@ -30,9 +27,10 @@ export async function updateDispatchLog(
     })
     .eq("dispatch_console_log_id", input.dispatch_console_log_id)
     .select(DISPATCH_LOG_SELECT_COLS)
-    .single();
+    .maybeSingle();
 
   if (upd.error) dispatchBadRequest("log_update_failed", upd.error);
+  if (!upd.data) dispatchNotFound("log_not_found_after_update");
 
   return upd.data as unknown as DispatchLogSelectRow;
 }
