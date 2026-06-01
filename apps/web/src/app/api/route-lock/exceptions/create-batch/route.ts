@@ -82,11 +82,10 @@ export async function POST(req: NextRequest) {
       override_units: r.override_units == null ? null : Number(r.override_units),
       notes: r.notes == null || r.notes === "" ? null : String(r.notes),
       approved: false,
-      approved_by_user_id: null,
-      approved_at: null,
-      denied_by_user_id: null,
-      denied_at: null,
+      requested_by: scope.boot.auth_user_id,
+      approved_by: null,
       decision_notes: null,
+      decision_at: null,
       status: "PENDING",
     }));
 
