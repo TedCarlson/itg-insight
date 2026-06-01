@@ -7,6 +7,7 @@ const MAIN_WIDGETS = [
   "workforce_snapshot",
   "route_lock_snapshot",
   "dispatch_snapshot",
+  "smart_upload",
 ] as const;
 
 export const workspaceLayoutLibrary: WorkspaceLayoutPreview[] = [

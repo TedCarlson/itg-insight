@@ -6,7 +6,8 @@ export type WidgetCategory =
   | "performance"
   | "workforce"
   | "activity"
-  | "navigation";
+  | "navigation"
+  | "data_operations";
 
 export type WidgetRegistryItem = {
   kind: HomeWidgetKind;

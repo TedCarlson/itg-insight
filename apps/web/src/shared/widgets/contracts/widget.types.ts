@@ -4,7 +4,8 @@ export type HomeWidgetKind =
   | "route_lock_snapshot"
   | "dispatch_snapshot"
   | "quick_actions"
-  | "activity_feed";
+  | "activity_feed"
+  | "smart_upload";
 
 export type HomeWidgetSize = "small" | "medium" | "wide" | "rail_half" | "rail_full";
 
@@ -69,5 +70,9 @@ export type HomeWidgetPayload = {
   activity_feed: {
     title: string;
     items: HomeActivityItem[];
+  };
+
+  smart_upload: {
+    title: string;
   };
 };

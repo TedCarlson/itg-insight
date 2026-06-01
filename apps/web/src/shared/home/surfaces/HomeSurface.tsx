@@ -310,6 +310,7 @@ export function HomeSurface(props: {
 
   const resolvedLayout =
     useMemo(() => {
+
       return (
         previewLayout ??
         (layoutMode === "my_layout"

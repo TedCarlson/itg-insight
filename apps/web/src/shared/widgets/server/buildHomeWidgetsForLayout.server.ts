@@ -4,6 +4,7 @@ import { buildMetricsSnapshot } from "./builders/buildMetricsSnapshot.server";
 import { buildQuickActions } from "./builders/buildQuickActions.server";
 import { buildRouteLockSnapshot } from "./builders/buildRouteLockSnapshot.server";
 import { buildWorkforceSnapshot } from "./builders/buildWorkforceSnapshot.server";
+import { buildSmartUpload } from "./builders/buildSmartUpload.server";
 
 import type {
   HomeLayoutConfig,
@@ -27,6 +28,7 @@ const widgetBuilderRegistry: {
   dispatch_snapshot: () => buildDispatchSnapshot(),
   quick_actions: (context) => buildQuickActions(context.role),
   activity_feed: () => buildActivityFeed(),
+  smart_upload: () => buildSmartUpload(),
 };
 
 function getLayoutWidgetKinds(layout: HomeLayoutConfig): HomeWidgetKind[] {

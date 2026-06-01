@@ -24,6 +24,16 @@ export const managerHomeDefault: HomeLayoutConfig = {
         },
       ],
     },
+
+    {
+      id: "data-operations",
+      title: "Data Operations",
+      description: "Operational uploads and ingestion workflows.",
+      widgets: [
+
+      ],
+    },
+
     {
       id: "performance",
       title: "Performance",
@@ -62,6 +72,7 @@ export const managerHomeDefault: HomeLayoutConfig = {
           size: "rail_half",
           zone: "rail",
         },
+
       ],
     },
   ],

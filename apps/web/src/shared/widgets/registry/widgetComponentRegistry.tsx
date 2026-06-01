@@ -6,6 +6,7 @@ import { MetricsSnapshotWidget } from "@/shared/widgets/ui/MetricsSnapshotWidget
 import { QuickActionsWidget } from "@/shared/widgets/ui/QuickActionsWidget";
 import { RouteLockSnapshotWidget } from "@/shared/widgets/ui/RouteLockSnapshotWidget";
 import { WorkforceSnapshotWidget } from "@/shared/widgets/ui/WorkforceSnapshotWidget";
+import { SmartUploadWidget } from "@/shared/widgets/ui/SmartUploadWidget";
 
 import type { HomeWidgetConfig, HomeSurfacePayload } from "@/shared/home/contracts/home.types";
 import type { HomeWidgetKind } from "../contracts/widget.types";
@@ -85,4 +86,8 @@ export const widgetComponentRegistry: Partial<Record<HomeWidgetKind, WidgetRende
     ) : (
       <MissingWidgetPayload widget={widget} />
     ),
+
+  smart_upload: () => (
+    <SmartUploadWidget />
+  ),
 };

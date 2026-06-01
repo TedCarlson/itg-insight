@@ -29,6 +29,7 @@ type AssignedWidgets = Record<string, HomeWidgetKind>;
 const RAIL_WIDGETS = [
   "activity_feed",
   "dispatch_snapshot",
+  "smart_upload",
 ] as const;
 
 const SCREEN_OPTIONS: Array<{
@@ -100,6 +101,24 @@ function buildSlots(
 
   if (railMode === "off") {
     return mainSlots;
+  }
+
+  if (railMode === "full") {
+    return [
+      ...mainSlots,
+      {
+        id: "rail-1",
+        zone: "rail",
+        size: "rail_half",
+        allowedWidgets: [...RAIL_WIDGETS],
+      },
+      {
+        id: "rail-2",
+        zone: "rail",
+        size: "rail_half",
+        allowedWidgets: [...RAIL_WIDGETS],
+      },
+    ];
   }
 
   return [

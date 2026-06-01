@@ -353,14 +353,31 @@ export async function POST(req: NextRequest) {
     }
 
     const result = Array.isArray(data) ? data[0] : data;
+    const metricBatchId = result?.metric_batch_id ?? null;
+    const loadedRows = result?.row_count ?? row_count_total;
+
+    await admin.from("org_event").insert({
+      pc_org_id,
+      event_type: "metric_upload_loaded",
+      actor_user_id: user.id,
+      payload: {
+        source: "Metrics",
+        action: "Loaded metrics upload",
+        source_filename: filename,
+        batch_id: metricBatchId,
+        row_count_loaded: loadedRows,
+        metric_date: result?.metric_date ?? metric_date,
+        fiscal_end_date: result?.fiscal_end_date ?? fiscal_end_date,
+      },
+    });
 
     return json(200, {
       ok: true,
       loaded: true,
-      batch_id: result?.metric_batch_id ?? null,
+      batch_id: metricBatchId,
       metric_date: result?.metric_date ?? metric_date,
       fiscal_end_date: result?.fiscal_end_date ?? fiscal_end_date,
-      row_count_loaded: result?.row_count ?? row_count_total,
+      row_count_loaded: loadedRows,
       warning_flags,
       pipeline_triggered: true,
       status: result?.status ?? "complete",

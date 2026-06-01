@@ -14,6 +14,16 @@ export const supervisorHomeDefault: HomeLayoutConfig = {
         { id: "route-lock", kind: "route_lock_snapshot", title: "Route Lock", size: "medium" },
       ],
     },
+
+    {
+      id: "data-operations",
+      title: "Data Operations",
+      description: "Operational uploads and ingestion workflows.",
+      widgets: [
+
+      ],
+    },
+
     {
       id: "performance",
       title: "Team Performance",
@@ -26,7 +36,7 @@ export const supervisorHomeDefault: HomeLayoutConfig = {
       id: "actions",
       title: "Actions",
       widgets: [
-        { id: "quick-actions", kind: "quick_actions", title: "Quick Actions", size: "wide" },
+
       ],
     },
   ],

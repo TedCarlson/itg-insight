@@ -61,4 +61,14 @@ export const widgetRegistry = {
     allowedSizes: ["wide", "rail_half", "rail_full"],
     configurable: true,
   },
+  smart_upload: {
+    kind: "smart_upload",
+    label: "Smart Upload",
+    description: "Unified operational upload staging and approval workspace.",
+    category: "data_operations",
+    allowedRoles: ["COMPANY_MANAGER", "ITG_SUPERVISOR", "DIRECTOR"],
+    defaultSize: "rail_half",
+    allowedSizes: ["wide", "rail_half", "rail_full"],
+    configurable: true,
+  },
 } satisfies Record<string, WidgetRegistryItem>;
