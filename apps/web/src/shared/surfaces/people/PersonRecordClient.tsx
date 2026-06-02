@@ -26,6 +26,13 @@ export function PersonRecordClient({
 
   function goBack() {
     router.push(returnTo);
+    router.refresh();
+  }
+
+  function goBackAfterSave() {
+    const separator = returnTo.includes("?") ? "&" : "?";
+    router.push(`${returnTo}${separator}updated=${Date.now()}`);
+    router.refresh();
   }
 
   return (
@@ -67,7 +74,7 @@ export function PersonRecordClient({
       <PeopleEditorDrawer
         person={person}
         onClose={goBack}
-        onSaved={goBack}
+        onSaved={goBackAfterSave}
         affiliations={affiliations}
       />
     </div>
