@@ -98,15 +98,24 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     data.requires_approval_to_close != null ||
     data.can_close_on_entry != null;
 
+  const isPendingReviewerAction =
+    data.status === "pending_review" || data.status === "sup_followup_required";
+
+  const isSelfSubmittedReport =
+    !!userId && String(data.created_by_user_id ?? "") === String(userId);
+
+  const canActAsFieldLogReviewer =
+    entrySource !== "TECH" && entrySource !== "UNKNOWN" && !isSelfSubmittedReport;
+
   const showsTechReviewActions =
-    hasRecordWorkflowTruth
+    canActAsFieldLogReviewer &&
+    (hasRecordWorkflowTruth
       ? workflow.requiresApprovalToClose
-      : data.status === "pending_review" || data.status === "sup_followup_required";
+      : isPendingReviewerAction);
 
   const canApprove = useMemo(() => {
-    if (!showsTechReviewActions) return false;
-    return data.status === "pending_review" || data.status === "sup_followup_required";
-  }, [data.status, showsTechReviewActions]);
+    return showsTechReviewActions && isPendingReviewerAction;
+  }, [isPendingReviewerAction, showsTechReviewActions]);
 
   const isTechFollowup = data.status === "tech_followup_required";
   const canResubmit = isTechFollowup && data.edit_unlocked && data.created_by_user_id === userId;

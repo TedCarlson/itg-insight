@@ -57,10 +57,37 @@ export async function POST(req: NextRequest) {
     return forbidden("Unauthorized.");
   }
 
+  const actingUserId = String(user.id);
+
+  const detailRes = await supabase.rpc("field_log_get_report_detail", {
+    p_report_id: reportId,
+  });
+
+  if (detailRes.error || !detailRes.data) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          detailRes.error?.message || "Failed to load Field Log report detail.",
+      },
+      { status: 500 },
+    );
+  }
+
+  const detail = detailRes.data as { created_by_user_id?: string | null; status?: string | null };
+
+  if (String(detail.created_by_user_id ?? "") === actingUserId) {
+    return forbidden("Self-verdict is not allowed.");
+  }
+
+  if (detail.status !== "pending_review" && detail.status !== "sup_followup_required") {
+    return badRequest("Field Log is not in a verdict-ready state.");
+  }
+
   if (xmLink) {
     const { error: xmError } = await supabase.rpc("field_log_append_xm_link", {
       p_report_id: reportId,
-      p_action_by_user_id: user.id,
+      p_action_by_user_id: actingUserId,
       p_xm_link: xmLink,
       p_note: note,
     });
@@ -75,7 +102,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase.rpc("field_log_finalize_verdict", {
     p_report_id: reportId,
-    p_action_by_user_id: user.id,
+    p_action_by_user_id: actingUserId,
     p_verdict: verdict,
     p_note: note,
   });
