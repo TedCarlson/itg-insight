@@ -170,7 +170,15 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   });
 
   const requiredPhotoCount = rule?.min_photo_count ?? 0;
-  const canUseXm = (rule?.xm_allowed ?? false) && workflow.requiresApprovalToClose;
+  const isTechSubmissionFlow = workflow.isTechSourced || isTechUploader;
+  const requiresReviewBeforeClose =
+    isTechSubmissionFlow || workflow.requiresApprovalToClose;
+  const canFinalizeOnEntry =
+    !isTechSubmissionFlow &&
+    !workflow.requiresApprovalToClose &&
+    !isFollowupMode &&
+    workflow.canAssignFinalVerdict;
+  const canUseXm = (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
   const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
   const photoRequirements = rule?.photo_requirements ?? [];
   const locationRequired = !!rule?.location_required;
@@ -440,7 +448,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         throw new Error("Location capture is required before submit.");
       }
 
-      if (!workflow.requiresApprovalToClose && !isFollowupMode) {
+      if (canFinalizeOnEntry) {
         const finalizeRes = await fetch("/api/field-log/finalize-verdict", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -683,7 +691,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         />
       </section>
 
-      {workflow.requiresApprovalToClose || isFollowupMode ? (
+      {requiresReviewBeforeClose || isFollowupMode ? (
         <button
           type="button"
           disabled={saving || submitting || (locationRequired && capturingLocation)}

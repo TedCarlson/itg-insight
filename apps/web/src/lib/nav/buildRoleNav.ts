@@ -74,6 +74,7 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
       { key: "workforce", label: "Workforce", href: "/bp-owner/workforce" },
       { key: "schedule", label: "Scheduling", href: "/bp-owner/scheduling" },
       { key: "metrics", label: "Metrics", href: "/bp-owner/metrics" },
+      { key: "fieldlog", label: "Field Log", href: "/field-log" },
     ];
   }
 
