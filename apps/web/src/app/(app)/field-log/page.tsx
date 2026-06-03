@@ -15,7 +15,7 @@ export default function FieldLogHomePage() {
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-4">
         <Link
           href="/field-log/new"
           className="rounded-2xl border bg-card p-5 transition hover:bg-muted/40"
@@ -43,6 +43,16 @@ export default function FieldLogHomePage() {
           <div className="text-base font-semibold">Review Queue</div>
           <div className="mt-2 text-sm text-muted-foreground">
             Supervisor review bucket for pending approvals and follow-ups.
+          </div>
+        </Link>
+
+        <Link
+          href="/field-log/audit"
+          className="rounded-2xl border bg-card p-5 transition hover:bg-muted/40"
+        >
+          <div className="text-base font-semibold">Audit Queue</div>
+          <div className="mt-2 text-sm text-muted-foreground">
+            Review finalized logs and clean up aging unresolved follow-ups.
           </div>
         </Link>
       </section>

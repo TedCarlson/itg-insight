@@ -108,6 +108,10 @@ export type FieldLogDetailPayload = {
   approved_at: string | null;
   followup_requested_by_user_id: string | null;
   followup_note: string | null;
+  followup_owner_person_id?: string | null;
+  followup_assigned_at?: string | null;
+  followup_assigned_by_user_id?: string | null;
+  followup_assignment_note?: string | null;
   edit_unlocked: boolean;
   locked: boolean;
   rule: FieldLogRule;

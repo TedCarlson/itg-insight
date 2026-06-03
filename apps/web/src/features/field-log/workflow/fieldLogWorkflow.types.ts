@@ -13,7 +13,8 @@ export type FieldLogVerdict =
   | "pass"
   | "fail_supervisor_corrected"
   | "fail_tech_followup"
-  | "no_action";
+  | "no_action"
+  | "closed_by_leadership";
 
 export type FieldLogWorkflowAction =
   | "submit"

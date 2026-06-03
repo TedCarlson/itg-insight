@@ -10,6 +10,7 @@ import { FieldLogTimelineCard } from "../components/FieldLogTimelineCard";
 import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { getStatusChip, niceStatus } from "../lib/statusStyles";
 import { FieldLogReviewActionsCard } from "../components/FieldLogReviewActionsCard";
+import { FieldLogReassignFollowupCard } from "../components/FieldLogReassignFollowupCard";
 import { FieldLogTechReviewActionsCard } from "../components/FieldLogTechReviewActionsCard";
 import { FieldLogVerdictActionsCard } from "../components/FieldLogVerdictActionsCard";
 import { FieldLogAttachmentsCard } from "../components/FieldLogAttachmentsCard";
@@ -69,6 +70,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const [timelineLoading, setTimelineLoading] = useState(true);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [followupNote, setFollowupNote] = useState("");
+  const [reassignNote, setReassignNote] = useState("");
 
   const showTimeline = useMemo(() => canViewTimeline(accessPass), [accessPass]);
 
@@ -254,6 +256,11 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       return;
     }
 
+    if (verdict === "closed_by_leadership" && !note) {
+      alert("Leadership closure requires a note.");
+      return;
+    }
+
     setBusy(true);
     try {
       const res = await fetch("/api/field-log/finalize-verdict", {
@@ -285,6 +292,39 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       setFollowupNote("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to finalize verdict.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reassignFollowup(followupOwnerPersonId: string) {
+    setBusy(true);
+
+    try {
+      const res = await fetch("/api/field-log/reassign-followup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reportId: data.report_id,
+          followupOwnerPersonId,
+          note: reassignNote,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to reassign follow-up.");
+      }
+
+      setReassignNote("");
+      await refreshDetail();
+
+      if (showTimeline) {
+        await loadTimeline();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to reassign follow-up.");
     } finally {
       setBusy(false);
     }
@@ -500,11 +540,22 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           <FieldLogReviewActionsCard actions={data.actions ?? []} />
 
           {showTimeline ? (
-            <FieldLogTimelineCard
-              timeline={timeline}
-              loading={timelineLoading}
-              error={timelineError}
-            />
+            <>
+              <FieldLogReassignFollowupCard
+                busy={busy}
+                status={data.status}
+                currentOwnerPersonId={data.followup_owner_person_id ?? null}
+                note={reassignNote}
+                onNoteChange={setReassignNote}
+                onReassign={reassignFollowup}
+              />
+
+              <FieldLogTimelineCard
+                timeline={timeline}
+                loading={timelineLoading}
+                error={timelineError}
+              />
+            </>
           ) : null}
 
           {!workflow.isTechSourced ? null : null}
@@ -543,6 +594,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             onApprove={approve}
               onRequestTechFollowup={() => requestFollowup("tech")}
               onRequestSupervisorFollowup={() => requestFollowup("supervisor")}
+              onCloseReport={() => finalizeVerdict("closed_by_leadership")}
             />
           ) : null}
 

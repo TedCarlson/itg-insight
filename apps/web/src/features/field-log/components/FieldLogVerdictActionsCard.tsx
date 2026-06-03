@@ -114,6 +114,15 @@ export function FieldLogVerdictActionsCard(props: FieldLogVerdictActionsCardProp
             {action.label}
           </button>
         ))}
+
+        <button
+          type="button"
+          disabled={busy || !note.trim()}
+          onClick={() => void onFinalizeVerdict("closed_by_leadership")}
+          className={buttonClass("danger")}
+        >
+          Close by Leadership
+        </button>
       </div>
     </section>
   );

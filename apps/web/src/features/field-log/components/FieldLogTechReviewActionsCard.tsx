@@ -22,6 +22,7 @@ type FieldLogTechReviewActionsCardProps = {
   onApprove: () => void | Promise<void>;
   onRequestTechFollowup: () => void | Promise<void>;
   onRequestSupervisorFollowup: () => void | Promise<void>;
+  onCloseReport: () => void | Promise<void>;
 };
 
 export function FieldLogTechReviewActionsCard(
@@ -44,6 +45,7 @@ export function FieldLogTechReviewActionsCard(
     onApprove,
     onRequestTechFollowup,
     onRequestSupervisorFollowup,
+    onCloseReport,
   } = props;
 
   if (!canApprove) return null;
@@ -174,6 +176,15 @@ export function FieldLogTechReviewActionsCard(
           className="rounded-xl border px-4 py-3 font-semibold"
         >
           Supervisor Follow-Up
+        </button>
+
+        <button
+          type="button"
+          disabled={busy || !followupNote.trim()}
+          onClick={() => void onCloseReport()}
+          className="rounded-xl border border-red-300 px-4 py-3 font-semibold text-red-700 disabled:opacity-60"
+        >
+          Close by Leadership
         </button>
       </div>
     </section>

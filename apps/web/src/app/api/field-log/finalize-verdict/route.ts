@@ -3,7 +3,12 @@ import { supabaseServer } from "@/shared/data/supabase/server";
 
 export const runtime = "nodejs";
 
-type Verdict = "pass" | "fail_supervisor_corrected" | "fail_tech_followup" | "no_action";
+type Verdict =
+  | "pass"
+  | "fail_supervisor_corrected"
+  | "fail_tech_followup"
+  | "no_action"
+  | "closed_by_leadership";
 
 type FinalizeVerdictBody = {
   reportId?: string;
@@ -17,6 +22,7 @@ const VERDICTS: Verdict[] = [
   "fail_supervisor_corrected",
   "fail_tech_followup",
   "no_action",
+  "closed_by_leadership",
 ];
 
 function badRequest(message: string) {
@@ -80,8 +86,17 @@ export async function POST(req: NextRequest) {
     return forbidden("Self-verdict is not allowed.");
   }
 
-  if (detail.status !== "pending_review" && detail.status !== "sup_followup_required") {
+  const verdictReady =
+    detail.status === "pending_review" ||
+    detail.status === "sup_followup_required" ||
+    (verdict === "closed_by_leadership" && detail.status === "tech_followup_required");
+
+  if (!verdictReady) {
     return badRequest("Field Log is not in a verdict-ready state.");
+  }
+
+  if (verdict === "closed_by_leadership" && !note) {
+    return badRequest("Leadership closure requires a note.");
   }
 
   if (xmLink) {
