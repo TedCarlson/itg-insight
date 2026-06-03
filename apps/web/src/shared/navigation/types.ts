@@ -31,6 +31,7 @@ export type NavigationItemKey =
   | "home"
   | "director_executive"
   | "director_workforce"
+  | "director_people"
   | "admin"
   | "bp_owner_overview"
   | "bp_owner_workforce"

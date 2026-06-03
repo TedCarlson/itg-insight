@@ -34,6 +34,17 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
   },
 
   {
+    key: "director_people",
+    label: "People",
+    href: "/director/people",
+    icon: "people",
+    visibility: "default",
+    defaultRoles: ["DIRECTOR"],
+    exposeWhenPermissions: ["people_access"],
+    sortOrder: 35,
+  },
+
+  {
     key: "bp_owner_overview",
     label: "Overview",
     href: "/bp-owner",

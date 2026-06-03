@@ -40,7 +40,12 @@ export function isNavigationItemVisible(args: {
   const isPowerUser =
     Boolean(isOwner) || Boolean(isAdmin) || role === "APP_OWNER" || role === "ADMIN";
 
-  if (item.key === "admin" && isPowerUser) {
+  const powerUserSupportItems = new Set([
+    "director_workforce",
+    "director_people",
+  ]);
+
+  if ((item.key === "admin" || powerUserSupportItems.has(item.key)) && isPowerUser) {
     return true;
   }
 
