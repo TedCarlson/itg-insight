@@ -323,7 +323,7 @@ export function WorkforceSurfaceClient({ payload }: Props) {
   const [stagedPerson, setStagedPerson] =
     useState<WorkforcePersonSearchRow | null>(null);
 
-  const pcOrgId = payload.rows[0]?.pc_org_id ?? null;
+  const pcOrgId = payload.context?.pc_org_id ?? payload.rows[0]?.pc_org_id ?? null;
   const tabs = useMemo(() => buildTabs(payload), [payload]);
 
   useEffect(() => {

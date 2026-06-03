@@ -159,9 +159,24 @@ export async function POST(req: NextRequest) {
     const admin = supabaseAdmin();
 
     // pc_org_id is DB-owned (uuid default)
-    const { error } = await admin.from("pc_org").insert(insertRow);
+    const { data: created, error } = await admin
+      .from("pc_org")
+      .insert(insertRow)
+      .select("pc_org_id")
+      .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const { error: workspaceError } = await admin.rpc(
+      "ensure_core_workspace_for_pc_org",
+      {
+        p_pc_org_id: created.pc_org_id,
+      }
+    );
+
+    if (workspaceError) {
+      return NextResponse.json({ error: workspaceError.message }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

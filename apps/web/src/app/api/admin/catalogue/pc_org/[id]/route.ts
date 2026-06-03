@@ -41,6 +41,17 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    const { error: workspaceError } = await admin.rpc(
+      "ensure_core_workspace_for_pc_org",
+      {
+        p_pc_org_id: id,
+      }
+    );
+
+    if (workspaceError) {
+      return NextResponse.json({ error: workspaceError.message }, { status: 500 });
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Failed" }, { status: 500 });

@@ -121,6 +121,7 @@ export default async function DirectorWorkforcePageShell() {
   });
 
   const payload = await buildWorkforceSurfacePayload({
+    pc_org_id: scope.selected_pc_org_id,
     rows: sourceRows,
   });
 

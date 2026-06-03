@@ -98,6 +98,7 @@ export function WorkforceAddPersonDrawer({
       const params = new URLSearchParams();
       params.set("pc_org_id", pcOrgId ?? "");
       params.set("q", query);
+      params.set("mode", "processing");
 
       const res = await fetch(
         `/api/workforce/person-search?${params.toString()}`

@@ -81,6 +81,10 @@ export type WorkforceSeatHistoryRow = {
 };
 
 export type WorkforceSurfacePayload = {
+  context?: {
+    pc_org_id: string | null;
+  };
+
   rows: WorkforceRow[];
 
   tabs: WorkforceTab[];

@@ -504,6 +504,7 @@ function buildSliceOptions(
 
 export async function buildWorkforceSurfacePayload(args: {
   rows: WorkforceSourceRow[];
+  pc_org_id?: string | null;
 }): Promise<WorkforceSurfacePayload> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -528,6 +529,9 @@ export async function buildWorkforceSurfacePayload(args: {
   const affiliations = await loadAffiliationOptions();
 
   return {
+    context: {
+      pc_org_id: clean(args.pc_org_id),
+    },
     rows,
     tabs: [
       { key: "ALL", label: "All", count: rows.length },

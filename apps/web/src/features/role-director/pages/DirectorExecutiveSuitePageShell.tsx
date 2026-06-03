@@ -111,6 +111,7 @@ export default async function DirectorExecutiveSuitePageShell(props: {
     });
 
     const workforcePayload = await buildWorkforceSurfacePayload({
+      pc_org_id: scope.selected_pc_org_id,
       rows: sourceRows,
     });
 
