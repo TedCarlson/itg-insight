@@ -130,10 +130,10 @@ export async function sendInviteAction(args: {
   setOk(null);
 
   try {
-    const res = await fetch("/api/admin/invite", {
+    const res = await fetch("/api/workforce/app-access/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: trimmed, assignment_id: String(assignmentId) }),
+      body: JSON.stringify({ assignment_id: String(assignmentId) }),
     });
 
     const json = await res.json().catch(() => ({} as any));

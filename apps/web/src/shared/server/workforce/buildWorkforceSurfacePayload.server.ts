@@ -289,6 +289,7 @@ async function loadAffiliationOptions() {
 type WorkforceProfileRow = {
   auth_user_id: string | null;
   person_id: string | null;
+  core_person_id: string | null;
   status: string | null;
 };
 
@@ -339,7 +340,8 @@ function resolveAppAccessStatus(args: {
 }): WorkforceAppAccessStatus {
   if (!hasValidEmail(args.rowEmail)) return "missing_email";
 
-  const profilePersonId = clean(args.profile?.person_id);
+  const profilePersonId =
+    clean(args.profile?.core_person_id) ?? clean(args.profile?.person_id);
   const authUserId = clean(args.profile?.auth_user_id);
 
   if (authUserId && profilePersonId && profilePersonId !== args.rowPersonId) {
@@ -365,8 +367,8 @@ async function enrichRowsWithAppAccess(rows: WorkforceRow[]): Promise<WorkforceR
     await Promise.all([
       admin
         .from("user_profile")
-        .select("auth_user_id, person_id, status")
-        .in("person_id", personIds),
+        .select("auth_user_id, person_id, core_person_id, status")
+        .or(`person_id.in.(${personIds.join(",")}),core_person_id.in.(${personIds.join(",")})`),
       admin
         .from("roster_invite_log")
         .select("person_id, assignment_id, email, invited_at")
@@ -379,7 +381,7 @@ async function enrichRowsWithAppAccess(rows: WorkforceRow[]): Promise<WorkforceR
 
   const profileByPersonId = new Map<string, WorkforceProfileRow>();
   for (const profile of (profiles ?? []) as WorkforceProfileRow[]) {
-    const personId = clean(profile.person_id);
+    const personId = clean(profile.core_person_id) ?? clean(profile.person_id);
     if (!personId || profileByPersonId.has(personId)) continue;
     profileByPersonId.set(personId, profile);
   }
@@ -427,7 +429,7 @@ async function enrichRowsWithAppAccess(rows: WorkforceRow[]): Promise<WorkforceR
       invite_email: clean(invite?.email) ?? row.email,
       invite_last_sent_at: clean(invite?.invited_at),
       invite_accepted_at: clean(auth?.last_sign_in_at),
-      profile_person_id: clean(profile?.person_id),
+      profile_person_id: clean(profile?.core_person_id) ?? clean(profile?.person_id),
     };
   });
 }

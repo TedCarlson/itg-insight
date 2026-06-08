@@ -34,7 +34,7 @@ function shouldForceSetPasswordFromUser(user: any): boolean {
     appMeta.passwordSet === true;
 
   if (passwordSet) return false;
-  if (inviteSource === "person_admin") return true;
+  if (inviteSource) return true;
 
   return false;
 }

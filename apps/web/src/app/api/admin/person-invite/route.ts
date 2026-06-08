@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
     const inviteFromEmail =
       process.env.INVITE_FROM_EMAIL || "Insight <no-reply@mail.teamoptix.io>";
 
-    const redirectTo = `${siteUrl}/auth/callback`;
+    const redirectTo = `${siteUrl}/auth/callback?type=invite&next=/home`;
 
     const { data: linkData, error: linkErr } =
       await admin.auth.admin.generateLink({

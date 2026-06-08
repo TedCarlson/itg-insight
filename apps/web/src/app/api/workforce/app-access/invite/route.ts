@@ -227,8 +227,8 @@ export async function POST(req: NextRequest) {
 
     const { data: existingProfile, error: existingProfileErr } = await admin
       .from("user_profile")
-      .select("auth_user_id, person_id, status")
-      .eq("person_id", personId)
+      .select("auth_user_id, person_id, core_person_id, status")
+      .or(`person_id.eq.${personId},core_person_id.eq.${personId}`)
       .maybeSingle();
 
     if (existingProfileErr) {
@@ -258,7 +258,7 @@ export async function POST(req: NextRequest) {
     }
 
     const siteUrl = getSiteUrl(req);
-    const redirectTo = `${siteUrl}/auth/callback`;
+    const redirectTo = `${siteUrl}/auth/callback?type=invite&next=/home`;
     const inviteFromEmail =
       clean(process.env.INVITE_FROM_EMAIL) ?? "Insight <no-reply@mail.teamoptix.io>";
 
@@ -290,6 +290,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "invite_link_generation_failed" }, { status: 500 });
     }
 
+    const { data: verifiedAuthData, error: verifiedAuthErr } =
+      await admin.auth.admin.getUserById(invitedUserId);
+
+    if (verifiedAuthErr || !verifiedAuthData?.user?.id) {
+      return NextResponse.json(
+        { ok: false, error: "invite_auth_user_not_created" },
+        { status: 500 }
+      );
+    }
+
     const { data: profileConflict, error: conflictErr } = await admin
       .from("user_profile")
       .select("auth_user_id, person_id")
@@ -300,7 +310,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: conflictErr.message }, { status: 500 });
     }
 
-    const conflictPersonId = clean(profileConflict?.person_id);
+    const conflictPersonId =
+      clean((profileConflict as any)?.core_person_id) ?? clean(profileConflict?.person_id);
     if (conflictPersonId && conflictPersonId !== personId) {
       return NextResponse.json(
         { ok: false, error: "profile_mismatch", app_access_status: "profile_mismatch" },
@@ -312,6 +323,7 @@ export async function POST(req: NextRequest) {
       {
         auth_user_id: invitedUserId,
         person_id: personId,
+        core_person_id: personId,
         selected_pc_org_id: pcOrgId,
         status: "pending",
       },

@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Invite user to Supabase Auth ---
-    const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`;
+    const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?type=invite&next=/home`;
 
     const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
