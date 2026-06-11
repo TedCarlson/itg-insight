@@ -81,7 +81,7 @@ const NEW_DROP_EVIDENCE_REQUIREMENTS = [
     sort_order: 10,
     accept: "image/*",
     capture: true,
-    helper: "Capture the tap photo.",
+    helper: "Capture or upload the tap photo.",
   },
   {
     photo_label_key: "ground_block_photo",
@@ -90,7 +90,7 @@ const NEW_DROP_EVIDENCE_REQUIREMENTS = [
     sort_order: 20,
     accept: "image/*",
     capture: true,
-    helper: "Capture the ground block photo.",
+    helper: "Capture or upload the ground block photo.",
   },
   {
     photo_label_key: "bond_point_photo",
@@ -99,7 +99,7 @@ const NEW_DROP_EVIDENCE_REQUIREMENTS = [
     sort_order: 30,
     accept: "image/*",
     capture: true,
-    helper: "Capture the bond point photo.",
+    helper: "Capture or upload the bond point photo.",
   },
   {
     photo_label_key: "workorder_snapshot",
@@ -242,27 +242,12 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     : rule?.min_photo_count ?? 0;
   const isTechSubmissionFlow = workflow.isTechSourced || isTechUploader;
   const requiresReviewBeforeClose =
-    newDropMode || isTechSubmissionFlow || workflow.requiresApprovalToClose;
+    isTechSubmissionFlow || workflow.requiresApprovalToClose;
   const canFinalizeOnEntry =
-    !newDropMode &&
     !isTechSubmissionFlow &&
     !workflow.requiresApprovalToClose &&
     !isFollowupMode &&
     workflow.canAssignFinalVerdict;
-  const phaseLabel = isFollowupMode
-    ? "Field Log Follow-Up"
-    : newDropMode
-      ? "New Drop Submission"
-      : workflow.reviewLabel === "Unavailable"
-        ? "Field Log Draft"
-        : workflow.reviewLabel;
-  const primaryActionLabel = isFollowupMode
-    ? "Resubmit Follow-Up"
-    : newDropMode
-      ? "Submit New Drop for Review"
-      : workflow.primaryActionLabel === "Unavailable"
-        ? "Submit for Review"
-        : workflow.primaryActionLabel;
   const canUseXm =
     !newDropMode && (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
   const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
@@ -665,7 +650,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     <div className="space-y-6">
       <section className="rounded-2xl border bg-card p-4">
         <div className="text-sm text-muted-foreground">
-          {phaseLabel}
+          {isFollowupMode ? "Field Log Follow-Up" : workflow.reviewLabel}
         </div>
         <div className="mt-1 text-lg font-semibold">
           {rule?.category_label ?? categoryKey}
@@ -874,7 +859,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               ? "Saving…"
               : isFollowupMode
                 ? "Resubmit Follow-Up"
-                : primaryActionLabel}
+                : workflow.primaryActionLabel}
         </button>
       ) : (
         <section className="rounded-2xl border bg-card p-4">

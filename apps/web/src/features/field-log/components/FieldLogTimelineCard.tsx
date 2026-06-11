@@ -120,6 +120,92 @@ function milestoneTitle(event: TimelineEvent) {
   return event.event_type.replaceAll("_", " ");
 }
 
+type TimelineBucketKey =
+  | "post_call"
+  | "tnps_response"
+  | "customer_contact"
+  | "coaching"
+  | "client_update"
+  | "internal_note"
+  | "workflow";
+
+const TIMELINE_BUCKETS: Array<{ key: TimelineBucketKey; label: string }> = [
+  { key: "post_call", label: "Post Call Activity" },
+  { key: "tnps_response", label: "TNPS Response Log" },
+  { key: "customer_contact", label: "Customer Contact Log" },
+  { key: "coaching", label: "Coaching Log" },
+  { key: "client_update", label: "Client / Comcast Update Log" },
+  { key: "internal_note", label: "Internal Notes Log" },
+  { key: "workflow", label: "Workflow Log" },
+];
+
+function getBucketKey(event: TimelineEvent): TimelineBucketKey {
+  const explicit = String(event.meta?.log_type ?? event.meta?.bucket ?? "").toLowerCase();
+
+  if (
+    explicit === "post_call" ||
+    explicit === "tnps_response" ||
+    explicit === "customer_contact" ||
+    explicit === "coaching" ||
+    explicit === "client_update" ||
+    explicit === "internal_note" ||
+    explicit === "workflow"
+  ) {
+    return explicit;
+  }
+
+  const type = String(event.event_type ?? "").toLowerCase();
+
+  if (type.includes("tnps") || type.includes("detractor") || type.includes("passive")) {
+    return "tnps_response";
+  }
+
+  if (type.includes("contact") || type.includes("customer")) {
+    return "customer_contact";
+  }
+
+  if (type.includes("coach") || type.includes("lesson")) {
+    return "coaching";
+  }
+
+  if (type.includes("client") || type.includes("comcast")) {
+    return "client_update";
+  }
+
+  if (type.includes("note")) {
+    return "internal_note";
+  }
+
+  if (type.includes("post_call")) {
+    return "post_call";
+  }
+
+  return "workflow";
+}
+
+function bucketTimeline(timeline: TimelineEvent[]) {
+  const ordered = sortTimeline(timeline);
+  const grouped = new Map<TimelineBucketKey, TimelineEvent[]>();
+
+  for (const bucket of TIMELINE_BUCKETS) {
+    grouped.set(bucket.key, []);
+  }
+
+  for (const event of ordered) {
+    const key = getBucketKey(event);
+    grouped.set(key, [...(grouped.get(key) ?? []), event]);
+  }
+
+  return TIMELINE_BUCKETS.map((bucket) => ({
+    ...bucket,
+    events: grouped.get(bucket.key) ?? [],
+  })).filter((bucket) => bucket.events.length > 0);
+}
+
+function eventTitle(event: TimelineEvent) {
+  return milestoneTitle(event).replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function FieldLogTimelineCard(props: {
   timeline: TimelineEvent[];
   loading: boolean;
@@ -257,7 +343,39 @@ export function FieldLogTimelineCard(props: {
       </button>
 
       {!open ? null : (
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-4">
+          {bucketTimeline(timeline).map((bucket) => (
+            <div key={bucket.key} className="rounded-xl border bg-muted/20 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">{bucket.label}</div>
+                <div className="text-xs text-muted-foreground">{bucket.events.length}</div>
+              </div>
+
+              <div className="space-y-3">
+                {bucket.events.map((event) => (
+                  <div key={event.event_id} className="rounded-lg bg-background p-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-medium">{eventTitle(event)}</div>
+                      <div className="shrink-0 text-xs text-muted-foreground">
+                        {fmtShortTime(event.event_at)}
+                      </div>
+                    </div>
+
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {fmtDate(event.event_at)}
+                      {event.actor_full_name ? ` • ${event.actor_full_name}` : ""}
+                    </div>
+
+                    {event.note ? (
+                      <div className="mt-2 whitespace-pre-wrap text-sm">{event.note}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="border-t pt-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border p-3">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -330,6 +448,7 @@ export function FieldLogTimelineCard(props: {
                 {row.by ? <div className="mt-1 text-muted-foreground">By {row.by}</div> : null}
               </div>
             ))}
+          </div>
           </div>
         </div>
       )}

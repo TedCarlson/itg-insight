@@ -40,6 +40,8 @@ export default async function FieldLogDraftPage(props: {
           initialGpsLng={data.gps_lng ?? null}
           initialGpsAccuracyM={data.gps_accuracy_m ?? null}
           initialLocationCapturedAt={data.location_captured_at ?? null}
+          subjectFullName={data.subject_full_name ?? null}
+          subjectTechId={data.subject_tech_id ?? null}
         />
       </FieldLogRuntimeGate>
     </FieldLogRuntimeProvider>

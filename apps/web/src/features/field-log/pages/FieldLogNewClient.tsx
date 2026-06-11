@@ -23,14 +23,31 @@ function canAssignSubjectTech(accessPass: any) {
   if (!accessPass) return false;
   if (accessPass.is_admin || accessPass.is_app_owner || accessPass.is_owner) return true;
 
-  const perms = accessPass.permissions ?? [];
-  return perms.some(
-    (p: string) =>
-      p.includes("manage") ||
-      p === "roster_view" ||
-      p === "dispatch_view" ||
-      p === "metrics_view" ||
-      p === "route_lock_view",
+  const haystack = [
+    ...(Array.isArray(accessPass.permissions) ? accessPass.permissions : []),
+    ...(Array.isArray(accessPass.roles) ? accessPass.roles : []),
+    accessPass.role,
+    accessPass.role_key,
+    accessPass.title,
+    accessPass.position_title,
+    accessPass.relationship_type,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  return haystack.some(
+    (value) =>
+      value.includes("manage") ||
+      value.includes("supervisor") ||
+      value.includes("lead") ||
+      value.includes("itg supervisor") ||
+      value.includes("bp lead") ||
+      value.includes("manager") ||
+      value.includes("owner") ||
+      value === "roster_view" ||
+      value === "dispatch_view" ||
+      value === "metrics_view" ||
+      value === "route_lock_view",
   );
 }
 

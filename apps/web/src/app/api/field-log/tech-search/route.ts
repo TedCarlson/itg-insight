@@ -26,10 +26,16 @@ function isActiveWindow(row: any, today: string) {
 function pickBestAssignment(assignments: any[], today: string) {
   if (!assignments?.length) return null;
 
-  const current = assignments.filter((a) => isActiveWindow(a, today) && a?.tech_id);
-  const pool = current.length ? current : assignments.filter((a) => a?.tech_id);
+  const current = assignments.filter((a) => isActiveWindow(a, today));
+  const pool = current.length ? current : assignments;
 
-  pool.sort((a, b) => String(b?.start_date ?? "").localeCompare(String(a?.start_date ?? "")));
+  pool.sort((a, b) => {
+    const aHasTech = a?.tech_id ? 1 : 0;
+    const bHasTech = b?.tech_id ? 1 : 0;
+    if (aHasTech !== bHasTech) return bHasTech - aHasTech;
+    return String(b?.start_date ?? "").localeCompare(String(a?.start_date ?? ""));
+  });
+
   return pool[0] ?? null;
 }
 
@@ -138,7 +144,7 @@ export async function GET(req: NextRequest) {
         tech_id: best?.tech_id ? String(best.tech_id).trim() : null,
       };
     })
-    .filter((r) => r.full_name || r.tech_id)
+    .filter((r) => r.person_id && (r.full_name || r.tech_id))
     .filter((r) => {
       const hay = `${r.full_name ?? ""} ${r.tech_id ?? ""}`.toLowerCase();
       return hay.includes(q.toLowerCase());

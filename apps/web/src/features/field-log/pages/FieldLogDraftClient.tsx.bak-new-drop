@@ -71,69 +71,6 @@ type SelfTechResponse = {
   error?: string;
 };
 
-const NEW_DROP_CATEGORY_KEY = "new_drop";
-
-const NEW_DROP_EVIDENCE_REQUIREMENTS = [
-  {
-    photo_label_key: "tap_photo",
-    label: "Tap Photo",
-    required: true,
-    sort_order: 10,
-    accept: "image/*",
-    capture: true,
-    helper: "Capture the tap photo.",
-  },
-  {
-    photo_label_key: "ground_block_photo",
-    label: "Ground Block Photo",
-    required: true,
-    sort_order: 20,
-    accept: "image/*",
-    capture: true,
-    helper: "Capture the ground block photo.",
-  },
-  {
-    photo_label_key: "bond_point_photo",
-    label: "Bond Point Photo",
-    required: true,
-    sort_order: 30,
-    accept: "image/*",
-    capture: true,
-    helper: "Capture the bond point photo.",
-  },
-  {
-    photo_label_key: "workorder_snapshot",
-    label: "Workorder Snapshot",
-    required: true,
-    sort_order: 40,
-    accept: "image/*,application/pdf",
-    capture: false,
-    helper: "Upload the workorder snapshot from the mobile device.",
-  },
-] as const;
-
-function isNewDropCategory(categoryKey: string) {
-  return categoryKey === NEW_DROP_CATEGORY_KEY;
-}
-
-function getFileExtension(fileName: string) {
-  const idx = fileName.lastIndexOf(".");
-  if (idx < 0) return "";
-  return fileName.slice(idx);
-}
-
-function makeEvidenceFileName(params: {
-  categoryKey: string;
-  reportId: string;
-  photoLabelKey: string | null;
-  originalFileName: string;
-}) {
-  const { categoryKey, reportId, photoLabelKey, originalFileName } = params;
-  const extension = getFileExtension(originalFileName);
-  const evidenceKey = photoLabelKey ?? "unlabeled";
-  return `${categoryKey}__${evidenceKey}__${reportId}__${Date.now()}${extension}`;
-}
-
 function makeStoragePath(reportId: string, fileName: string) {
   const safeName = fileName.replace(/\s+/g, "-");
   return `${reportId}/${Date.now()}-${safeName}`;
@@ -236,56 +173,20 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     error: null,
   });
 
-  const newDropMode = isNewDropCategory(categoryKey);
-  const requiredPhotoCount = newDropMode
-    ? NEW_DROP_EVIDENCE_REQUIREMENTS.length
-    : rule?.min_photo_count ?? 0;
+  const requiredPhotoCount = rule?.min_photo_count ?? 0;
   const isTechSubmissionFlow = workflow.isTechSourced || isTechUploader;
   const requiresReviewBeforeClose =
-    newDropMode || isTechSubmissionFlow || workflow.requiresApprovalToClose;
+    isTechSubmissionFlow || workflow.requiresApprovalToClose;
   const canFinalizeOnEntry =
-    !newDropMode &&
     !isTechSubmissionFlow &&
     !workflow.requiresApprovalToClose &&
     !isFollowupMode &&
     workflow.canAssignFinalVerdict;
-  const phaseLabel = isFollowupMode
-    ? "Field Log Follow-Up"
-    : newDropMode
-      ? "New Drop Submission"
-      : workflow.reviewLabel === "Unavailable"
-        ? "Field Log Draft"
-        : workflow.reviewLabel;
-  const primaryActionLabel = isFollowupMode
-    ? "Resubmit Follow-Up"
-    : newDropMode
-      ? "Submit New Drop for Review"
-      : workflow.primaryActionLabel === "Unavailable"
-        ? "Submit for Review"
-        : workflow.primaryActionLabel;
-  const canUseXm =
-    !newDropMode && (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
+  const canUseXm = (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
   const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
-  const photoRequirements = newDropMode
-    ? NEW_DROP_EVIDENCE_REQUIREMENTS
-    : rule?.photo_requirements ?? [];
+  const photoRequirements = rule?.photo_requirements ?? [];
   const locationRequired = !!rule?.location_required;
   const totalPhotoCount = existingPhotoCount + photos.length;
-  const newDropLoadedKeys = useMemo(() => {
-    return new Set(
-      photos
-        .map((photo) => photo.photoLabelKey)
-        .filter((value): value is string => !!value),
-    );
-  }, [photos]);
-  const newDropMissingEvidence = useMemo(() => {
-    if (!newDropMode) return [];
-    return NEW_DROP_EVIDENCE_REQUIREMENTS.filter(
-      (item) => !newDropLoadedKeys.has(item.photo_label_key),
-    );
-  }, [newDropLoadedKeys, newDropMode]);
-  const newDropEvidenceComplete =
-    !newDropMode || newDropMissingEvidence.length === 0;
 
   const photoCountText = useMemo(() => {
     return `${totalPhotoCount}/${requiredPhotoCount}`;
@@ -348,9 +249,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         jobNumber: jobNumber.trim(),
         jobType: jobType || null,
         comment: comment.trim() || null,
-        evidenceDeclared:
-          !newDropMode && useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
-        xmDeclared: !newDropMode && useXm,
+        evidenceDeclared: useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
+        xmDeclared: useXm,
         gpsLat,
         gpsLng,
         gpsAccuracyM,
@@ -451,24 +351,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   }
 
   async function addAttachment(file: File, photoLabelKey: string | null) {
-    const uploadFileName = newDropMode
-      ? makeEvidenceFileName({
-          categoryKey,
-          reportId,
-          photoLabelKey,
-          originalFileName: file.name,
-        })
-      : file.name;
-
-    const renamedFile =
-      newDropMode && uploadFileName !== file.name
-        ? new File([file], uploadFileName, {
-            type: file.type || "application/octet-stream",
-            lastModified: file.lastModified,
-          })
-        : file;
-
-    const { dbFilePath } = await uploadFileToStorage(renamedFile);
+    const { dbFilePath } = await uploadFileToStorage(file);
 
     const res = await fetch("/api/field-log/attachment", {
       method: "POST",
@@ -477,9 +360,9 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         reportId,
         photoLabelKey,
         filePath: dbFilePath,
-        fileName: uploadFileName,
-        mimeType: renamedFile.type || "application/octet-stream",
-        fileSizeBytes: renamedFile.size,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        fileSizeBytes: file.size,
       }),
     });
 
@@ -491,8 +374,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     setPhotos((prev) => [
       ...prev,
       {
-        id: `${Date.now()}-${uploadFileName}`,
-        fileName: uploadFileName,
+        id: `${Date.now()}-${file.name}`,
+        fileName: file.name,
         filePath: dbFilePath,
         photoLabelKey,
       },
@@ -550,16 +433,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       return;
     }
 
-    if (newDropMode && !newDropEvidenceComplete) {
-      alert(
-        `Missing New Drop evidence:\n\n${newDropMissingEvidence
-          .map((item) => `- ${item.label}`)
-          .join("\n")}`,
-      );
-      return;
-    }
-
-    if (!newDropMode && !useXm && totalPhotoCount < requiredPhotoCount) {
+    if (!useXm && totalPhotoCount < requiredPhotoCount) {
       alert(`At least ${requiredPhotoCount} photo(s) required.`);
       return;
     }
@@ -611,13 +485,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         : {
             reportId,
             comment: comment.trim() || null,
-            evidenceDeclared:
-              !newDropMode && useXm
-                ? "xm_platform"
-                : totalPhotoCount > 0
-                  ? "field_upload"
-                  : "none",
-            xmDeclared: !newDropMode && useXm,
+            evidenceDeclared: useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
+            xmDeclared: useXm,
             gpsLat: activeLocation.gpsLat,
             gpsLng: activeLocation.gpsLng,
             gpsAccuracyM: activeLocation.gpsAccuracyM,
@@ -665,13 +534,25 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     <div className="space-y-6">
       <section className="rounded-2xl border bg-card p-4">
         <div className="text-sm text-muted-foreground">
-          {phaseLabel}
+          {isFollowupMode ? "Field Log Follow-Up" : workflow.reviewLabel}
         </div>
         <div className="mt-1 text-lg font-semibold">
           {rule?.category_label ?? categoryKey}
           {rule?.subcategory_label ? ` • ${rule.subcategory_label}` : ""}
         </div>
       </section>
+
+      {(subjectFullName || subjectTechId) ? (
+        <section className="rounded-2xl border bg-card p-4">
+          <div className="text-sm font-semibold">Subject Technician</div>
+          <div className="mt-2 text-lg font-semibold">
+            {subjectFullName ?? "Unknown Technician"}
+          </div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            Tech ID: <span className="font-medium text-foreground">{subjectTechId ?? "—"}</span>
+          </div>
+        </section>
+      ) : null}
 
       {(subjectFullName || subjectTechId) ? (
         <section className="rounded-2xl border bg-card p-4">
@@ -746,7 +627,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           <div>
             <div className="text-base font-semibold">Evidence</div>
             <div className="text-sm text-muted-foreground">
-              {newDropMode ? "Required evidence items: " : "Photos required: "}
+              Photos required:{" "}
               <span className="font-medium text-foreground">{requiredPhotoCount}</span>
             </div>
           </div>
@@ -785,15 +666,12 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
                   <div className="font-medium">{item.label}</div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     {item.required ? "Required" : "Optional"}
-                    {"helper" in item && item.helper ? ` • ${item.helper}` : ""}
                   </div>
                   <input
                     type="file"
-                    accept={"accept" in item ? item.accept : "image/*"}
-                    {...(isTechUploader && (!("capture" in item) || item.capture)
-                      ? { capture: "environment" as const }
-                      : {})}
-                    {...(newDropMode ? {} : { multiple: true })}
+                    accept="image/*"
+                    {...(isTechUploader ? { capture: "environment" as const } : {})}
+                    multiple
                     className="mt-3 block w-full text-sm"
                     onChange={(e) => void onPickFiles(e, item.photo_label_key)}
                   />
@@ -813,22 +691,9 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               </label>
             )}
 
-            {newDropMode && newDropMissingEvidence.length > 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
-                <div className="mb-2 font-medium text-amber-900">Still Required</div>
-                <div className="space-y-1 text-amber-800">
-                  {newDropMissingEvidence.map((item) => (
-                    <div key={item.photo_label_key}>{item.label}</div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             {photos.length > 0 ? (
               <div className="rounded-xl bg-muted/40 p-3 text-sm">
-                <div className="mb-2 font-medium">
-                  {newDropMode ? "Added Evidence" : "Added Photos"}
-                </div>
+                <div className="mb-2 font-medium">Added Photos</div>
                 <div className="space-y-1 text-muted-foreground">
                   {photos.map((photo) => (
                     <div key={photo.id}>{photo.fileName}</div>
@@ -857,12 +722,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       {requiresReviewBeforeClose || isFollowupMode ? (
         <button
           type="button"
-          disabled={
-            saving ||
-            submitting ||
-            (locationRequired && capturingLocation) ||
-            (newDropMode && !newDropEvidenceComplete)
-          }
+          disabled={saving || submitting || (locationRequired && capturingLocation)}
           onClick={() => void onSubmit()}
           className="w-full rounded-2xl bg-blue-600 px-4 py-4 font-semibold text-white disabled:opacity-60"
         >
@@ -874,7 +734,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               ? "Saving…"
               : isFollowupMode
                 ? "Resubmit Follow-Up"
-                : primaryActionLabel}
+                : workflow.primaryActionLabel}
         </button>
       ) : (
         <section className="rounded-2xl border bg-card p-4">
