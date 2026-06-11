@@ -8,6 +8,7 @@ import { useOrg } from "@/state/org";
 import { useAccessPass } from "@/state/access";
 import { SubjectTechPicker } from "../components/SubjectTechPicker";
 import type { TechSearchRow } from "../hooks/useTechSearch";
+import { useFieldLogEntrySource } from "../workflow/useFieldLogEntrySource";
 
 type DraftResponse = {
   ok: boolean;
@@ -103,6 +104,7 @@ export default function FieldLogNewClient() {
   const { userId } = useSession();
   const { selectedOrgId } = useOrg();
   const { accessPass } = useAccessPass();
+  const entrySource = useFieldLogEntrySource();
 
   const [categoryKey, setCategoryKey] = useState<string | null>(null);
   const [subcategoryKey, setSubcategoryKey] = useState<string | null>(null);
@@ -117,8 +119,9 @@ export default function FieldLogNewClient() {
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
 
   const showSubjectTechPicker = useMemo(() => {
-    return canAssignSubjectTech(accessPass);
-  }, [accessPass]);
+    if (entrySource === "TECH") return false;
+    return true;
+  }, [entrySource]);
 
   async function createDraft() {
     if (!categoryKey) return;
