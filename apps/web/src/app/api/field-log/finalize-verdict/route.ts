@@ -82,8 +82,11 @@ export async function POST(req: NextRequest) {
 
   const detail = detailRes.data as { created_by_user_id?: string | null; status?: string | null };
 
-  if (String(detail.created_by_user_id ?? "") === actingUserId) {
-    return forbidden("Self-verdict is not allowed.");
+  const isSelfVerdict = String(detail.created_by_user_id ?? "") === actingUserId;
+  const selfAllowedVerdicts: Verdict[] = ["pass", "no_action"];
+
+  if (isSelfVerdict && !selfAllowedVerdicts.includes(verdict)) {
+    return forbidden("Self-rejection is not allowed.");
   }
 
   const verdictReady =

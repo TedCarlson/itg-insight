@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseServer } from "@/shared/data/supabase/server";
+import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import { requireAccessPass } from "@/shared/access/requireAccessPass";
 import type { FieldLogDetailPayload } from "@/features/field-log/lib/fieldLogDetail.types";
 
 export const runtime = "nodejs";
 
-type QueueRow = {
+type ApprovedReportRow = {
   report_id: string;
+  approved_at: string | null;
   submitted_at: string | null;
+  created_at: string | null;
+  subject_full_name: string | null;
+  subject_tech_id: string | null;
 };
 
 function badRequest(message: string) {
@@ -40,32 +44,27 @@ export async function GET(req: NextRequest) {
 
   const startIso = `${start}T00:00:00.000Z`;
   const endIso = `${end}T23:59:59.999Z`;
-  const startMs = asTime(startIso);
-  const endMs = asTime(endIso);
 
-  const supabase = await supabaseServer();
+  const supabase = supabaseAdmin();
 
-  const { data: queueRows, error: queueError } = await supabase.rpc(
-    "field_log_get_review_queue",
-    {
-      p_pc_org_id: pcOrgId,
-      p_status: "approved",
-      p_category_key: "new_drop",
-      p_job_number: null,
-    },
-  );
+  const { data: approvedRows, error: approvedError } = await supabase
+    .from("field_log_report")
+    .select("report_id,approved_at,submitted_at,created_at,subject_full_name,subject_tech_id")
+    .eq("pc_org_id", pcOrgId)
+    .eq("category_key", "new_drop")
+    .in("status", ["approved", "denied", "rejected"])
+    .gte("approved_at", startIso)
+    .lte("approved_at", endIso)
+    .order("approved_at", { ascending: true });
 
-  if (queueError) {
+  if (approvedError) {
     return NextResponse.json(
-      { ok: false, error: queueError.message || "Failed to load New Drop report rows." },
+      { ok: false, error: approvedError.message || "Failed to load New Drop report rows." },
       { status: 500 },
     );
   }
 
-  const rows = ((queueRows ?? []) as QueueRow[]).filter((row) => {
-    const t = asTime(row.submitted_at);
-    return t >= startMs && t <= endMs;
-  });
+  const rows = (approvedRows ?? []) as ApprovedReportRow[];
 
   const details: FieldLogDetailPayload[] = [];
 
@@ -74,14 +73,49 @@ export async function GET(req: NextRequest) {
       p_report_id: row.report_id,
     });
 
-    if (!error && data) {
-      details.push(data as FieldLogDetailPayload);
+    if (error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.message || "Failed to load New Drop report detail.",
+          meta: {
+            report_id: row.report_id,
+            approved_row_count: rows.length,
+          },
+        },
+        { status: 500 },
+      );
     }
+
+    const detail = Array.isArray(data) ? data[0] : data;
+
+    if (!detail) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "New Drop approved row found, but detail payload was empty.",
+          meta: {
+            report_id: row.report_id,
+            approved_row_count: rows.length,
+          },
+        },
+        { status: 500 },
+      );
+    }
+
+    details.push({
+      ...(detail as FieldLogDetailPayload),
+      subject_full_name: row.subject_full_name,
+      subject_tech_id: row.subject_tech_id,
+    } as FieldLogDetailPayload & {
+      subject_full_name: string | null;
+      subject_tech_id: string | null;
+    });
   }
 
   details.sort((a, b) => {
-    const aTime = asTime(a.submitted_at ?? a.created_at);
-    const bTime = asTime(b.submitted_at ?? b.created_at);
+    const aTime = asTime(a.approved_at ?? a.submitted_at ?? a.created_at);
+    const bTime = asTime(b.approved_at ?? b.submitted_at ?? b.created_at);
     return aTime - bTime;
   });
 

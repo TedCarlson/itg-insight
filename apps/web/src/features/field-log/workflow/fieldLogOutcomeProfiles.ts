@@ -58,6 +58,16 @@ export const FIELD_LOG_OUTCOME_PROFILES: Record<
     ],
   },
 
+  new_drop: {
+    primaryActions: [
+      {
+        action: "pass",
+        label: "Approve New Drop",
+        tone: "success",
+      },
+    ],
+  },
+
   epi: {
     primaryActions: [
       {

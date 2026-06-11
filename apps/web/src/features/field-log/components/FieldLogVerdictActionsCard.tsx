@@ -54,6 +54,7 @@ export function FieldLogVerdictActionsCard(props: FieldLogVerdictActionsCardProp
   if (workflow.isTechSourced || !workflow.canAssignFinalVerdict) return null;
 
   const profile = getFieldLogOutcomeProfile(categoryKey);
+  const isNewDrop = categoryKey === "new_drop";
   const xmRequired = xmAllowed && (xmDeclared || evidenceDeclared === "xm_platform");
   const effectiveXmLink =
     String(xmLink ?? "").trim() || String(existingXmLink ?? "").trim();
@@ -61,10 +62,14 @@ export function FieldLogVerdictActionsCard(props: FieldLogVerdictActionsCardProp
 
   return (
     <section className="rounded-2xl border bg-card p-5">
-      <div className="text-base font-semibold">{workflow.reviewLabel}</div>
+      <div className="text-base font-semibold">
+        {isNewDrop ? "New Drop Review" : workflow.reviewLabel}
+      </div>
 
       <div className="mt-2 text-sm text-muted-foreground">
-        Non-tech entries can be finalized during entry and remain auditable.
+        {isNewDrop
+          ? "Review the submitted New Drop evidence and approve the record."
+          : "Review and finalize this non-tech Field Log record."}
       </div>
 
       {xmRequired ? (
@@ -115,14 +120,6 @@ export function FieldLogVerdictActionsCard(props: FieldLogVerdictActionsCardProp
           </button>
         ))}
 
-        <button
-          type="button"
-          disabled={busy || !note.trim()}
-          onClick={() => void onFinalizeVerdict("closed_by_leadership")}
-          className={buttonClass("danger")}
-        >
-          Close by Leadership
-        </button>
       </div>
     </section>
   );
