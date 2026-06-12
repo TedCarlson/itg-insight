@@ -20,6 +20,17 @@ function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+const CONDUIT_PULL_CATEGORY_KEY = "conduit_pull_install";
+
+function isConduitPullCategory(categoryKey: string | null) {
+  return categoryKey === CONDUIT_PULL_CATEGORY_KEY;
+}
+
+function requiredPhotoCountForCategory(categoryKey: string | null, fallback: number) {
+  if (isConduitPullCategory(categoryKey)) return 5;
+  return fallback;
+}
+
 function canAssignSubjectTech(accessPass: any) {
   if (!accessPass) return false;
   if (accessPass.is_admin || accessPass.is_app_owner || accessPass.is_owner) return true;
@@ -117,6 +128,9 @@ export default function FieldLogNewClient() {
 
   const subcategories = getSubcategoriesForCategory(categoryKey);
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
+  const conduitPullMode = isConduitPullCategory(categoryKey);
+  const jobTypeLocked = conduitPullMode;
+  const displayedPhotoCount = requiredPhotoCountForCategory(categoryKey, rule?.min_photo_count ?? 0);
 
   const showSubjectTechPicker = useMemo(() => {
     if (entrySource === "TECH") return false;
@@ -207,6 +221,7 @@ export default function FieldLogNewClient() {
               onClick={() => {
                 setCategoryKey(cat.category_key);
                 setSubcategoryKey(null);
+                setJobType(isConduitPullCategory(cat.category_key) ? "install" : "");
               }}
             />
           ))}
@@ -281,7 +296,10 @@ export default function FieldLogNewClient() {
                 key={type.key}
                 selected={jobType === type.key}
                 title={type.label}
-                onClick={() => setJobType(type.key)}
+                onClick={() => {
+                  if (jobTypeLocked) return;
+                  setJobType(type.key);
+                }}
               />
             ))}
           </div>
@@ -304,7 +322,7 @@ export default function FieldLogNewClient() {
 
           <div className="mt-3 space-y-1 text-muted-foreground">
             <div>
-              Photos required: <span className="font-medium text-foreground">{rule.min_photo_count}</span>
+              Photos required: <span className="font-medium text-foreground">{displayedPhotoCount}</span>
             </div>
             {rule.xm_allowed ? (
               <div>

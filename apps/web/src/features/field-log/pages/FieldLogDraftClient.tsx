@@ -72,6 +72,7 @@ type SelfTechResponse = {
 };
 
 const NEW_DROP_CATEGORY_KEY = "new_drop";
+const CONDUIT_PULL_CATEGORY_KEY = "conduit_pull_install";
 
 const NEW_DROP_EVIDENCE_REQUIREMENTS = [
   {
@@ -112,8 +113,70 @@ const NEW_DROP_EVIDENCE_REQUIREMENTS = [
   },
 ] as const;
 
+const CONDUIT_PULL_EVIDENCE_REQUIREMENTS = [
+  {
+    photo_label_key: "tap_photo",
+    label: "Tap Photo",
+    required: true,
+    sort_order: 10,
+    accept: "image/*",
+    capture: true,
+    helper: "Capture the tap photo.",
+  },
+  {
+    photo_label_key: "ground_block_photo",
+    label: "Ground Block Photo",
+    required: true,
+    sort_order: 20,
+    accept: "image/*",
+    capture: true,
+    helper: "Capture the ground block photo.",
+  },
+  {
+    photo_label_key: "bond_point_photo",
+    label: "Bond Point Photo",
+    required: true,
+    sort_order: 30,
+    accept: "image/*",
+    capture: true,
+    helper: "Capture the bond point photo.",
+  },
+  {
+    photo_label_key: "conduit_line_entry_photo",
+    label: "Conduit Line Entry Photo",
+    required: true,
+    sort_order: 40,
+    accept: "image/*",
+    capture: true,
+    helper: "Capture the conduit line entry point.",
+  },
+  {
+    photo_label_key: "conduit_line_exit_photo",
+    label: "Conduit Line Exit Photo",
+    required: true,
+    sort_order: 50,
+    accept: "image/*",
+    capture: true,
+    helper: "Capture the conduit line exit point.",
+  },
+] as const;
+
 function isNewDropCategory(categoryKey: string) {
   return categoryKey === NEW_DROP_CATEGORY_KEY;
+}
+
+function isConduitPullCategory(categoryKey: string) {
+  return categoryKey === CONDUIT_PULL_CATEGORY_KEY;
+}
+
+function isSpecialBillingCategory(categoryKey: string) {
+  return isNewDropCategory(categoryKey) || isConduitPullCategory(categoryKey);
+}
+
+function getSpecialEvidenceRequirements(categoryKey: string) {
+  if (isNewDropCategory(categoryKey)) return NEW_DROP_EVIDENCE_REQUIREMENTS;
+  if (isConduitPullCategory(categoryKey)) return CONDUIT_PULL_EVIDENCE_REQUIREMENTS;
+  return [];
 }
 
 function getFileExtension(fileName: string) {
@@ -170,6 +233,60 @@ function toCapturedAtMs(value: string | null) {
   if (!value) return null;
   const ms = new Date(value).getTime();
   return Number.isNaN(ms) ? null : ms;
+}
+
+
+const SPECIAL_BILLING_CATEGORIES = new Set(["new_drop", "conduit_pull_install"]);
+
+async function prepareSpecialBillingPacket(reportId: string, categoryKey: string) {
+  const packetPath =
+    categoryKey === "conduit_pull_install"
+      ? "/api/field-log/conduit-pull/job-packet"
+      : "/api/field-log/new-drop/job-packet";
+
+  const packetRes = await fetch(`${packetPath}?report_id=${encodeURIComponent(reportId)}`, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!packetRes.ok) {
+    let message = "Field Log approved, but billing PDF generation failed.";
+    try {
+      const json = await packetRes.json();
+      message = json?.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+
+  const blob = await packetRes.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+
+  const disposition = packetRes.headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  a.download = match?.[1] ?? `FieldLog_${reportId}.pdf`;
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+
+  const markPath =
+    categoryKey === "conduit_pull_install"
+      ? "/api/field-log/conduit-pull/mark-prepared"
+      : "/api/field-log/new-drop/mark-prepared";
+
+  const markRes = await fetch(markPath, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reportId }),
+  });
+
+  const markJson = await markRes.json().catch(() => null);
+  if (!markRes.ok || markJson?.ok === false) {
+    throw new Error(markJson?.error || "Billing PDF downloaded, but prepared status was not recorded.");
+  }
 }
 
 export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
@@ -237,14 +354,17 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   });
 
   const newDropMode = isNewDropCategory(categoryKey);
-  const requiredPhotoCount = newDropMode
-    ? NEW_DROP_EVIDENCE_REQUIREMENTS.length
+  const conduitPullMode = isConduitPullCategory(categoryKey);
+  const specialBillingMode = isSpecialBillingCategory(categoryKey);
+  const specialEvidenceRequirements = getSpecialEvidenceRequirements(categoryKey);
+
+  const requiredPhotoCount = specialBillingMode
+    ? specialEvidenceRequirements.length
     : rule?.min_photo_count ?? 0;
   const isTechSubmissionFlow = workflow.isTechSourced || isTechUploader;
   const requiresReviewBeforeClose =
-    newDropMode || isTechSubmissionFlow || workflow.requiresApprovalToClose;
+    specialBillingMode || isTechSubmissionFlow || workflow.requiresApprovalToClose;
   const canFinalizeOnEntry =
-    !newDropMode &&
     !isTechSubmissionFlow &&
     !workflow.requiresApprovalToClose &&
     !isFollowupMode &&
@@ -258,16 +378,20 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         : workflow.reviewLabel;
   const primaryActionLabel = isFollowupMode
     ? "Resubmit Follow-Up"
-    : newDropMode
-      ? "Submit New Drop for Review"
-      : workflow.primaryActionLabel === "Unavailable"
+    : specialBillingMode && !isTechSubmissionFlow
+      ? "Submit with Approval"
+      : newDropMode
+        ? "Submit New Drop for Review"
+        : conduitPullMode
+          ? "Submit Conduit Pull for Review"
+          : workflow.primaryActionLabel === "Unavailable"
         ? "Submit for Review"
         : workflow.primaryActionLabel;
   const canUseXm =
-    !newDropMode && (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
+    !specialBillingMode && (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
   const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
-  const photoRequirements = newDropMode
-    ? NEW_DROP_EVIDENCE_REQUIREMENTS
+  const photoRequirements = specialBillingMode
+    ? specialEvidenceRequirements
     : rule?.photo_requirements ?? [];
   const locationRequired = !!rule?.location_required;
   const totalPhotoCount = existingPhotoCount + photos.length;
@@ -279,13 +403,13 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     );
   }, [photos]);
   const newDropMissingEvidence = useMemo(() => {
-    if (!newDropMode) return [];
-    return NEW_DROP_EVIDENCE_REQUIREMENTS.filter(
+    if (!specialBillingMode) return [];
+    return specialEvidenceRequirements.filter(
       (item) => !newDropLoadedKeys.has(item.photo_label_key),
     );
-  }, [newDropLoadedKeys, newDropMode]);
+  }, [newDropLoadedKeys, specialBillingMode, specialEvidenceRequirements]);
   const newDropEvidenceComplete =
-    !newDropMode || newDropMissingEvidence.length === 0;
+    !specialBillingMode || newDropMissingEvidence.length === 0;
 
   const photoCountText = useMemo(() => {
     return `${totalPhotoCount}/${requiredPhotoCount}`;
@@ -349,8 +473,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         jobType: jobType || null,
         comment: comment.trim() || null,
         evidenceDeclared:
-          !newDropMode && useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
-        xmDeclared: !newDropMode && useXm,
+          !specialBillingMode && useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
+        xmDeclared: !specialBillingMode && useXm,
         gpsLat,
         gpsLng,
         gpsAccuracyM,
@@ -451,7 +575,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   }
 
   async function addAttachment(file: File, photoLabelKey: string | null) {
-    const uploadFileName = newDropMode
+    const uploadFileName = specialBillingMode
       ? makeEvidenceFileName({
           categoryKey,
           reportId,
@@ -461,7 +585,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       : file.name;
 
     const renamedFile =
-      newDropMode && uploadFileName !== file.name
+      specialBillingMode && uploadFileName !== file.name
         ? new File([file], uploadFileName, {
             type: file.type || "application/octet-stream",
             lastModified: file.lastModified,
@@ -550,16 +674,16 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       return;
     }
 
-    if (newDropMode && !newDropEvidenceComplete) {
+    if (specialBillingMode && !newDropEvidenceComplete) {
       alert(
-        `Missing New Drop evidence:\n\n${newDropMissingEvidence
+        `Missing required evidence:\n\n${newDropMissingEvidence
           .map((item) => `- ${item.label}`)
           .join("\n")}`,
       );
       return;
     }
 
-    if (!newDropMode && !useXm && totalPhotoCount < requiredPhotoCount) {
+    if (!specialBillingMode && !useXm && totalPhotoCount < requiredPhotoCount) {
       alert(`At least ${requiredPhotoCount} photo(s) required.`);
       return;
     }
@@ -594,6 +718,14 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           throw new Error(finalizeJson.error || "Failed to finalize Field Log verdict.");
         }
 
+        if (specialBillingMode && (verdict ?? "pass") === "pass") {
+          try {
+            await prepareSpecialBillingPacket(reportId, categoryKey);
+          } catch (packetError) {
+            alert(packetError instanceof Error ? packetError.message : "Approved, but billing packet failed.");
+          }
+        }
+
         window.location.href = completionHref;
         return;
       }
@@ -612,12 +744,12 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
             reportId,
             comment: comment.trim() || null,
             evidenceDeclared:
-              !newDropMode && useXm
+              !specialBillingMode && useXm
                 ? "xm_platform"
                 : totalPhotoCount > 0
                   ? "field_upload"
                   : "none",
-            xmDeclared: !newDropMode && useXm,
+            xmDeclared: !specialBillingMode && useXm,
             gpsLat: activeLocation.gpsLat,
             gpsLng: activeLocation.gpsLng,
             gpsAccuracyM: activeLocation.gpsAccuracyM,
@@ -746,7 +878,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           <div>
             <div className="text-base font-semibold">Evidence</div>
             <div className="text-sm text-muted-foreground">
-              {newDropMode ? "Required evidence items: " : "Photos required: "}
+              {specialBillingMode ? "Required evidence items: " : "Photos required: "}
               <span className="font-medium text-foreground">{requiredPhotoCount}</span>
             </div>
           </div>
@@ -793,7 +925,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
                     {...(isTechUploader && (!("capture" in item) || item.capture)
                       ? { capture: "environment" as const }
                       : {})}
-                    {...(newDropMode ? {} : { multiple: true })}
+                    {...(specialBillingMode ? {} : { multiple: true })}
                     className="mt-3 block w-full text-sm"
                     onChange={(e) => void onPickFiles(e, item.photo_label_key)}
                   />
@@ -813,7 +945,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               </label>
             )}
 
-            {newDropMode && newDropMissingEvidence.length > 0 ? (
+            {specialBillingMode && newDropMissingEvidence.length > 0 ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
                 <div className="mb-2 font-medium text-amber-900">Still Required</div>
                 <div className="space-y-1 text-amber-800">
@@ -827,7 +959,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
             {photos.length > 0 ? (
               <div className="rounded-xl bg-muted/40 p-3 text-sm">
                 <div className="mb-2 font-medium">
-                  {newDropMode ? "Added Evidence" : "Added Photos"}
+                  {specialBillingMode ? "Added Evidence" : "Added Photos"}
                 </div>
                 <div className="space-y-1 text-muted-foreground">
                   {photos.map((photo) => (
@@ -861,7 +993,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
             saving ||
             submitting ||
             (locationRequired && capturingLocation) ||
-            (newDropMode && !newDropEvidenceComplete)
+            (specialBillingMode && !newDropEvidenceComplete)
           }
           onClick={() => void onSubmit()}
           className="w-full rounded-2xl bg-blue-600 px-4 py-4 font-semibold text-white disabled:opacity-60"

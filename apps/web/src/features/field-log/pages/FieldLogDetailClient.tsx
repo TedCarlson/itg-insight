@@ -51,6 +51,63 @@ function canViewTimeline(accessPass: any) {
   );
 }
 
+
+const SPECIAL_BILLING_CATEGORIES = new Set(["new_drop", "conduit_pull_install"]);
+
+async function prepareSpecialBillingPacket(reportId: string, categoryKey: string) {
+  const packetPath =
+    categoryKey === "conduit_pull_install"
+      ? "/api/field-log/conduit-pull/job-packet"
+      : "/api/field-log/new-drop/job-packet";
+
+  const packetRes = await fetch(
+    `${packetPath}?report_id=${encodeURIComponent(reportId)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+
+  if (!packetRes.ok) {
+    let message = "Field Log approved, but billing PDF generation failed.";
+    try {
+      const json = await packetRes.json();
+      message = json?.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+
+  const blob = await packetRes.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+
+  const disposition = packetRes.headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  a.download = match?.[1] ?? `FieldLog_${reportId}.pdf`;
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+
+  const markPath =
+    categoryKey === "conduit_pull_install"
+      ? "/api/field-log/conduit-pull/mark-prepared"
+      : "/api/field-log/new-drop/mark-prepared";
+
+  const markRes = await fetch(markPath, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reportId }),
+  });
+
+  const markJson = await markRes.json().catch(() => null);
+  if (!markRes.ok || markJson?.ok === false) {
+    throw new Error(markJson?.error || "Billing PDF downloaded, but prepared status was not recorded.");
+  }
+}
+
 export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload }) {
   const { initialData } = props;
   const searchParams = useSearchParams();
@@ -279,6 +336,14 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         throw new Error(json.error || "Failed to finalize verdict.");
       }
 
+      if (SPECIAL_BILLING_CATEGORIES.has(data.category_key) && verdict === "pass") {
+        try {
+          await prepareSpecialBillingPacket(data.report_id, data.category_key);
+        } catch (packetError) {
+          alert(packetError instanceof Error ? packetError.message : "Approved, but billing packet failed.");
+        }
+      }
+
       if (fromReview) {
         window.location.href = "/field-log/review";
         return;
@@ -461,6 +526,26 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     }
   }
 
+  async function regenerateBillingPdf() {
+    if (!SPECIAL_BILLING_CATEGORIES.has(data.category_key)) return;
+
+    setBusy(true);
+    try {
+      await prepareSpecialBillingPacket(data.report_id, data.category_key);
+      await refreshDetail();
+      if (showTimeline) {
+        await loadTimeline();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to download billing PDF.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canRegenerateBillingPdf =
+    data.status === "approved" && SPECIAL_BILLING_CATEGORIES.has(data.category_key);
+
   const chip = getStatusChip(data.status);
 
   return (
@@ -482,6 +567,28 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         toleranceMeters={data.rule?.location_tolerance_m}
         photoRequirements={data.rule?.photo_requirements}
       />
+
+      {canRegenerateBillingPdf ? (
+        <section className="rounded-2xl border bg-card p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold">Billing PDF</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                Download or regenerate the approved billing packet for this record.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void regenerateBillingPdf()}
+              disabled={busy}
+              className="rounded-xl border px-3 py-2 text-sm font-semibold transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? "Preparing…" : "Download Billing PDF"}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">

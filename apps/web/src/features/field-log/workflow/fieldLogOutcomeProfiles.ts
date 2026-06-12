@@ -68,6 +68,16 @@ export const FIELD_LOG_OUTCOME_PROFILES: Record<
     ],
   },
 
+  conduit_pull_install: {
+    primaryActions: [
+      {
+        action: "pass",
+        label: "Approve Conduit Pull",
+        tone: "success",
+      },
+    ],
+  },
+
   epi: {
     primaryActions: [
       {

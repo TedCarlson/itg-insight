@@ -21,6 +21,8 @@ type QueueRow = {
   last_action_at?: string | null;
   created_by_user_id?: string | null;
   tech_person_id?: string | null;
+  tech_office?: string | null;
+  office?: string | null;
 };
 
 function startOfDayIso(dateStr: string) {
@@ -116,8 +118,11 @@ export async function GET(req: NextRequest) {
       ? rawRows.filter((row) =>
           inRange(row.submitted_at ?? row.last_action_at ?? null, startIso, endIso),
         )
-      : rawRows.filter((row) =>
-          FIELD_LOG_ACTIVE_STATUSES.includes(row.status as any),
+      : rawRows.filter(
+          (row) =>
+            FIELD_LOG_ACTIVE_STATUSES.includes(row.status as any) ||
+            ((row.category_key === "new_drop" || row.category_key === "conduit_pull_install") &&
+              row.status === "approved"),
         );
 
   let rows: QueueRow[];

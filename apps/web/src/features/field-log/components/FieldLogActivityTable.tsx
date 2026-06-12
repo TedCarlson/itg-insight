@@ -16,6 +16,8 @@ type ActivityRow = {
   submitted_at: string | null;
   tech_full_name?: string | null;
   tech_id?: string | null;
+  tech_office?: string | null;
+  office?: string | null;
   evidence_badge?: string | null;
   last_action_type?: string | null;
 };
@@ -57,7 +59,13 @@ function agingClass(days: number | null) {
 }
 
 function groupLabel(row: ActivityRow) {
+  if (row.category_key === "new_drop") return "New Drop";
+  if (row.category_key === "conduit_pull_install") return "Conduit Pull on Install";
   return row.category_label ?? row.category_key ?? "Field Log";
+}
+
+function rowOffice(row: ActivityRow) {
+  return row.tech_office ?? row.office ?? "—";
 }
 
 export function FieldLogActivityTable() {
@@ -185,16 +193,16 @@ export function FieldLogActivityTable() {
                       <th className="px-3 py-2 text-left">Tech</th>
                       <th className="px-3 py-2 text-left">Evidence</th>
                       <th className="px-3 py-2 text-left">Submitted</th>
-                      <th className="px-3 py-2 text-left">Age</th>
+                      <th className="px-3 py-2 text-left">Office</th>
                       <th className="px-3 py-2 text-left">Age</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {qcAgingRows.map((row) => {
+                    {qcAgingRows.map((row, index) => {
                       const days = ageDays(row.submitted_at);
 
                       return (
-                        <tr key={`aging:${row.report_id}`} className="border-t">
+                        <tr key={`aging:${row.report_id}:${index}`} className="border-t">
                           <td className="px-3 py-2">
                             <Link
                               href={`/field-log/${row.report_id}?from=review`}
@@ -209,6 +217,9 @@ export function FieldLogActivityTable() {
                           <td className="px-3 py-2">
                             {row.tech_id ? `${row.tech_id} • ` : ""}
                             {row.tech_full_name ?? "—"}
+                            <div className="text-xs text-muted-foreground">
+                              Office: {rowOffice(row)}
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {row.evidence_badge ?? "—"}
@@ -216,8 +227,8 @@ export function FieldLogActivityTable() {
                           <td className="px-3 py-2 text-muted-foreground">
                             {fmtDate(row.submitted_at)}
                           </td>
-                          <td className={`px-3 py-2 ${agingClass(ageDays(row.submitted_at))}`}>
-                            {agingLabel(ageDays(row.submitted_at))}
+                          <td className="px-3 py-2 text-muted-foreground">
+                            {rowOffice(row)}
                           </td>
                           <td className={`px-3 py-2 ${agingClass(days)}`}>
                             {agingLabel(days)}
@@ -246,6 +257,7 @@ export function FieldLogActivityTable() {
                       <th className="px-3 py-2 text-left">Checkpoint</th>
                       <th className="px-3 py-2 text-left">Evidence</th>
                       <th className="px-3 py-2 text-left">Submitted</th>
+                      <th className="px-3 py-2 text-left">Office</th>
                       <th className="px-3 py-2 text-left">Age</th>
                     </tr>
                   </thead>
@@ -269,6 +281,9 @@ export function FieldLogActivityTable() {
                           <td className="px-3 py-2">
                             {row.tech_id ? `${row.tech_id} • ` : ""}
                             {row.tech_full_name ?? "—"}
+                            <div className="text-xs text-muted-foreground">
+                              Office: {rowOffice(row)}
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${chip.className}`}>
@@ -280,6 +295,9 @@ export function FieldLogActivityTable() {
                           </td>
                           <td className="px-3 py-2 text-muted-foreground">
                             {fmtDate(row.submitted_at)}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            {rowOffice(row)}
                           </td>
                           <td className={`px-3 py-2 ${agingClass(ageDays(row.submitted_at))}`}>
                             {agingLabel(ageDays(row.submitted_at))}
