@@ -404,9 +404,9 @@ export async function buildWorkforceExecutiveDimension(args: {
             meta: { section: "report_button" },
           },
           {
-            key: "report_org_chart",
-            label: "Org Chart",
-            value: "Org Chart",
+            key: "report_roster_export",
+            label: "Roster Export",
+            value: "Roster Export",
             meta: { section: "report_button" },
           },
         ],

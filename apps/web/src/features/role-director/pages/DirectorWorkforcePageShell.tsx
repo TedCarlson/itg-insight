@@ -9,6 +9,7 @@ import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforce
 import { DirectorWorkspaceSelector } from "@/shared/surfaces/navigation/DirectorWorkspaceSelector";
 import { ExhibitLauncher } from "@/shared/surfaces/reports/ExhibitLauncher";
 import { OnboardingReportLauncher } from "@/shared/surfaces/reports/OnboardingReportLauncher";
+import { RosterExportLauncher } from "@/shared/surfaces/reports/RosterExportLauncher";
 import { WorkforceReportLauncher } from "@/shared/surfaces/reports/WorkforceReportLauncher";
 import { WorkforceSurfaceClient } from "@/shared/surfaces/workforce/WorkforceSurfaceClient";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
@@ -180,13 +181,11 @@ export default async function DirectorWorkforcePageShell() {
                 scopedAffiliations={scopedAffiliations}
               />
 
-              <button
-                type="button"
-                disabled
-                className="rounded-xl border bg-muted/30 px-4 py-2 text-sm text-muted-foreground"
-              >
-                Org Chart
-              </button>
+              <RosterExportLauncher
+                rows={payload.rows}
+                regionLabel={regionLabel}
+                reportMonthLabel={reportMonthLabel}
+              />
             </div>
           </div>
         </Card>

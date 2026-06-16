@@ -2,6 +2,7 @@
 
 import { ExhibitLauncher } from "@/shared/surfaces/reports/ExhibitLauncher";
 import { OnboardingReportLauncher } from "@/shared/surfaces/reports/OnboardingReportLauncher";
+import { RosterExportLauncher } from "@/shared/surfaces/reports/RosterExportLauncher";
 import { WorkforceReportLauncher } from "@/shared/surfaces/reports/WorkforceReportLauncher";
 import type {
   ExecutiveArtifactCard,
@@ -309,13 +310,11 @@ function WorkforceReportsArtifact({
             scopedAffiliations={workforceReports.scopedAffiliations}
           />
 
-          <button
-            type="button"
-            disabled
-            className="rounded-xl bg-[var(--to-surface-soft)] p-3 text-left text-sm font-semibold opacity-80"
-          >
-            Org Chart
-          </button>
+          <RosterExportLauncher
+            rows={workforceReports.rows}
+            regionLabel={workforceReports.regionLabel}
+            reportMonthLabel={workforceReports.reportMonthLabel}
+          />
         </div>
       ) : null}
     </div>
