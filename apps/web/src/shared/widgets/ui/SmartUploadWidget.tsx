@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { DragEvent } from "react";
+import { useRouter } from "next/navigation";
 
 type UploadFamily =
   | "metrics"
@@ -37,6 +38,9 @@ type UploadResult = {
   row_count_total?: number | null;
   error?: string;
   message?: string;
+  sweep_count?: number | null;
+  sweep_results?: unknown;
+  sweeps?: Record<string, unknown>;
 };
 
 function familyLabel(value?: UploadFamily) {
@@ -101,6 +105,7 @@ function ReviewField(props: {
 }
 
 export function SmartUploadWidget() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const [busy, setBusy] = useState(false);
@@ -192,6 +197,12 @@ export function SmartUploadWidget() {
       if (anchorDate) {
         fd.append("anchor_date", anchorDate);
         fd.append("metric_date", anchorDate);
+        fd.append("picked_date", anchorDate);
+      }
+
+      if (inspection.family === "metrics") {
+        fd.append("mode", "date");
+        fd.append("confirm", "1");
       }
 
       const res = await fetch(endpoint, {
@@ -202,6 +213,10 @@ export function SmartUploadWidget() {
       const json = (await res.json()) as UploadResult;
 
       setUploadResult(json);
+
+      if (res.ok && json?.ok !== false) {
+        router.refresh();
+      }
     } catch (error) {
       setUploadResult({
         ok: false,
@@ -407,6 +422,9 @@ export function SmartUploadWidget() {
                       : ""}
                     {uploadResult.check_in_batch_id
                       ? ` · Batch ${uploadResult.check_in_batch_id}`
+                      : ""}
+                    {uploadResult.sweep_count != null
+                      ? ` · Sweeps ${uploadResult.sweep_count}`
                       : ""}
                   </span>
                 )}

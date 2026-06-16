@@ -578,8 +578,10 @@ export async function POST(req: Request) {
       skipped_ignored_shift_types: skippedIgnoredShiftTypes,
       today,
       batch_id: batchId,
-      sweep_count: fiscalMonthIds.length,
+      shift_validation_batch_id: batchId,
+      sweep_count: sweepResults.length,
       sweep: sweepResults,
+      sweep_results: sweepResults,
     });
   } catch (e: any) {
     return json(500, { ok: false, error: String(e?.message ?? e) });
