@@ -106,6 +106,21 @@ async function prepareSpecialBillingPacket(reportId: string, categoryKey: string
   if (!markRes.ok || markJson?.ok === false) {
     throw new Error(markJson?.error || "Billing PDF downloaded, but prepared status was not recorded.");
   }
+
+  const emailRes = await fetch("/api/field-log/billing-email/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reportId,
+      categoryKey,
+      sendMode: "auto",
+    }),
+  });
+
+  const emailJson = await emailRes.json().catch(() => null);
+  if (!emailRes.ok || emailJson?.ok === false) {
+    alert(emailJson?.error || "Billing packet prepared, but email send failed.");
+  }
 }
 
 export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload }) {
@@ -357,6 +372,52 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       setFollowupNote("");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to finalize verdict.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function denySubmission() {
+    if (!userId) {
+      alert("No signed-in user found.");
+      return;
+    }
+
+    const note = followupNote.trim();
+
+    if (!note) {
+      alert("Rejection requires a verdict note.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/field-log/deny", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reportId: data.report_id,
+          note,
+        }),
+      });
+
+      const json = (await res.json()) as FieldLogApiResponse;
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to reject Field Log.");
+      }
+
+      if (fromReview) {
+        window.location.href = "/field-log/review";
+        return;
+      }
+
+      await refreshDetail();
+      if (showTimeline) {
+        await loadTimeline();
+      }
+      setFollowupNote("");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to reject.");
     } finally {
       setBusy(false);
     }
@@ -682,6 +743,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
               onXmLinkChange={setXmLink}
               onNoteChange={setFollowupNote}
               onFinalizeVerdict={finalizeVerdict}
+              onDeny={denySubmission}
             />
           ) : null}
 

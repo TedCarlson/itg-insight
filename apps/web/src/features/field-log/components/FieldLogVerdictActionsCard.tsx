@@ -20,6 +20,7 @@ type FieldLogVerdictActionsCardProps = {
   onXmLinkChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onFinalizeVerdict: (verdict: FieldLogVerdict) => void | Promise<void>;
+  onDeny?: () => void | Promise<void>;
 };
 
 function buttonClass(tone?: "default" | "danger" | "success") {
@@ -49,12 +50,15 @@ export function FieldLogVerdictActionsCard(props: FieldLogVerdictActionsCardProp
     onXmLinkChange,
     onNoteChange,
     onFinalizeVerdict,
+    onDeny,
   } = props;
 
   if (workflow.isTechSourced || !workflow.canAssignFinalVerdict) return null;
 
   const profile = getFieldLogOutcomeProfile(categoryKey);
   const isNewDrop = categoryKey === "new_drop";
+  const isSpecialBillingCategory =
+    categoryKey === "new_drop" || categoryKey === "conduit_pull_install";
   const xmRequired = xmAllowed && (xmDeclared || evidenceDeclared === "xm_platform");
   const effectiveXmLink =
     String(xmLink ?? "").trim() || String(existingXmLink ?? "").trim();
@@ -108,6 +112,17 @@ export function FieldLogVerdictActionsCard(props: FieldLogVerdictActionsCardProp
       </div>
 
       <div className="mt-4 grid gap-2">
+        {isSpecialBillingCategory && onDeny ? (
+          <button
+            type="button"
+            disabled={busy || !String(note ?? "").trim()}
+            onClick={() => void onDeny()}
+            className={buttonClass("danger")}
+          >
+            Reject Submission
+          </button>
+        ) : null}
+
         {profile.primaryActions.map((action) => (
           <button
             key={action.action}

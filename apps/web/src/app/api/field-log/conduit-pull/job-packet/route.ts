@@ -112,6 +112,7 @@ async function downloadAttachmentBytes(
   return {
     bytes: new Uint8Array(await data.arrayBuffer()),
     mimeType: attachment?.mime_type ?? "",
+    fileName: attachment?.file_name ?? attachment?.file_path ?? "",
   };
 }
 
@@ -120,6 +121,7 @@ async function drawImageBox(args: {
   page: PDFPage;
   bytes: Uint8Array | null;
   mimeType: string;
+  fileName?: string;
   label: string;
   x: number;
   y: number;
@@ -127,7 +129,7 @@ async function drawImageBox(args: {
   h: number;
   font: PDFFont;
 }) {
-  const { pdf, page, bytes, mimeType, label, x, y, w, h, font } = args;
+  const { pdf, page, bytes, mimeType, fileName = "", label, x, y, w, h, font } = args;
 
   drawText(page, label, x, y + h + 9, 8, font);
 
@@ -147,10 +149,12 @@ async function drawImageBox(args: {
   }
 
   try {
-    const lower = mimeType.toLowerCase();
-    const img = lower.includes("png")
-      ? await pdf.embedPng(bytes)
-      : await pdf.embedJpg(bytes);
+    const lowerMime = mimeType.toLowerCase();
+    const lowerName = fileName.toLowerCase();
+    const img =
+      lowerMime.includes("png") || lowerName.endsWith(".png")
+        ? await pdf.embedPng(bytes)
+        : await pdf.embedJpg(bytes);
 
     const scale = Math.min((w - 8) / img.width, (h - 8) / img.height);
     const iw = img.width * scale;
@@ -258,6 +262,7 @@ async function buildPdf(args: {
         page,
         bytes: downloaded?.bytes ?? null,
         mimeType: downloaded?.mimeType ?? "",
+        fileName: downloaded?.fileName ?? "",
         label: item.label,
         x: gridX + col * (boxW + gridGap),
         y: gridTopY - (rowIndex + 1) * boxH - rowIndex * gridGap,
