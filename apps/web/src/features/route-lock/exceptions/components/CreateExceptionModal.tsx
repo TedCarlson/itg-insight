@@ -40,6 +40,7 @@ const TYPE_OPTIONS = [
   "VACATION",
   "PERSONAL_DAY",
   "FMLA",
+  "ADMIN_HOLD",
   "ADD_DAY",
   "COVERAGE_ADD",
 ] as const;
@@ -49,6 +50,7 @@ function deriveForceOff(type: string): boolean {
     case "VACATION":
     case "PERSONAL_DAY":
     case "FMLA":
+    case "ADMIN_HOLD":
       return true;
     case "ADD_DAY":
     case "COVERAGE_ADD":

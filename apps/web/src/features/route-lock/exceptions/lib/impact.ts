@@ -2,6 +2,7 @@ export type ExceptionType =
   | "VACATION"
   | "PERSONAL_DAY"
   | "FMLA"
+  | "ADMIN_HOLD"
   | "ADD_DAY"
   | "COVERAGE_ADD"
   | string;
@@ -34,7 +35,12 @@ function removesCapacity(row: DraftExceptionRow) {
 
   const type = row.type?.toUpperCase();
 
-  return type === "VACATION" || type === "PERSONAL_DAY" || type === "FMLA";
+  return (
+    type === "VACATION" ||
+    type === "PERSONAL_DAY" ||
+    type === "FMLA" ||
+    type === "ADMIN_HOLD"
+  );
 }
 
 function addsCapacity(row: DraftExceptionRow) {

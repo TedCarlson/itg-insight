@@ -3,7 +3,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PageShell, PageHeader } from "@/components/ui/PageShell";
+import { PageShell } from "@/components/ui/PageShell";
 
 import HistoryFiltersCard from "../components/HistoryFiltersCard";
 import HistoryCheckInWeeklyCard from "../components/HistoryCheckInWeeklyCard";
@@ -139,11 +139,6 @@ export default function TechRouteHistoryPage(props: Props) {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Tech Route History"
-        subtitle="One-week technician route and check-in review with daily production, SLA signals, and job-level drilldown."
-      />
-
       {props.shellRole ? (
         <div
           id="shell-role-hint"

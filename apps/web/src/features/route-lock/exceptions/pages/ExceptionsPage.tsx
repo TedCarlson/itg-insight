@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PageHeader, PageShell } from "@/components/ui/PageShell";
+import { PageShell } from "@/components/ui/PageShell";
 import { useExceptions, type ExceptionRow } from "../hooks/useExceptions";
 import ExceptionsTable from "../components/ExceptionsTable";
 import CreateExceptionModal from "../components/CreateExceptionModal";
@@ -50,11 +50,6 @@ export default function ExceptionsPage() {
 
   return (
     <PageShell>
-      <PageHeader
-        title="Exceptions"
-        subtitle="Authoritative day-level schedule removals, additions, and overrides"
-      />
-
       <div className="rounded-2xl border bg-[var(--to-surface)] p-4">
         <div className="mb-4 flex items-center justify-between">
           <div className="text-sm text-[var(--to-ink-muted)]">Schedule Exceptions</div>
