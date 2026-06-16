@@ -73,6 +73,7 @@ type SelfTechResponse = {
 
 const NEW_DROP_CATEGORY_KEY = "new_drop";
 const CONDUIT_PULL_CATEGORY_KEY = "conduit_pull_install";
+const SERVICE_FOLLOWUP_CATEGORY_KEY = "post_call";
 
 const NEW_DROP_EVIDENCE_REQUIREMENTS = [
   {
@@ -335,6 +336,9 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       : "",
   );
   const [comment, setComment] = useState(initialComment ?? "");
+  const [technicianComments, setTechnicianComments] = useState("");
+  const [customerContactFeedback, setCustomerContactFeedback] = useState("");
+  const [lessonsTakeaways, setLessonsTakeaways] = useState("");
   const [useXm, setUseXm] = useState(
     workflow.requiresApprovalToClose &&
       (initialXmDeclared || initialEvidenceDeclared === "xm_platform"),
@@ -356,6 +360,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const newDropMode = isNewDropCategory(categoryKey);
   const conduitPullMode = isConduitPullCategory(categoryKey);
   const specialBillingMode = isSpecialBillingCategory(categoryKey);
+  const serviceFollowUpMode = categoryKey === SERVICE_FOLLOWUP_CATEGORY_KEY;
   const specialEvidenceRequirements = getSpecialEvidenceRequirements(categoryKey);
 
   const requiredPhotoCount = specialBillingMode
@@ -376,17 +381,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       : workflow.reviewLabel === "Unavailable"
         ? "Field Log Draft"
         : workflow.reviewLabel;
-  const primaryActionLabel = isFollowupMode
-    ? "Resubmit Follow-Up"
-    : specialBillingMode && !isTechSubmissionFlow
-      ? "Submit with Approval"
-      : newDropMode
-        ? "Submit New Drop for Review"
-        : conduitPullMode
-          ? "Submit Conduit Pull for Review"
-          : workflow.primaryActionLabel === "Unavailable"
-        ? "Submit for Review"
-        : workflow.primaryActionLabel;
+  const primaryActionLabel = isFollowupMode ? "Commit Update" : "Commit";
   const canUseXm =
     !specialBillingMode && (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
   const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
@@ -459,6 +454,41 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     };
   }, [selectedOrgId]);
 
+  function getEffectiveComment() {
+    if (!serviceFollowUpMode) return comment.trim();
+
+    return [
+      technicianComments.trim() ? `Technician Comments:\n${technicianComments.trim()}` : "",
+      customerContactFeedback.trim()
+        ? `Customer Contact Feedback:\n${customerContactFeedback.trim()}`
+        : "",
+      lessonsTakeaways.trim() ? `Lessons / Takeaways:\n${lessonsTakeaways.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  async function saveServiceFollowUpDetail() {
+    if (!serviceFollowUpMode) return;
+
+    const res = await fetch("/api/field-log/draft/post-call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reportId,
+        technicianComments: technicianComments.trim() || null,
+        customerContactFeedback: customerContactFeedback.trim() || null,
+        lessonsTakeaways: lessonsTakeaways.trim() || null,
+        caseStatus: "open",
+      }),
+    });
+
+    const json = (await res.json()) as ApiResponse;
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || "Failed to save Service Follow Up detail.");
+    }
+  }
+
   async function saveBaseFields(locationOverride?: Partial<LocationState>) {
     const gpsLat = locationOverride?.gpsLat ?? location.gpsLat;
     const gpsLng = locationOverride?.gpsLng ?? location.gpsLng;
@@ -471,7 +501,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         reportId,
         jobNumber: jobNumber.trim(),
         jobType: jobType || null,
-        comment: comment.trim() || null,
+        comment: getEffectiveComment() || null,
         evidenceDeclared:
           !specialBillingMode && useXm ? "xm_platform" : totalPhotoCount > 0 ? "field_upload" : "none",
         xmDeclared: !specialBillingMode && useXm,
@@ -669,8 +699,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       return;
     }
 
-    if (rule.comment_required && !comment.trim()) {
-      alert("Comment is required.");
+    if (rule.comment_required && !getEffectiveComment()) {
+      alert(serviceFollowUpMode ? "At least one Service Follow Up section is required." : "Comment is required.");
       return;
     }
 
@@ -698,8 +728,10 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         await saveBaseFields();
       }
 
+      await saveServiceFollowUpDetail();
+
       if (locationRequired && !hasCapturedLocation(activeLocation)) {
-        throw new Error("Location capture is required before submit.");
+        throw new Error("Location capture is required before commit.");
       }
 
       if (canFinalizeOnEntry) {
@@ -709,7 +741,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           body: JSON.stringify({
             reportId,
             verdict: verdict ?? "pass",
-            note: comment.trim() || null,
+            note: getEffectiveComment() || null,
           }),
         });
 
@@ -735,14 +767,14 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       const body = isFollowupMode
         ? {
             reportId,
-            comment: comment.trim() || null,
+            comment: getEffectiveComment() || null,
             gpsLat: activeLocation.gpsLat,
             gpsLng: activeLocation.gpsLng,
             gpsAccuracyM: activeLocation.gpsAccuracyM,
           }
         : {
             reportId,
-            comment: comment.trim() || null,
+            comment: getEffectiveComment() || null,
             evidenceDeclared:
               !specialBillingMode && useXm
                 ? "xm_platform"
@@ -769,7 +801,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           (json.error ||
             (isFollowupMode
               ? "Failed to resubmit follow-up."
-              : "Failed to submit Field Log report.")) + extra,
+              : "Failed to commit Field Log report.")) + extra,
         );
       }
 
@@ -780,7 +812,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           ? err.message
           : isFollowupMode
             ? "Failed to resubmit."
-            : "Failed to submit.",
+            : "Failed to commit.",
       );
     } finally {
       setSubmitting(false);
@@ -972,19 +1004,65 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         ) : null}
       </section>
 
-      <section className="space-y-3 rounded-2xl border bg-card p-4">
-        <div className="text-base font-semibold">
-          Comment {rule?.comment_required ? <span className="text-red-600">*</span> : null}
-        </div>
+      {serviceFollowUpMode ? (
+        <section className="space-y-4 rounded-2xl border bg-card p-4">
+          <div>
+            <div className="text-base font-semibold">
+              Service Follow Up Notes {rule?.comment_required ? <span className="text-red-600">*</span> : null}
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Capture this as a case-management record, not a tech-facing QC verdict.
+            </div>
+          </div>
 
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="Add notes"
-          rows={5}
-          className="w-full rounded-xl border px-3 py-3"
-        />
-      </section>
+          <label className="block space-y-2">
+            <span className="text-sm font-medium">Technician Comments</span>
+            <textarea
+              value={technicianComments}
+              onChange={(e) => setTechnicianComments(e.target.value)}
+              placeholder="What happened from the technician or job perspective?"
+              rows={4}
+              className="w-full rounded-xl border px-3 py-3"
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-sm font-medium">Customer Contact Feedback</span>
+            <textarea
+              value={customerContactFeedback}
+              onChange={(e) => setCustomerContactFeedback(e.target.value)}
+              placeholder="What did the customer state during contact or follow-up?"
+              rows={4}
+              className="w-full rounded-xl border px-3 py-3"
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-sm font-medium">Lessons / Takeaways</span>
+            <textarea
+              value={lessonsTakeaways}
+              onChange={(e) => setLessonsTakeaways(e.target.value)}
+              placeholder="What should be learned, coached, corrected, or watched?"
+              rows={4}
+              className="w-full rounded-xl border px-3 py-3"
+            />
+          </label>
+        </section>
+      ) : (
+        <section className="space-y-3 rounded-2xl border bg-card p-4">
+          <div className="text-base font-semibold">
+            Comment {rule?.comment_required ? <span className="text-red-600">*</span> : null}
+          </div>
+
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Add notes"
+            rows={5}
+            className="w-full rounded-xl border px-3 py-3"
+          />
+        </section>
+      )}
 
       {requiresReviewBeforeClose || isFollowupMode ? (
         <button
@@ -1000,12 +1078,12 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         >
           {submitting
             ? isFollowupMode
-              ? "Resubmitting…"
-              : "Submitting…"
+              ? "Committing…"
+              : "Committing…"
             : saving
               ? "Saving…"
               : isFollowupMode
-                ? "Resubmit Follow-Up"
+                ? "Commit Update"
                 : primaryActionLabel}
         </button>
       ) : (

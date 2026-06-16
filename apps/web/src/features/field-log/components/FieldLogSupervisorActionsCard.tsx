@@ -1,6 +1,3 @@
-// Replace the entire file:
-// apps/web/src/features/field-log/components/FieldLogSupervisorActionsCard.tsx
-
 "use client";
 
 type FieldLogSupervisorActionsCardProps = {

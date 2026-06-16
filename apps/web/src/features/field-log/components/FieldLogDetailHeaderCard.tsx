@@ -14,6 +14,8 @@ type RulePopoverProps = {
   commentRequired?: boolean | null;
   locationRequired?: boolean | null;
   toleranceMeters?: number | null;
+  caseStatusLabel?: string | null;
+  caseStatusClassName?: string | null;
   photoRequirements?: Array<{
     photo_label_key: string;
     label: string;
@@ -191,6 +193,8 @@ export function FieldLogDetailHeaderCard(props: {
   commentRequired?: boolean | null;
   locationRequired?: boolean | null;
   toleranceMeters?: number | null;
+  caseStatusLabel?: string | null;
+  caseStatusClassName?: string | null;
   photoRequirements?: Array<{
     photo_label_key: string;
     label: string;
@@ -206,6 +210,8 @@ export function FieldLogDetailHeaderCard(props: {
     jobType,
     chipLabel,
     chipClassName,
+    caseStatusLabel,
+    caseStatusClassName,
     backHref,
     minPhotoCount,
     xmAllowed,
@@ -256,10 +262,22 @@ export function FieldLogDetailHeaderCard(props: {
           </div>
         </div>
 
-        <div
-          className={`inline-flex min-w-[44px] items-center justify-center rounded-full border px-2 py-1 text-xs font-semibold ${chipClassName}`}
-        >
-          {chipLabel}
+        <div className="flex flex-col items-end gap-2">
+          <div
+            className={`inline-flex min-w-[44px] items-center justify-center rounded-full border px-2 py-1 text-xs font-semibold ${chipClassName}`}
+          >
+            {chipLabel}
+          </div>
+
+          {caseStatusLabel ? (
+            <div
+              className={`inline-flex min-w-[44px] items-center justify-center rounded-full border px-2 py-1 text-xs font-semibold ${
+                caseStatusClassName ?? "border-amber-200 bg-amber-50 text-amber-700"
+              }`}
+            >
+              {caseStatusLabel}
+            </div>
+          ) : null}
         </div>
       </div>
     </section>

@@ -28,7 +28,7 @@ export function FieldLogReviewActionsCard(props: {
 
   return (
     <section className="rounded-2xl border bg-card p-5">
-      <div className="text-base font-semibold">Review Actions</div>
+      <div className="text-base font-semibold">Activity</div>
 
       {actions?.length ? (
         <div className="mt-3 space-y-3">
@@ -51,7 +51,7 @@ export function FieldLogReviewActionsCard(props: {
         </div>
       ) : (
         <div className="mt-3 text-sm text-muted-foreground">
-          No review actions recorded.
+          No activity recorded.
         </div>
       )}
     </section>

@@ -41,6 +41,12 @@ export type FieldLogPostCallDetail = {
   risk_level: string | null;
   tnps_risk_flag: boolean | null;
   followup_recommended: boolean | null;
+  technician_comments?: string | null;
+  customer_contact_feedback?: string | null;
+  lessons_takeaways?: string | null;
+  case_status?: string | null;
+  closed_at?: string | null;
+  reopened_at?: string | null;
 };
 
 export type FieldLogAttachment = {

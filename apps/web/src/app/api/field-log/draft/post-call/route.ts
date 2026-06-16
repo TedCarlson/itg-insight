@@ -8,6 +8,10 @@ type PostCallDraftBody = {
   riskLevel?: "fyi" | "watch" | "action_needed" | null;
   tnpsRiskFlag?: boolean | null;
   followupRecommended?: boolean | null;
+  technicianComments?: string | null;
+  customerContactFeedback?: string | null;
+  lessonsTakeaways?: string | null;
+  caseStatus?: "open" | "in_progress" | "pending_customer" | "resolved" | "closed" | "reopened" | null;
 };
 
 function badRequest(message: string) {
@@ -35,11 +39,15 @@ export async function POST(req: NextRequest) {
     p_risk_level: body.riskLevel ?? null,
     p_tnps_risk_flag: body.tnpsRiskFlag ?? null,
     p_followup_recommended: body.followupRecommended ?? null,
+    p_technician_comments: body.technicianComments ?? null,
+    p_customer_contact_feedback: body.customerContactFeedback ?? null,
+    p_lessons_takeaways: body.lessonsTakeaways ?? null,
+    p_case_status: body.caseStatus ?? null,
   });
 
   if (error) {
     return NextResponse.json(
-      { ok: false, error: error.message || "Failed to update Post Call draft fields." },
+      { ok: false, error: error.message || "Failed to update Service Follow Up fields." },
       { status: 500 },
     );
   }

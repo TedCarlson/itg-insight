@@ -109,7 +109,7 @@ function ChoiceTile(props: {
 }
 
 export default function FieldLogNewClient() {
-  const { categories, getSubcategoriesForCategory, getRuleForSelection } =
+  const { categories, rules, getSubcategoriesForCategory, getRuleForSelection } =
     useFieldLogRuntime();
 
   const { userId } = useSession();
@@ -126,7 +126,35 @@ export default function FieldLogNewClient() {
   const [techQuery, setTechQuery] = useState("");
   const [selectedTech, setSelectedTech] = useState<TechSearchRow | null>(null);
 
-  const subcategories = getSubcategoriesForCategory(categoryKey);
+  const visibleCategories = useMemo(() => {
+    return categories.filter((category) => {
+      const categoryRules = rules.filter((rule) => rule.category_key === category.category_key);
+      if (categoryRules.length === 0) return true;
+
+      if (entrySource === "TECH") {
+        return categoryRules.some((rule) => rule.allow_technician_submit);
+      }
+
+      return categoryRules.some((rule) => rule.allow_supervisor_submit);
+    });
+  }, [categories, entrySource, rules]);
+
+  const subcategories = useMemo(() => {
+    const items = getSubcategoriesForCategory(categoryKey);
+
+    return items.filter((subcategory) => {
+      const matchingRule = rules.find(
+        (rule) =>
+          rule.category_key === categoryKey &&
+          (rule.subcategory_key ?? null) === subcategory.subcategory_key,
+      );
+
+      if (!matchingRule) return true;
+
+      if (entrySource === "TECH") return matchingRule.allow_technician_submit;
+      return matchingRule.allow_supervisor_submit;
+    });
+  }, [categoryKey, entrySource, getSubcategoriesForCategory, rules]);
   const rule = getRuleForSelection(categoryKey, subcategoryKey);
   const conduitPullMode = isConduitPullCategory(categoryKey);
   const jobTypeLocked = conduitPullMode;
@@ -212,7 +240,7 @@ export default function FieldLogNewClient() {
         />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {categories.map((cat) => (
+          {visibleCategories.map((cat) => (
             <ChoiceTile
               key={cat.category_key}
               selected={categoryKey === cat.category_key}

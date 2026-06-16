@@ -16,8 +16,11 @@ import {
 type QueueRow = {
   report_id: string;
   status: string;
+  category_key?: string | null;
   category_label: string | null;
+  subcategory_key?: string | null;
   subcategory_label: string | null;
+  case_status?: string | null;
   job_number: string;
   job_type: string | null;
   evidence_badge: string;
@@ -56,6 +59,33 @@ function getSectionTextClass(status: string) {
 
 function isReturnedForReview(lastActionType?: string | null) {
   return !!lastActionType && lastActionType.toLowerCase().includes("resubmit");
+}
+
+function isServiceFollowUp(row: QueueRow) {
+  return row.category_key === "post_call" || row.category_label === "Service Follow Up";
+}
+
+function isTnpsEvent(row: QueueRow) {
+  if (!isServiceFollowUp(row)) return false;
+
+  const key = (row.subcategory_key ?? "").toLowerCase();
+  const label = (row.subcategory_label ?? "").toLowerCase();
+
+  return key.includes("tnps") || label.includes("tnps");
+}
+
+function normalizedCaseStatus(row: QueueRow) {
+  return row.case_status ?? (row.status === "approved" ? "closed" : "open");
+}
+
+function isClosedCase(row: QueueRow) {
+  const caseStatus = normalizedCaseStatus(row);
+  return caseStatus === "closed" || row.status === "approved";
+}
+
+function niceCaseStatus(value: string | null | undefined) {
+  const next = value ?? "open";
+  return next.replaceAll("_", " ").toUpperCase();
 }
 
 function todayYmd() {
@@ -166,11 +196,17 @@ export function FieldLogReviewClient() {
   }, []);
 
   const grouped = useMemo(() => {
+    const normalRows = rows.filter((r) => !isServiceFollowUp(r));
+    const serviceRows = rows.filter((r) => isServiceFollowUp(r));
+
     return {
-      pending_review: rows.filter((r) => r.status === "pending_review"),
-      tech_followup_required: rows.filter((r) => r.status === "tech_followup_required"),
-      sup_followup_required: rows.filter((r) => r.status === "sup_followup_required"),
-      approved: rows.filter((r) => r.status === "approved"),
+      open_cases: serviceRows.filter((r) => !isClosedCase(r)),
+      tnps_events: serviceRows.filter((r) => isTnpsEvent(r)),
+      closed_cases: serviceRows.filter((r) => isClosedCase(r)),
+      pending_review: normalRows.filter((r) => r.status === "pending_review"),
+      tech_followup_required: normalRows.filter((r) => r.status === "tech_followup_required"),
+      sup_followup_required: normalRows.filter((r) => r.status === "sup_followup_required"),
+      approved: normalRows.filter((r) => r.status === "approved"),
     };
   }, [rows]);
 
@@ -202,6 +238,7 @@ export function FieldLogReviewClient() {
         <div className={`text-sm font-semibold ${getSectionTextClass(status)}`}>{title}</div>
 
         {rows.map((row) => {
+          const serviceFollowUp = isServiceFollowUp(row);
           const chip = getStatusChip(row.status, row.last_action_type);
           const borderClass = getStatusBorder(row.status, row.last_action_type);
           const showClosedBy = row.status === "approved" && !!row.approved_by_full_name;
@@ -228,6 +265,7 @@ export function FieldLogReviewClient() {
                   <div className="mt-1 text-sm text-muted-foreground">
                     {row.category_label ?? "Field Log"}
                     {row.subcategory_label ? ` • ${row.subcategory_label}` : ""}
+                    {serviceFollowUp ? ` • ${niceCaseStatus(normalizedCaseStatus(row))}` : ""}
                   </div>
                 </div>
 
@@ -257,7 +295,7 @@ export function FieldLogReviewClient() {
               ) : null}
 
               <div className="mt-3 text-xs font-medium text-muted-foreground">
-                Opens review detail
+                {serviceFollowUp ? "Opens case detail" : "Opens review detail"}
               </div>
             </Link>
           );
@@ -341,6 +379,8 @@ export function FieldLogReviewClient() {
         </div>
       ) : (
         <div className="space-y-5">
+          <Section title="Open Cases" rows={grouped.open_cases} status="sup_followup_required" />
+          <Section title="tNPS Events" rows={grouped.tnps_events} status="pending_review" />
           <Section title="Pending Review" rows={grouped.pending_review} status="pending_review" />
           <Section
             title="Technician Follow-Up"
@@ -352,6 +392,7 @@ export function FieldLogReviewClient() {
             rows={grouped.sup_followup_required}
             status="sup_followup_required"
           />
+          <Section title="Closed Cases" rows={grouped.closed_cases} status="approved" />
           <Section title="Closed / Finalized" rows={grouped.approved} status="approved" />
         </div>
       )}

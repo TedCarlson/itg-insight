@@ -23,6 +23,7 @@ type QueueRow = {
   tech_person_id?: string | null;
   tech_office?: string | null;
   office?: string | null;
+  case_status?: string | null;
 };
 
 function startOfDayIso(dateStr: string) {
@@ -144,9 +145,42 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const serviceReportIds = rows
+    .filter((row) => row.category_key === "post_call")
+    .map((row) => row.report_id);
+
+  let enrichedRows = rows;
+
+  if (serviceReportIds.length > 0) {
+    const { data: caseRows, error: caseError } = await supabase
+      .from("field_log_report_post_call")
+      .select("report_id, case_status")
+      .in("report_id", serviceReportIds);
+
+    if (caseError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: caseError.message || "Failed to load Service Follow Up cases.",
+        },
+        { status: 500 },
+      );
+    }
+
+    const caseStatusByReportId = new Map(
+      (caseRows ?? []).map((row) => [row.report_id, row.case_status ?? null]),
+    );
+
+    enrichedRows = rows.map((row) =>
+      row.category_key === "post_call"
+        ? { ...row, case_status: caseStatusByReportId.get(row.report_id) ?? "open" }
+        : row,
+    );
+  }
+
   return NextResponse.json({
     ok: true,
-    data: rows,
+    data: enrichedRows,
     meta: {
       mode: searchMode ? "search" : day ? "day" : "open",
       start_iso: startIso,

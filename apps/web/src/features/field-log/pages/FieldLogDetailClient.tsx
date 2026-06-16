@@ -21,6 +21,7 @@ import { FieldLogSubmissionCard } from "../components/FieldLogSubmissionCard";
 import { FieldLogWorkflowCard } from "../components/FieldLogWorkflowCard";
 import { FieldLogNotDoneDetailCard } from "../components/FieldLogNotDoneDetailCard";
 import { FieldLogPostCallDetailCard } from "../components/FieldLogPostCallDetailCard";
+import { FieldLogServiceFollowUpCaseActionsCard } from "../components/FieldLogServiceFollowUpCaseActionsCard";
 import { ALLOW_SUPERVISOR_PROXY_UPLOAD } from "../lib/rolloutFlags";
 import type { FieldLogVerdict } from "../workflow";
 import { buildFieldLogWorkflow, useFieldLogEntrySource } from "../workflow";
@@ -52,6 +53,7 @@ function canViewTimeline(accessPass: any) {
 }
 
 
+const SERVICE_FOLLOWUP_CATEGORY_KEY = "post_call";
 const SPECIAL_BILLING_CATEGORIES = new Set(["new_drop", "conduit_pull_install"]);
 
 async function prepareSpecialBillingPacket(reportId: string, categoryKey: string) {
@@ -143,8 +145,33 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [followupNote, setFollowupNote] = useState("");
   const [reassignNote, setReassignNote] = useState("");
+  const [caseTechnicianComments, setCaseTechnicianComments] = useState(
+    initialData.post_call?.technician_comments ?? "",
+  );
+  const [caseCustomerContactFeedback, setCaseCustomerContactFeedback] = useState(
+    initialData.post_call?.customer_contact_feedback ?? "",
+  );
+  const [caseLessonsTakeaways, setCaseLessonsTakeaways] = useState(
+    initialData.post_call?.lessons_takeaways ?? "",
+  );
 
   const showTimeline = useMemo(() => canViewTimeline(accessPass), [accessPass]);
+
+  const isServiceFollowUp = data.category_key === SERVICE_FOLLOWUP_CATEGORY_KEY;
+  const serviceCaseStatus = data.post_call?.case_status ?? "open";
+  const serviceCaseClosed = serviceCaseStatus === "closed";
+
+  useEffect(() => {
+    setCaseTechnicianComments(data.post_call?.technician_comments ?? "");
+    setCaseCustomerContactFeedback(data.post_call?.customer_contact_feedback ?? "");
+    setCaseLessonsTakeaways(data.post_call?.lessons_takeaways ?? "");
+  }, [
+    data.report_id,
+    data.post_call?.technician_comments,
+    data.post_call?.customer_contact_feedback,
+    data.post_call?.lessons_takeaways,
+  ]);
+
 
   const workflow = useMemo(
     () =>
@@ -197,7 +224,8 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const shouldPollDetail =
     data.status === "pending_review" ||
     data.status === "tech_followup_required" ||
-    data.status === "sup_followup_required";
+    data.status === "sup_followup_required" ||
+    (isServiceFollowUp && !serviceCaseClosed);
 
   const canUseSupervisorProxyUpload =
     ALLOW_SUPERVISOR_PROXY_UPLOAD && fromReview && canApprove;
@@ -587,6 +615,39 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     }
   }
 
+  async function updateServiceFollowUpCase(nextStatus?: "open" | "in_progress" | "pending_customer" | "resolved" | "closed" | "reopened") {
+    if (!isServiceFollowUp) return;
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/field-log/draft/post-call", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reportId: data.report_id,
+          technicianComments: caseTechnicianComments.trim() || null,
+          customerContactFeedback: caseCustomerContactFeedback.trim() || null,
+          lessonsTakeaways: caseLessonsTakeaways.trim() || null,
+          caseStatus: nextStatus ?? serviceCaseStatus ?? "open",
+        }),
+      });
+
+      const json = (await res.json()) as FieldLogApiResponse;
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to commit Service Follow Up case.");
+      }
+
+      await refreshDetail();
+      if (showTimeline) {
+        await loadTimeline();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to commit Service Follow Up case.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function regenerateBillingPdf() {
     if (!SPECIAL_BILLING_CATEGORIES.has(data.category_key)) return;
 
@@ -627,6 +688,14 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         locationRequired={data.rule?.location_required}
         toleranceMeters={data.rule?.location_tolerance_m}
         photoRequirements={data.rule?.photo_requirements}
+        caseStatusLabel={isServiceFollowUp ? serviceCaseStatus.replaceAll("_", " ").toUpperCase() : null}
+        caseStatusClassName={
+          isServiceFollowUp
+            ? serviceCaseClosed
+              ? "border-green-200 bg-green-50 text-green-700"
+              : "border-amber-200 bg-amber-50 text-amber-700"
+            : null
+        }
       />
 
       {canRegenerateBillingPdf ? (
@@ -699,6 +768,10 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             riskLevel={data.post_call?.risk_level ?? null}
             tnpsRiskFlag={data.post_call?.tnps_risk_flag ?? null}
             followupRecommended={data.post_call?.followup_recommended ?? null}
+            technicianComments={data.post_call?.technician_comments ?? null}
+            customerContactFeedback={data.post_call?.customer_contact_feedback ?? null}
+            lessonsTakeaways={data.post_call?.lessons_takeaways ?? null}
+            caseStatus={data.post_call?.case_status ?? null}
           />
         </div>
 
@@ -706,6 +779,20 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           <FieldLogAttachmentsCard attachments={data.attachments ?? []} />
 
           <FieldLogReviewActionsCard actions={data.actions ?? []} />
+
+          <FieldLogServiceFollowUpCaseActionsCard
+            visible={isServiceFollowUp && canActAsFieldLogReviewer}
+            busy={busy}
+            caseStatus={serviceCaseStatus}
+            technicianComments={caseTechnicianComments}
+            customerContactFeedback={caseCustomerContactFeedback}
+            lessonsTakeaways={caseLessonsTakeaways}
+            onTechnicianCommentsChange={setCaseTechnicianComments}
+            onCustomerContactFeedbackChange={setCaseCustomerContactFeedback}
+            onLessonsTakeawaysChange={setCaseLessonsTakeaways}
+            onCommitUpdate={() => updateServiceFollowUpCase()}
+            onChangeStatus={(status) => updateServiceFollowUpCase(status)}
+          />
 
           {showTimeline ? (
             <>
@@ -728,7 +815,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
           {!workflow.isTechSourced ? null : null}
 
-          {!showsTechReviewActions ? (
+          {!showsTechReviewActions && !isServiceFollowUp ? (
             <FieldLogVerdictActionsCard
               busy={busy}
               workflow={workflow}
@@ -747,7 +834,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             />
           ) : null}
 
-          {showsTechReviewActions ? (
+          {showsTechReviewActions && !isServiceFollowUp ? (
             <FieldLogTechReviewActionsCard
               busy={busy}
               canApprove={canApprove}
