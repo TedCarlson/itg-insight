@@ -1,76 +1,188 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/state/org";
-import { getStatusChip } from "../lib/statusStyles";
 
-type ActivityRow = {
+type SnapshotRow = {
   report_id: string;
   status: string;
   category_key: string | null;
-  category_label: string | null;
-  subcategory_label: string | null;
-  job_number: string | null;
-  job_type: string | null;
+  subcategory_key?: string | null;
   submitted_at: string | null;
-  tech_full_name?: string | null;
-  tech_id?: string | null;
-  tech_office?: string | null;
-  office?: string | null;
-  evidence_badge?: string | null;
-  last_action_type?: string | null;
+  updated_at?: string | null;
+  approved_at?: string | null;
+  billing_prepared_at?: string | null;
+  billing_email_sent_at?: string | null;
+  billing_email_last_error?: string | null;
 };
 
-type QueueResponse = {
+type SnapshotResponse = {
   ok: boolean;
-  data?: ActivityRow[];
+  data?: SnapshotRow[];
   error?: string;
 };
 
-function fmtDate(value: string | null | undefined) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
+type LogSummary = {
+  key: string;
+  label: string;
+  submitted: number;
+  approved: number;
+  rejected: number;
+  unresolved: number;
+  agingRisk: number;
+  followup: number;
+  openCases: number;
+  tnpsOpen: number;
+  billingPending: number;
+  billingSent: number;
+};
+
+const ORDER = [
+  "qc",
+  "not_done",
+  "u_code_applied",
+  "new_drop",
+  "conduit_pull_install",
+  "post_call",
+];
+
+function labelFor(key: string) {
+  if (key === "qc") return "QC";
+  if (key === "not_done") return "Not Done";
+  if (key === "u_code_applied") return "U-Code";
+  if (key === "new_drop") return "New Drop";
+  if (key === "conduit_pull_install") return "Conduit Pull";
+  if (key === "post_call") return "Service Follow Up";
+  return key.replaceAll("_", " ");
 }
 
-function ageDays(value: string | null | undefined) {
+function isClosedStatus(status: string | null | undefined) {
+  return status === "approved" || status === "closed" || status === "resolved" || status === "rejected";
+}
+
+function isPacketType(key: string) {
+  return key === "new_drop" || key === "conduit_pull_install";
+}
+
+function isServiceFollowUp(row: SnapshotRow) {
+  return row.category_key === "post_call";
+}
+
+function isTnps(row: SnapshotRow) {
+  const sub = String(row.subcategory_key ?? "").toLowerCase();
+  return isServiceFollowUp(row) && sub.includes("tnps");
+}
+
+function ageCalendarDays(value: string | null | undefined) {
   if (!value) return null;
-  const submitted = new Date(value).getTime();
-  if (Number.isNaN(submitted)) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
 
-  const diffMs = Date.now() - submitted;
-  return Math.max(0, Math.floor(diffMs / 86400000));
+  const then = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  return Math.max(0, Math.floor((today - then) / 86400000));
 }
 
-function agingLabel(days: number | null) {
-  if (days == null) return "—";
-  if (days === 0) return "Today";
-  if (days === 1) return "1 day";
-  return `${days} days`;
+function num(value: number) {
+  return value > 0 ? String(value) : "—";
 }
 
-function agingClass(days: number | null) {
-  if (days == null) return "text-muted-foreground";
-  if (days >= 7) return "text-red-700 font-semibold";
-  if (days >= 3) return "text-amber-700 font-semibold";
-  return "text-muted-foreground";
+function rate(summary: LogSummary) {
+  if (summary.submitted <= 0) return "—";
+  const handled = summary.approved + summary.rejected;
+  return `${Math.round((handled / summary.submitted) * 100)}%`;
 }
 
-function groupLabel(row: ActivityRow) {
-  if (row.category_key === "new_drop") return "New Drop";
-  if (row.category_key === "conduit_pull_install") return "Conduit Pull on Install";
-  return row.category_label ?? row.category_key ?? "Field Log";
+function Metric(props: { label: string; value: string | number; emphasis?: boolean }) {
+  return (
+    <div className="rounded-xl border bg-card px-3 py-2">
+      <div className="text-xs text-muted-foreground">{props.label}</div>
+      <div className={`mt-1 text-lg ${props.emphasis ? "font-semibold" : "font-medium"}`}>
+        {props.value}
+      </div>
+    </div>
+  );
 }
 
-function rowOffice(row: ActivityRow) {
-  return row.tech_office ?? row.office ?? "—";
+function LogTypeCard({ summary }: { summary: LogSummary }) {
+  if (isPacketType(summary.key)) {
+    return (
+      <section className="rounded-2xl border bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold">{summary.label}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Packet workflow: review, approve, reject, and billing email completion.
+            </div>
+          </div>
+          <div className="rounded-full border px-2 py-1 text-xs font-semibold">
+            {rate(summary)} handled
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <Metric label="Submitted" value={summary.submitted} emphasis />
+          <Metric label="Approved" value={num(summary.approved)} />
+          <Metric label="Rejected" value={num(summary.rejected)} emphasis={summary.rejected > 0} />
+          <Metric label="Unresolved" value={num(summary.unresolved)} emphasis={summary.unresolved > 0} />
+          <Metric label="Billing Pending" value={num(summary.billingPending)} emphasis={summary.billingPending > 0} />
+          <Metric label="Billing Sent" value={num(summary.billingSent)} />
+        </div>
+      </section>
+    );
+  }
+
+  if (summary.key === "post_call") {
+    return (
+      <section className="rounded-2xl border bg-card p-4">
+        <div className="text-base font-semibold">{summary.label}</div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          Case management: customer follow-up, tNPS, damage claims, and escalations.
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <Metric label="Submitted" value={summary.submitted} emphasis />
+          <Metric label="Open Cases" value={num(summary.openCases)} emphasis={summary.openCases > 0} />
+          <Metric label="tNPS Open" value={num(summary.tnpsOpen)} emphasis={summary.tnpsOpen > 0} />
+          <Metric label="Closed" value={num(summary.approved)} />
+          <Metric label="Aging 2d+" value={num(summary.agingRisk)} emphasis={summary.agingRisk > 0} />
+          <Metric label="Handle Rate" value={rate(summary)} />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold">{summary.label}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Review workflow: submitted, handled, follow-up, and aging.
+          </div>
+        </div>
+        <div className="rounded-full border px-2 py-1 text-xs font-semibold">
+          {rate(summary)} handled
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        <Metric label="Submitted" value={summary.submitted} emphasis />
+        <Metric label="Approved" value={num(summary.approved)} />
+        <Metric label="Rejected" value={num(summary.rejected)} emphasis={summary.rejected > 0} />
+        <Metric label="Unresolved" value={num(summary.unresolved)} emphasis={summary.unresolved > 0} />
+        <Metric label="Follow-Up" value={num(summary.followup)} emphasis={summary.followup > 0} />
+        <Metric label="Aging 2d+" value={num(summary.agingRisk)} emphasis={summary.agingRisk > 0} />
+      </div>
+    </section>
+  );
 }
 
 export function FieldLogActivityTable() {
   const { selectedOrgId } = useOrg();
-  const [rows, setRows] = useState<ActivityRow[]>([]);
+  const [rows, setRows] = useState<SnapshotRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,24 +194,26 @@ export function FieldLogActivityTable() {
     }
 
     setLoading(true);
+
     try {
       const params = new URLSearchParams();
       params.set("pc_org_id", selectedOrgId);
+      params.set("days", "30");
 
-      const res = await fetch(`/api/field-log/queue?${params.toString()}`, {
+      const res = await fetch(`/api/field-log/snapshot?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
       });
 
-      const json = (await res.json()) as QueueResponse;
+      const json = (await res.json()) as SnapshotResponse;
       if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Failed to load Field Log activity.");
+        throw new Error(json.error || "Failed to load Field Log snapshot.");
       }
 
       setRows(json.data ?? []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load Field Log activity.");
+      setError(err instanceof Error ? err.message : "Failed to load Field Log snapshot.");
     } finally {
       setLoading(false);
     }
@@ -109,38 +223,86 @@ export function FieldLogActivityTable() {
     void load();
   }, [load]);
 
-  const qcAgingRows = useMemo(() => {
-    return rows
-      .filter((row) => row.category_key === "qc" && row.status === "pending_review")
-      .slice()
-      .sort((a, b) => {
-        const aAge = ageDays(a.submitted_at) ?? -1;
-        const bAge = ageDays(b.submitted_at) ?? -1;
-        if (aAge !== bAge) return bAge - aAge;
-        return String(a.job_number ?? "").localeCompare(String(b.job_number ?? ""));
-      });
-  }, [rows]);
+  const summaries = useMemo(() => {
+    const map = new Map<string, LogSummary>();
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, ActivityRow[]>();
+    function getSummary(row: SnapshotRow) {
+      const key = row.category_key ?? "field_log";
+      const existing = map.get(key);
+      if (existing) return existing;
 
-    for (const row of rows) {
-      const key = groupLabel(row);
-      const existing = map.get(key) ?? [];
-      existing.push(row);
-      map.set(key, existing);
+      const next: LogSummary = {
+        key,
+        label: labelFor(key),
+        submitted: 0,
+        approved: 0,
+        rejected: 0,
+        unresolved: 0,
+        agingRisk: 0,
+        followup: 0,
+        openCases: 0,
+        tnpsOpen: 0,
+        billingPending: 0,
+        billingSent: 0,
+      };
+
+      map.set(key, next);
+      return next;
     }
 
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    for (const row of rows) {
+      const summary = getSummary(row);
+      const key = row.category_key ?? "field_log";
+
+      summary.submitted += 1;
+
+      if (row.status === "approved" || row.status === "closed" || row.status === "resolved") {
+        summary.approved += 1;
+      }
+
+      if (row.status === "rejected") summary.rejected += 1;
+      if (!isClosedStatus(row.status)) summary.unresolved += 1;
+
+      if (row.status === "tech_followup_required" || row.status === "sup_followup_required") {
+        summary.followup += 1;
+      }
+
+      const age = ageCalendarDays(row.submitted_at ?? row.updated_at);
+      if (!isClosedStatus(row.status) && age != null && age >= 2) summary.agingRisk += 1;
+
+      if (key === "post_call" && !isClosedStatus(row.status)) {
+        summary.openCases += 1;
+        if (isTnps(row)) summary.tnpsOpen += 1;
+      }
+
+      if (isPacketType(key) && row.status === "approved") {
+        if (row.billing_email_sent_at) {
+          summary.billingSent += 1;
+        } else {
+          summary.billingPending += 1;
+        }
+      }
+    }
+
+    return Array.from(map.values())
+      .filter((summary) => summary.submitted > 0)
+      .sort((a, b) => {
+        const ai = ORDER.indexOf(a.key);
+        const bi = ORDER.indexOf(b.key);
+        if (ai !== -1 || bi !== -1) {
+          return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+        }
+        return a.label.localeCompare(b.label);
+      });
   }, [rows]);
 
   return (
     <section className="rounded-2xl border bg-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-base font-semibold">Active Field Log Activity</div>
+          <div className="text-base font-semibold">Field Log Snapshot</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Open review and follow-up items grouped by submission type.
+            Thirty-day handling by log type. Each card shows only the signals relevant to that workflow.
           </div>
         </div>
 
@@ -155,160 +317,22 @@ export function FieldLogActivityTable() {
 
       {!selectedOrgId ? (
         <div className="mt-4 text-sm text-muted-foreground">
-          Select a PC scope to load activity.
+          Select a PC scope to load the snapshot.
         </div>
       ) : loading ? (
-        <div className="mt-4 text-sm text-muted-foreground">Loading activity…</div>
+        <div className="mt-4 text-sm text-muted-foreground">Loading snapshot…</div>
       ) : error ? (
         <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
-      ) : rows.length === 0 ? (
+      ) : summaries.length === 0 ? (
         <div className="mt-4 text-sm text-muted-foreground">
-          No active Field Log items.
+          No Field Log activity in the last 30 days.
         </div>
       ) : (
-        <div className="mt-5 space-y-6">
-          {qcAgingRows.length > 0 ? (
-            <section className="rounded-xl border border-amber-200 bg-amber-50/30 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-amber-900">
-                    QC Review Aging
-                  </div>
-                  <div className="mt-1 text-xs text-amber-800">
-                    Pending QC submissions ordered by oldest review age.
-                  </div>
-                </div>
-                <div className="text-xs font-semibold text-amber-900">
-                  {qcAgingRows.length} open
-                </div>
-              </div>
-
-              <div className="mt-3 overflow-hidden rounded-xl border bg-card">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Job</th>
-                      <th className="px-3 py-2 text-left">Tech</th>
-                      <th className="px-3 py-2 text-left">Evidence</th>
-                      <th className="px-3 py-2 text-left">Submitted</th>
-                      <th className="px-3 py-2 text-left">Office</th>
-                      <th className="px-3 py-2 text-left">Age</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {qcAgingRows.map((row, index) => {
-                      const days = ageDays(row.submitted_at);
-
-                      return (
-                        <tr key={`aging:${row.report_id}:${index}`} className="border-t">
-                          <td className="px-3 py-2">
-                            <Link
-                              href={`/field-log/${row.report_id}?from=review`}
-                              className="font-semibold underline-offset-2 hover:underline"
-                            >
-                              {row.job_number ?? "—"}
-                            </Link>
-                            <div className="text-xs text-muted-foreground">
-                              {row.subcategory_label ?? row.job_type ?? "—"}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">
-                            {row.tech_id ? `${row.tech_id} • ` : ""}
-                            {row.tech_full_name ?? "—"}
-                            <div className="text-xs text-muted-foreground">
-                              Office: {rowOffice(row)}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {row.evidence_badge ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {fmtDate(row.submitted_at)}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {rowOffice(row)}
-                          </td>
-                          <td className={`px-3 py-2 ${agingClass(days)}`}>
-                            {agingLabel(days)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-          {grouped.map(([label, groupRows]) => (
-            <div key={label} className="space-y-2">
-              <div className="flex items-center justify-between border-b pb-2">
-                <div className="text-sm font-semibold">{label}</div>
-                <div className="text-xs text-muted-foreground">{groupRows.length}</div>
-              </div>
-
-              <div className="overflow-hidden rounded-xl border">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Job</th>
-                      <th className="px-3 py-2 text-left">Tech</th>
-                      <th className="px-3 py-2 text-left">Checkpoint</th>
-                      <th className="px-3 py-2 text-left">Evidence</th>
-                      <th className="px-3 py-2 text-left">Submitted</th>
-                      <th className="px-3 py-2 text-left">Office</th>
-                      <th className="px-3 py-2 text-left">Age</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupRows.map((row) => {
-                      const chip = getStatusChip(row.status, row.last_action_type);
-
-                      return (
-                        <tr key={row.report_id} className="border-t">
-                          <td className="px-3 py-2">
-                            <Link
-                              href={`/field-log/${row.report_id}?from=review`}
-                              className="font-semibold underline-offset-2 hover:underline"
-                            >
-                              {row.job_number ?? "—"}
-                            </Link>
-                            <div className="text-xs text-muted-foreground">
-                              {row.subcategory_label ?? row.job_type ?? "—"}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">
-                            {row.tech_id ? `${row.tech_id} • ` : ""}
-                            {row.tech_full_name ?? "—"}
-                            <div className="text-xs text-muted-foreground">
-                              Office: {rowOffice(row)}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${chip.className}`}>
-                              {chip.label}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {row.evidence_badge ?? "—"}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {fmtDate(row.submitted_at)}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {rowOffice(row)}
-                          </td>
-                          <td className={`px-3 py-2 ${agingClass(ageDays(row.submitted_at))}`}>
-                            {agingLabel(ageDays(row.submitted_at))}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+        <div className="mt-5 grid gap-4">
+          {summaries.map((summary) => (
+            <LogTypeCard key={summary.key} summary={summary} />
           ))}
         </div>
       )}

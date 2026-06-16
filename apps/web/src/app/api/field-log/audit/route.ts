@@ -12,7 +12,6 @@ const RECENT_AUDIT_STATUSES = [
   "approved",
   "closed",
   "resolved",
-  "rejected",
 ] as const;
 
 type AuditRow = {
@@ -55,6 +54,52 @@ function isOnOrAfter(value: string | null | undefined, startIso: string) {
   if (Number.isNaN(t) || Number.isNaN(s)) return false;
 
   return t >= s;
+}
+
+
+async function loadRejectedRows(args: {
+  supabase: any;
+  pcOrgId: string;
+  recentStartIso: string;
+}) {
+  const { supabase, pcOrgId, recentStartIso } = args;
+
+  const { data, error } = await supabase
+    .from("field_log_report")
+    .select(`
+      report_id,
+      status,
+      category_key,
+      subcategory_key,
+      job_number,
+      job_type,
+      submitted_at,
+      updated_at,
+      created_by_user_id,
+      subject_person_id,
+      subject_full_name,
+      subject_tech_id,
+      pc_org_id,
+      billing_prepared_at,
+      billing_email_sent_at
+    `)
+    .eq("pc_org_id", pcOrgId)
+    .eq("status", "rejected")
+    .gte("updated_at", recentStartIso);
+
+  if (error) {
+    throw new Error(error.message || "Failed to load rejected Field Log audit rows.");
+  }
+
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    category_label: null,
+    subcategory_label: null,
+    last_action_at: row.updated_at ?? row.submitted_at ?? null,
+    tech_person_id: row.subject_person_id ?? null,
+    tech_full_name: row.subject_full_name ?? null,
+    tech_id: row.subject_tech_id ?? null,
+  })) as AuditRow[];
 }
 
 async function loadRowsByStatus(args: {
@@ -105,7 +150,7 @@ export async function GET(req: NextRequest) {
   const recentStartIso = daysAgoIso(days);
 
   try {
-    const [openSets, recentSets] = await Promise.all([
+    const [openSets, recentSets, rejectedRows] = await Promise.all([
       Promise.all(
         FIELD_LOG_ACTIVE_STATUSES.map((status) =>
           loadRowsByStatus({ supabase, pcOrgId, status }),
@@ -116,12 +161,14 @@ export async function GET(req: NextRequest) {
           loadRowsByStatus({ supabase, pcOrgId, status }),
         ),
       ),
+      loadRejectedRows({ supabase, pcOrgId, recentStartIso }),
     ]);
 
     const openRows = openSets.flat();
-    const recentRows = recentSets
-      .flat()
-      .filter((row) => isOnOrAfter(getAuditTime(row), recentStartIso));
+    const recentRows = [
+      ...recentSets.flat().filter((row) => isOnOrAfter(getAuditTime(row), recentStartIso)),
+      ...rejectedRows,
+    ];
 
     const visibleOpenRows = await applyFieldLogVisibility({
       supabase,

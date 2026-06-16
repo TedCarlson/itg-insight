@@ -36,9 +36,10 @@ type QueueResponse = {
   data?: QueueRow[];
   error?: string;
   meta?: {
-    mode?: "today" | "day" | "search" | "open";
-    selected_day?: string | null;
-    job_number?: string | null;
+    count?: number;
+    limit?: number;
+    offset?: number;
+    has_more?: boolean;
   };
 };
 
@@ -88,18 +89,13 @@ function niceCaseStatus(value: string | null | undefined) {
   return next.replaceAll("_", " ").toUpperCase();
 }
 
-function todayYmd() {
-  return new Date().toISOString().slice(0, 10);
-}
 
-function prettyDay(day: string | null) {
-  if (!day) return "Today";
-  const d = new Date(`${day}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return day;
-  return d.toLocaleDateString();
-}
 
-export function FieldLogReviewClient() {
+export function FieldLogReviewClient(props: {
+  viewMode?: "review" | "cases" | "tnps";
+  title?: string;
+}) {
+  const { viewMode = "review", title = "Review Queue" } = props;
   const { selectedOrgId } = useOrg();
   const [rows, setRows] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,8 +105,7 @@ export function FieldLogReviewClient() {
   const [, setTick] = useState(0);
   const [jobSearchInput, setJobSearchInput] = useState("");
   const [jobSearch, setJobSearch] = useState("");
-  const [selectedDay, setSelectedDay] = useState(todayYmd());
-  const [mode, setMode] = useState<"today" | "day" | "search" | "open">("open");
+  const [resultMeta, setResultMeta] = useState<{ count: number; hasMore: boolean }>({ count: 0, hasMore: false });
 
   const load = useCallback(
     async (showLoading = false) => {
@@ -125,15 +120,14 @@ export function FieldLogReviewClient() {
       try {
         const params = new URLSearchParams();
         params.set("pc_org_id", selectedOrgId);
+        params.set("view", viewMode);
+        params.set("limit", "50");
+        params.set("offset", "0");
 
-        const trimmedJob = jobSearch.trim();
-        if (trimmedJob) {
-          params.set("jobNumber", trimmedJob);
-        } else if (selectedDay !== todayYmd()) {
-          params.set("day", selectedDay);
-        }
+        const trimmed = jobSearch.trim();
+        if (trimmed) params.set("q", trimmed);
 
-        const res = await fetch(`/api/field-log/queue?${params.toString()}`, {
+        const res = await fetch(`/api/field-log/search?${params.toString()}`, {
           method: "GET",
           cache: "no-store",
         });
@@ -141,7 +135,7 @@ export function FieldLogReviewClient() {
         const json = (await res.json()) as QueueResponse;
 
         if (!res.ok || !json.ok) {
-          throw new Error(json.error || "Failed to load review queue.");
+          throw new Error(json.error || "Failed to load Field Log records.");
         }
 
         const nextRows = (json.data ?? []).slice().sort((a, b) => {
@@ -154,16 +148,19 @@ export function FieldLogReviewClient() {
         });
 
         setRows(nextRows);
-        setMode(json.meta?.mode ?? "today");
+        setResultMeta({
+          count: json.meta?.count ?? nextRows.length,
+          hasMore: !!json.meta?.has_more,
+        });
         setError(null);
         setLastUpdatedAt(Date.now());
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load review queue.");
+        setError(err instanceof Error ? err.message : "Failed to load Field Log records.");
       } finally {
         if (showLoading) setLoading(false);
       }
     },
-    [selectedOrgId, selectedDay, jobSearch],
+    [selectedOrgId, jobSearch, viewMode],
   );
 
   const manualRefresh = useCallback(async () => {
@@ -213,11 +210,19 @@ export function FieldLogReviewClient() {
   const freshnessText = useMemo(() => formatFreshness(lastUpdatedAt), [lastUpdatedAt]);
 
   const scopeText = useMemo(() => {
-    if (mode === "search") return "Searching last 35 days";
-    if (mode === "open") return "Showing all open review items";
-    if (selectedDay === todayYmd()) return "Showing today";
-    return `Showing ${prettyDay(selectedDay)}`;
-  }, [mode, selectedDay]);
+    const prefix =
+      viewMode === "cases"
+        ? "Service Follow Up records"
+        : viewMode === "tnps"
+          ? "tNPS Service Follow Up records"
+          : "review records";
+
+    if (jobSearch.trim()) {
+      return `Searching all ${prefix} for "${jobSearch.trim()}"`;
+    }
+
+    return `Showing latest ${Math.min(resultMeta.count, 50)} ${prefix}`;
+  }, [jobSearch, resultMeta.count, viewMode]);
 
   function runSearch() {
     setJobSearch(jobSearchInput.trim());
@@ -323,30 +328,22 @@ export function FieldLogReviewClient() {
   return (
     <div className="space-y-4">
       <FieldLogLiveHeader
-        title="Review Queue"
+        title={title}
         freshnessText={freshnessText}
         refreshing={refreshing}
         onRefresh={manualRefresh}
       />
 
       <section className="rounded-2xl border bg-card p-4 space-y-3">
-        <div className="grid gap-3 lg:grid-cols-[1fr_180px_auto_auto]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
           <input
             value={jobSearchInput}
             onChange={(e) => setJobSearchInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") runSearch();
             }}
-            placeholder="Search job number"
+            placeholder="Search job, tech ID, tech name, or comment"
             className="w-full rounded-xl border px-3 py-3"
-          />
-
-          <input
-            type="date"
-            value={selectedDay}
-            onChange={(e) => setSelectedDay(e.target.value || todayYmd())}
-            disabled={jobSearch.trim().length > 0}
-            className="w-full rounded-xl border px-3 py-3 disabled:opacity-60"
           />
 
           <button
@@ -362,7 +359,7 @@ export function FieldLogReviewClient() {
             onClick={clearSearch}
             className="rounded-xl border px-4 py-3 text-sm font-medium hover:bg-muted"
           >
-            Today
+            Reset
           </button>
         </div>
 
@@ -379,21 +376,32 @@ export function FieldLogReviewClient() {
         </div>
       ) : (
         <div className="space-y-5">
-          <Section title="Open Cases" rows={grouped.open_cases} status="sup_followup_required" />
-          <Section title="tNPS Events" rows={grouped.tnps_events} status="pending_review" />
-          <Section title="Pending Review" rows={grouped.pending_review} status="pending_review" />
-          <Section
-            title="Technician Follow-Up"
-            rows={grouped.tech_followup_required}
-            status="tech_followup_required"
-          />
-          <Section
-            title="Supervisor Follow-Up"
-            rows={grouped.sup_followup_required}
-            status="sup_followup_required"
-          />
-          <Section title="Closed Cases" rows={grouped.closed_cases} status="approved" />
-          <Section title="Closed / Finalized" rows={grouped.approved} status="approved" />
+          {viewMode === "cases" ? (
+            <>
+              <Section title="Open Cases" rows={grouped.open_cases} status="sup_followup_required" />
+              <Section title="Closed Cases" rows={grouped.closed_cases} status="approved" />
+            </>
+          ) : viewMode === "tnps" ? (
+            <Section title="tNPS Events" rows={grouped.tnps_events} status="pending_review" />
+          ) : (
+            <>
+              <Section title="Open Cases" rows={grouped.open_cases} status="sup_followup_required" />
+              <Section title="tNPS Events" rows={grouped.tnps_events} status="pending_review" />
+              <Section title="Pending Review" rows={grouped.pending_review} status="pending_review" />
+              <Section
+                title="Technician Follow-Up"
+                rows={grouped.tech_followup_required}
+                status="tech_followup_required"
+              />
+              <Section
+                title="Supervisor Follow-Up"
+                rows={grouped.sup_followup_required}
+                status="sup_followup_required"
+              />
+              <Section title="Closed Cases" rows={grouped.closed_cases} status="approved" />
+              <Section title="Closed / Finalized" rows={grouped.approved} status="approved" />
+            </>
+          )}
         </div>
       )}
     </div>

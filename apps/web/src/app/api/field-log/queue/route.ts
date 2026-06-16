@@ -24,6 +24,8 @@ type QueueRow = {
   tech_office?: string | null;
   office?: string | null;
   case_status?: string | null;
+  billing_prepared_at?: string | null;
+  billing_email_sent_at?: string | null;
 };
 
 function startOfDayIso(dateStr: string) {
@@ -176,6 +178,39 @@ export async function GET(req: NextRequest) {
         ? { ...row, case_status: caseStatusByReportId.get(row.report_id) ?? "open" }
         : row,
     );
+  }
+
+  const billingReportIds = enrichedRows
+    .filter((row) => row.category_key === "new_drop" || row.category_key === "conduit_pull_install")
+    .map((row) => row.report_id);
+
+  if (billingReportIds.length > 0) {
+    const { data: billingRows, error: billingError } = await supabase
+      .from("field_log_report")
+      .select("report_id,billing_prepared_at,billing_email_sent_at")
+      .in("report_id", billingReportIds);
+
+    if (billingError) {
+      return NextResponse.json(
+        { ok: false, error: billingError.message || "Failed to load billing state." },
+        { status: 500 },
+      );
+    }
+
+    const billingByReportId = new Map(
+      (billingRows ?? []).map((row) => [
+        row.report_id,
+        {
+          billing_prepared_at: row.billing_prepared_at ?? null,
+          billing_email_sent_at: row.billing_email_sent_at ?? null,
+        },
+      ]),
+    );
+
+    enrichedRows = enrichedRows.map((row) => {
+      const billing = billingByReportId.get(row.report_id);
+      return billing ? { ...row, ...billing } : row;
+    });
   }
 
   return NextResponse.json({
