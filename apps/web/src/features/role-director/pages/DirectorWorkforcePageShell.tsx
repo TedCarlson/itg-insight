@@ -178,7 +178,7 @@ export default async function DirectorWorkforcePageShell() {
               <OnboardingReportLauncher
                 regionLabel={regionLabel}
                 reportMonthLabel={reportMonthLabel}
-                scopedAffiliations={scopedAffiliations}
+                pcOrgId={scope.selected_pc_org_id}
               />
 
               <RosterExportLauncher

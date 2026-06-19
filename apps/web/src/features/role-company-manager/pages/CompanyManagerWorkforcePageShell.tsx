@@ -158,7 +158,6 @@ export default async function CompanyManagerWorkforcePageShell(props: Props) {
             <OnboardingReportLauncher
               regionLabel={regionLabel}
               reportMonthLabel={reportMonthLabel}
-              scopedAffiliations={scopedAffiliations}
             />
 
             <RosterExportLauncher

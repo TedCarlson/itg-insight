@@ -11,37 +11,29 @@ import {
 type Props = {
   regionLabel: string;
   reportMonthLabel: string;
-  scopedAffiliations?: string[];
+  pcOrgId?: string;
 };
-
-function normalizeAffiliation(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
-}
 
 export function OnboardingReportLauncher({
   regionLabel,
   reportMonthLabel,
-  scopedAffiliations = [],
+  pcOrgId,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<OnboardingReportRow[]>([]);
-
-  const scopedAffiliationSet = useMemo(() => {
-    return new Set(
-      scopedAffiliations
-        .map((affiliation) => normalizeAffiliation(affiliation))
-        .filter(Boolean)
-    );
-  }, [scopedAffiliations]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadCount() {
       try {
-        const res = await fetch("/api/people/onboarding", {
-          cache: "no-store",
-        });
+        const params = new URLSearchParams();
+        if (pcOrgId) params.set("pc_org_id", pcOrgId);
+
+        const res = await fetch(
+          `/api/people/onboarding${params.toString() ? `?${params.toString()}` : ""}`,
+          { cache: "no-store" }
+        );
 
         const json = await res.json().catch(() => null);
 
@@ -58,19 +50,11 @@ export function OnboardingReportLauncher({
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const scopedRows = useMemo(() => {
-    if (!scopedAffiliationSet.size) return rows;
-
-    return rows.filter((row) =>
-      scopedAffiliationSet.has(normalizeAffiliation(row.affiliation))
-    );
-  }, [rows, scopedAffiliationSet]);
+  }, [pcOrgId]);
 
   const onboardingCount = useMemo(() => {
-    return scopedRows.filter((row) => row.status === "onboarding").length;
-  }, [scopedRows]);
+    return rows.filter((row) => row.status === "onboarding").length;
+  }, [rows]);
 
   return (
     <>
@@ -89,7 +73,7 @@ export function OnboardingReportLauncher({
 
       <OnboardingReportModal
         open={open}
-        rows={scopedRows}
+        rows={rows}
         onClose={() => setOpen(false)}
         regionLabel={regionLabel}
         reportMonthLabel={reportMonthLabel}

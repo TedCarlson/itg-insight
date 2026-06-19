@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { loadPeopleOnboardingRows } from "@/shared/server/people/loadPeopleOnboardingRows.server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const userClient = await supabaseServer();
 
   const {
@@ -25,7 +25,9 @@ export async function GET() {
     return NextResponse.json({ error: profileError.message }, { status: 500 });
   }
 
-  const pcOrgId = profile?.selected_pc_org_id ?? null;
+  const { searchParams } = new URL(req.url);
+  const requestedPcOrgId = searchParams.get("pc_org_id");
+  const pcOrgId = requestedPcOrgId || profile?.selected_pc_org_id || null;
 
   if (!pcOrgId) {
     return NextResponse.json(

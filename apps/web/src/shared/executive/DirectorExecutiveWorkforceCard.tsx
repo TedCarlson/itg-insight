@@ -307,7 +307,6 @@ function WorkforceReportsArtifact({
           <OnboardingReportLauncher
             regionLabel={workforceReports.regionLabel}
             reportMonthLabel={workforceReports.reportMonthLabel}
-            scopedAffiliations={workforceReports.scopedAffiliations}
           />
 
           <RosterExportLauncher
