@@ -205,6 +205,16 @@ function buildBpOwnerDestinations(): HomeDestination[] {
       href: "/bp-owner/metrics",
       description: "Company-scoped performance for direct affiliates only",
     },
+    {
+      label: "Dispatch Console",
+      href: "/dispatch-console",
+      description: "Live job routing, assignments, and activity log",
+    },
+    {
+      label: "Field Log",
+      href: "/field-log",
+      description: "Submit, review, and track field activity",
+    },
   ];
 }
 
@@ -323,17 +333,12 @@ function buildDestinations(
       },
       {
         label: "Schedule",
-        href: "/schedule",
+        href: "/tech/schedule",
         description: "View assigned routes and planned workload",
       },
       {
-        label: "Dispatch Console",
-        href: "/dispatch-console",
-        description: "View job flow and updates",
-      },
-      {
         label: "Field Log",
-        href: "/field-log",
+        href: "/tech/field-log",
         description: "Submit and track your field logs",
       },
     ];

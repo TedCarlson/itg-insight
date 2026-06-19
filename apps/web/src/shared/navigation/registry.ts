@@ -329,6 +329,9 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     icon: "clipboard",
     visibility: "default",
     defaultRoles: [
+      "APP_OWNER",
+      "ADMIN",
+      "DIRECTOR",
       "ITG_SUPERVISOR",
       "COMPANY_MANAGER",
       "BP_SUPERVISOR",

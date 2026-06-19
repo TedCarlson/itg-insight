@@ -21,7 +21,6 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
       { key: "home", label: "Home", href: "/home" },
       { key: "metrics", label: "Metrics", href: "/tech/metrics" },
       { key: "schedule", label: "Schedule", href: "/tech/schedule" },
-      { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
       { key: "fieldlog", label: "Field Log", href: "/tech/field-log" },
     ];
   }
