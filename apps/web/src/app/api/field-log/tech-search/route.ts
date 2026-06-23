@@ -8,51 +8,53 @@ function json(status: number, payload: any) {
   return NextResponse.json(payload, { status });
 }
 
+function clean(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text.length ? text : null;
+}
+
 function sanitizeSearch(raw: string) {
   return raw.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+function tokens(q: string) {
+  return sanitizeSearch(q).toLowerCase().split(" ").filter(Boolean);
 }
 
-function isActiveWindow(row: any, today: string) {
-  const activeOk = row?.active === true || row?.active == null;
+function overlapsToday(row: any) {
+  const today = new Date().toISOString().slice(0, 10);
   const startOk = !row?.start_date || String(row.start_date) <= today;
   const endOk = !row?.end_date || String(row.end_date) >= today;
-  return activeOk && startOk && endOk;
+  return startOk && endOk;
 }
 
-function pickBestAssignment(assignments: any[], today: string) {
-  if (!assignments?.length) return null;
+function isCurrentWorkforceRow(row: any) {
+  const status = String(row?.assignment_status ?? "").toLowerCase();
+  const activeFlag = row?.is_active;
+  return overlapsToday(row) && (status === "active" || activeFlag === true || !status);
+}
 
-  const current = assignments.filter((a) => isActiveWindow(a, today));
-  const pool = current.length ? current : assignments;
-
-  pool.sort((a, b) => {
-    const aHasTech = a?.tech_id ? 1 : 0;
-    const bHasTech = b?.tech_id ? 1 : 0;
-    if (aHasTech !== bHasTech) return bHasTech - aHasTech;
-    return String(b?.start_date ?? "").localeCompare(String(a?.start_date ?? ""));
-  });
-
-  return pool[0] ?? null;
+function searchable(identity: any) {
+  return [
+    identity?.full_name,
+    identity?.preferred_name,
+    identity?.legal_name,
+    identity?.tech_id,
+    identity?.nt_login,
+    identity?.csg,
+    identity?.email,
+  ]
+    .map((v) => String(v ?? "").toLowerCase())
+    .join(" ");
 }
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+  const pcOrgId = clean(url.searchParams.get("pc_org_id"));
+  const q = sanitizeSearch(clean(url.searchParams.get("q")) ?? "");
 
-  const pcOrgId = String(url.searchParams.get("pc_org_id") ?? "").trim();
-  const qRaw = String(url.searchParams.get("q") ?? "").trim();
-  const q = sanitizeSearch(qRaw);
-
-  if (!pcOrgId) {
-    return json(400, { ok: false, error: "pc_org_id is required" });
-  }
-
-  if (!q) {
-    return json(200, { ok: true, rows: [] });
-  }
+  if (!pcOrgId) return json(400, { ok: false, error: "pc_org_id is required" });
+  if (!q) return json(200, { ok: true, rows: [] });
 
   try {
     await requireAccessPass(req, pcOrgId);
@@ -61,94 +63,44 @@ export async function GET(req: NextRequest) {
   }
 
   const admin = supabaseAdmin();
-  const today = isoToday();
 
-  const { data: assignments, error: asgErr } = await admin
-    .from("assignment" as any)
-    .select("person_id,tech_id,start_date,end_date,active,pc_org_id")
+  const { data: workforceRows, error: workforceErr } = await admin
+    .from("workforce_current_v" as any)
+    .select("person_id,pc_org_id,assignment_status,start_date,end_date,is_active")
     .eq("pc_org_id", pcOrgId)
-    .or(`tech_id.ilike.%${q}%`)
-    .limit(100);
+    .limit(5000);
 
-  if (asgErr) {
-    return json(500, { ok: false, error: asgErr.message });
-  }
+  if (workforceErr) return json(500, { ok: false, error: workforceErr.message });
 
-  const asgRows = (assignments ?? []) as any[];
-  const personIdsFromAsg = Array.from(
+  const personIds = Array.from(
     new Set(
-      asgRows
-        .map((r) => String(r?.person_id ?? "").trim())
-        .filter(Boolean),
+      ((workforceRows ?? []) as any[])
+        .filter(isCurrentWorkforceRow)
+        .map((row) => clean(row?.person_id))
+        .filter(Boolean) as string[],
     ),
   );
 
-  const { data: peopleByName, error: peopleErr } = await admin
-    .from("person" as any)
-    .select("person_id,full_name")
-    .ilike("full_name", `%${q}%`)
-    .limit(100);
+  if (!personIds.length) return json(200, { ok: true, rows: [] });
 
-  if (peopleErr) {
-    return json(500, { ok: false, error: peopleErr.message });
-  }
+  const { data: identities, error: identityErr } = await admin
+    .from("workforce_person_identity_v" as any)
+    .select("person_id,full_name,legal_name,preferred_name,status,mobile,email,tech_id,nt_login,csg")
+    .in("person_id", personIds)
+    .limit(5000);
 
-  const nameRows = (peopleByName ?? []) as any[];
-  const namePersonIds = nameRows
-    .map((r) => String(r?.person_id ?? "").trim())
-    .filter(Boolean);
+  if (identityErr) return json(500, { ok: false, error: identityErr.message });
 
-  const candidateIds = Array.from(new Set([...personIdsFromAsg, ...namePersonIds]));
-  if (!candidateIds.length) {
-    return json(200, { ok: true, rows: [] });
-  }
+  const qTokens = tokens(q);
 
-  const { data: allAssignments, error: allAsgErr } = await admin
-    .from("assignment" as any)
-    .select("person_id,tech_id,start_date,end_date,active,pc_org_id")
-    .eq("pc_org_id", pcOrgId)
-    .in("person_id", candidateIds)
-    .limit(1000);
-
-  if (allAsgErr) {
-    return json(500, { ok: false, error: allAsgErr.message });
-  }
-
-  const { data: people, error: personErr } = await admin
-    .from("person" as any)
-    .select("person_id,full_name")
-    .in("person_id", candidateIds)
-    .limit(100);
-
-  if (personErr) {
-    return json(500, { ok: false, error: personErr.message });
-  }
-
-  const asgByPerson = new Map<string, any[]>();
-  for (const a of (allAssignments ?? []) as any[]) {
-    const pid = String(a?.person_id ?? "").trim();
-    if (!pid) continue;
-    const arr = asgByPerson.get(pid) ?? [];
-    arr.push(a);
-    asgByPerson.set(pid, arr);
-  }
-
-  const rows = ((people ?? []) as any[])
-    .map((p) => {
-      const personId = String(p?.person_id ?? "").trim();
-      const best = pickBestAssignment(asgByPerson.get(personId) ?? [], today);
-
-      return {
-        person_id: personId,
-        full_name: p?.full_name ? String(p.full_name) : null,
-        tech_id: best?.tech_id ? String(best.tech_id).trim() : null,
-      };
-    })
-    .filter((r) => r.person_id && (r.full_name || r.tech_id))
-    .filter((r) => {
-      const hay = `${r.full_name ?? ""} ${r.tech_id ?? ""}`.toLowerCase();
-      return hay.includes(q.toLowerCase());
-    })
+  const rows = ((identities ?? []) as any[])
+    .filter((identity) => qTokens.every((token) => searchable(identity).includes(token)))
+    .map((identity) => ({
+      person_id: clean(identity?.person_id),
+      full_name: clean(identity?.full_name) ?? clean(identity?.preferred_name) ?? clean(identity?.legal_name),
+      tech_id: clean(identity?.tech_id),
+    }))
+    .filter((row) => row.person_id && (row.full_name || row.tech_id))
     .sort((a, b) => String(a.full_name ?? "").localeCompare(String(b.full_name ?? "")))
     .slice(0, 25);
 
