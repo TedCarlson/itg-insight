@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       "Week Ending": Number(row.week_ending_value),
       "Prior Week": Number(row.prior_week_value),
       Change: Number(row.change_points),
-      "Current Week Trend": Number(row.current_week_trend),
+      "Current Week Trend": row.current_week_trend == null ? "" : Number(row.current_week_trend),
       Status: row.status,
     }));
 

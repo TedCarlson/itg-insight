@@ -11,13 +11,13 @@ import { Button } from "@/components/ui/Button";
 
 type StageOk = {
   ok: true;
+  staged: true;
   mode: "today" | "date";
   fiscal_end_date: string;
   detected_generated_at?: string | null;
   detected_title?: string | null;
   row_count_total: number;
   warning_flags: any[];
-  batch_id: string;
 };
 
 type LoadOk = {
@@ -60,13 +60,12 @@ export function UploadMetricsCard({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const staged =
-    Boolean(result && (result as any).ok && (result as any).batch_id && !(result as any).loaded);
-  const stagedBatchId = staged ? (result as any).batch_id : null;
+    Boolean(result && (result as any).ok && (result as any).staged && !(result as any).loaded);
 
   const canStage = useMemo(() => Boolean(file && !busy), [file, busy]);
   const canLoad = useMemo(
-    () => Boolean(stagedBatchId && file && !busy),
-    [stagedBatchId, file, busy]
+    () => Boolean(staged && file && !busy),
+    [staged, file, busy]
   );
 
   function pickFile(f: File | null) {
@@ -132,7 +131,7 @@ export function UploadMetricsCard({
   }
 
   async function onConfirmLoad() {
-    if (!file || !stagedBatchId) return;
+    if (!file || !staged) return;
     setBusy(true);
 
     try {
@@ -141,32 +140,9 @@ export function UploadMetricsCard({
       fd.append("mode", "date");
       fd.append("picked_date", pickedDate);
       fd.append("confirm", "1");
-      fd.append("batch_id", stagedBatchId);
 
       const { res, json } = await post(fd);
       setResult(json);
-      if (res.ok) router.refresh();
-    } catch (e: any) {
-      setResult({ ok: false, error: String(e?.message ?? e) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onRemoveLastBatch() {
-    if (busy) return;
-    const ok = window.confirm(
-      "Remove the most recent Metrics batch for this org? This cannot be undone."
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setResult(null);
-
-    try {
-      const res = await fetch("/api/metrics/remove-last-batch", { method: "POST" });
-      const json = await res.json().catch(() => null);
-      setResult(json ?? { ok: false, error: "invalid response" });
       if (res.ok) router.refresh();
     } catch (e: any) {
       setResult({ ok: false, error: String(e?.message ?? e) });
@@ -197,8 +173,7 @@ export function UploadMetricsCard({
           <div>
             <div className="text-sm font-medium">Upload Metrics (bulk TPR)</div>
             <div className="text-sm text-[var(--to-ink-muted)]">
-              Stage and verify the bulk TPR file first, then confirm load into the
-              raw bucket.
+              Pick the anchor date that belongs to the target metric fiscal month. Stage first, review the fiscal end date, then confirm load.
             </div>
           </div>
 
@@ -245,20 +220,6 @@ export function UploadMetricsCard({
               onClick={onConfirmLoad}
             >
               {busy ? "Working…" : "Confirm & load"}
-            </Button>
-
-            <Button
-              variant="ghost"
-              className={[
-                "h-10 px-4 text-sm flex-1 min-w-[180px]",
-                "border border-orange-500 text-orange-700",
-                "hover:bg-orange-50 hover:border-orange-600 hover:text-orange-800",
-                "disabled:opacity-60",
-              ].join(" ")}
-              disabled={busy}
-              onClick={onRemoveLastBatch}
-            >
-              Remove last batch
             </Button>
           </div>
 

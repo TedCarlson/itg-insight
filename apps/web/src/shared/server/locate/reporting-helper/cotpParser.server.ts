@@ -36,21 +36,21 @@ function changeDisplay(changePoints: number) {
 function classify(row: Omit<CotpParsedRow, "status">): CotpStatus {
   const finalValue = row.weekEndingValue;
   const trend = row.currentWeekTrend;
-  const recoveryLift = trend - finalValue;
+  const signalValue = trend ?? finalValue;
+  const recoveryLift = trend == null ? 0 : trend - finalValue;
 
-  // Current trend is the operational signal.
-  if (finalValue === 100 && trend === 100) return "Excellent";
+  if (finalValue === 100 && signalValue === 100) return "Excellent";
 
-  if (trend < 90) return "Needs attention";
+  if (signalValue < 90) return "Needs attention";
 
-  if (trend >= 96) {
-    if (finalValue < 90 && recoveryLift >= 10) return "Recovery trending";
+  if (signalValue >= 96) {
+    if (trend != null && finalValue < 90 && recoveryLift >= 10) return "Recovery trending";
     if (row.changePoints >= 10 && finalValue >= 96) return "Strong improvement";
-    if (finalValue < 96) return "Improving trend";
+    if (finalValue < 96) return trend == null ? "Strong" : "Improving trend";
     return "Strong";
   }
 
-  if (trend >= 90 && trend <= 95) return "Watch closely";
+  if (signalValue >= 90 && signalValue <= 95) return "Watch closely";
 
   return "Stable";
 }
@@ -81,10 +81,10 @@ function parseRows(lines: string[]) {
   const warnings: string[] = [];
 
   const stateLineRegex =
-    /^([A-Z]{2})\s*-\s*(\d+)%\s+(up|down|flat)\s+from\s+(\d+)%\s+prior week\s+\(([^)]+)\).*?current week trending\s*@\s*(\d+)%/i;
+    /^([A-Z]{2})\s*-\s*(\d+)%\s+(up|down|flat)\s+from\s+(\d+)%\s+prior week(?:\s+\(([^)]+)\))?(?:.*?(?:current\s+week\s+)?(?:trend|trending)\s*(?:@|at|:)?\s*(\d+)%?)?/i;
 
   for (const line of lines) {
-    if (!/current week trending/i.test(line)) continue;
+    if (!/^[A-Z]{2}\s*-/.test(line)) continue;
 
     const match = line.match(stateLineRegex);
     if (!match) {
@@ -97,7 +97,7 @@ function parseRows(lines: string[]) {
     const direction = match[3].toLowerCase();
     const priorWeekValue = Number(match[4]);
     const priorWeekRange = match[5]?.trim() ?? null;
-    const currentWeekTrend = Number(match[6]);
+    const currentWeekTrend = match[6] == null ? null : Number(match[6]);
     const changePoints = weekEndingValue - priorWeekValue;
 
     if (
@@ -181,11 +181,11 @@ function generateExecutiveSummary(report: {
   }
 
   if (recovery.length) {
-    parts.push(`Recovery states include ${recovery.join(", ")}, where current-week trend has materially improved from the week-ending result.`);
+    parts.push(`Recovery states include ${recovery.join(", ")}, where available trend data shows material improvement from the week-ending result.`);
   }
 
   if (attention.length) {
-    parts.push(`Focus areas include ${listStates(attention)} based on current-week trend risk.`);
+    parts.push(`Focus areas include ${listStates(attention)} based on available trend data and week-ending performance.`);
   }
 
   return parts.join(" ");
@@ -230,7 +230,7 @@ export function generateCotpReport(rawText: string): CotpGeneratedReport {
   }
 
   if (!parsed.rows.length) {
-    throw new Error("We could not identify state-level performance rows. Please confirm the pasted text includes state abbreviations, percentages, prior week values, and current week trend values.");
+    throw new Error("We could not identify state-level performance rows. Please confirm the pasted text includes state abbreviations, week-ending percentages, direction, and prior week values.");
   }
 
   const base = {

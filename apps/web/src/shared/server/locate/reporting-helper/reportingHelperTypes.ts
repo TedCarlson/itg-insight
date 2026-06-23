@@ -16,7 +16,7 @@ export type CotpParsedRow = {
   direction: string;
   priorWeekValue: number;
   priorWeekRange: string | null;
-  currentWeekTrend: number;
+  currentWeekTrend: number | null;
   changePoints: number;
   changeDisplay: string;
   status: CotpStatus;

@@ -308,24 +308,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (!confirm) {
-      const { data, error } = await admin.rpc("metrics_stage_batch", {
-        p_pc_org_id: pc_org_id,
-        p_metric_date: metric_date,
-        p_fiscal_end_date: fiscal_end_date,
-        p_source_filename: filename,
-        p_source_title: title,
-        p_source_generated_at: detected_generated_at,
-        p_warning_flags: warning_flags,
-      });
-
-      if (error) {
-        return json(500, { ok: false, error: error.message });
-      }
-
-      const batch_id = Array.isArray(data) ? data[0]?.metric_batch_id : data?.metric_batch_id;
-
+      // Preview-only stage.
+      // Do not create a database batch here. A real batch is created only when
+      // the user confirms the load through metrics_upload_tpr_batch().
       return json(200, {
         ok: true,
+        staged: true,
         mode,
         metric_date,
         fiscal_end_date,
@@ -333,7 +321,6 @@ export async function POST(req: NextRequest) {
         detected_title: title,
         row_count_total,
         warning_flags,
-        batch_id,
       });
     }
 

@@ -15,6 +15,10 @@ import {
   ImportedMetricsRowsCardClient,
   type MetricsRawRow,
 } from "../components/ImportedMetricsRowsCardClient";
+import {
+  MetricsBatchHistoryClient,
+  type MetricsBatchHistoryRow,
+} from "../components/MetricsBatchHistoryClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,13 +50,15 @@ export default async function MetricsUploadsPage() {
     if (pcRow?.pc_number != null) orgLabel = String(pcRow.pc_number);
   }
 
-  const { data: latestBatch } = await sb
+  const { data: batches } = await sb
     .from("metric_raw_batches_compat_v")
     .select("batch_id, fiscal_end_date, row_count, uploaded_at, status")
     .eq("pc_org_id", pc_org_id)
     .order("uploaded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(25);
+
+  const typedBatches: MetricsBatchHistoryRow[] = (batches ?? []) as MetricsBatchHistoryRow[];
+  const latestBatch = typedBatches[0] ?? null;
 
   const { data: rows } = await sb
     .from("metric_raw_rows_compat_v")
@@ -90,7 +96,10 @@ export default async function MetricsUploadsPage() {
         />
       </Card>
 
-      <UploadMetricsCard orgId={pc_org_id} orgSelectable />
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+        <UploadMetricsCard orgId={pc_org_id} orgSelectable />
+        <MetricsBatchHistoryClient batches={typedBatches} />
+      </div>
 
       <Card>
         <div className="space-y-2 text-sm">
@@ -105,7 +114,7 @@ export default async function MetricsUploadsPage() {
               <span className="text-[var(--to-ink-muted)]">
                 {latestBatch.status} · FM end {latestBatch.fiscal_end_date} ·{" "}
                 {latestBatch.row_count} rows ·{" "}
-                {new Date(latestBatch.uploaded_at).toLocaleString()}
+                {latestBatch.uploaded_at ? new Date(latestBatch.uploaded_at).toLocaleString() : "—"}
               </span>
             ) : (
               <span className="text-[var(--to-ink-muted)]">No uploads yet</span>
