@@ -13,8 +13,19 @@ function copyText(value: string) {
 
 function cotpRowClass(status: string) {
   const normalized = String(status ?? "").toLowerCase();
-  if (normalized === "needs attention") return "border-t bg-red-700 text-white";
-  if (normalized === "watch closely") return "border-t bg-yellow-300 text-yellow-950";
+
+  if (normalized === "needs attention") return "border-t bg-red-50 text-red-950";
+  if (normalized === "watch closely") return "border-t bg-yellow-50 text-yellow-950";
+
+  if (
+    normalized === "recovery trending" ||
+    normalized === "improving trend" ||
+    normalized === "strong" ||
+    normalized === "excellent"
+  ) {
+    return "border-t bg-green-50 text-green-950";
+  }
+
   return "border-t";
 }
 
