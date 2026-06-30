@@ -1,14 +1,15 @@
 "use client";
 
 export function FieldLogCommentCard(props: {
+  title?: string;
   comment: string | null;
   followupNote: string | null;
 }) {
-  const { comment, followupNote } = props;
+  const { title = "Comment", comment, followupNote } = props;
 
   return (
     <section className="rounded-2xl border bg-card p-5">
-      <div className="text-base font-semibold">Comment</div>
+      <div className="text-base font-semibold">{title}</div>
       <div className="mt-3 text-sm text-muted-foreground">
         {comment?.trim() ? comment : "No comment provided."}
       </div>

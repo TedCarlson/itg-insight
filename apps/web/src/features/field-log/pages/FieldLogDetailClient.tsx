@@ -209,8 +209,12 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const canActAsFieldLogReviewer =
     entrySource !== "TECH" && entrySource !== "UNKNOWN" && !isSelfSubmittedReport;
 
+  const recordEntrySourceRole = String(data.entry_source_role ?? "").toUpperCase();
+
   const canManageServiceFollowUpCase =
-    isServiceFollowUp && entrySource !== "TECH" && entrySource !== "UNKNOWN";
+    isServiceFollowUp &&
+    recordEntrySourceRole !== "TECH" &&
+    recordEntrySourceRole !== "UNKNOWN";
 
   const showsTechReviewActions =
     canActAsFieldLogReviewer &&
@@ -612,7 +616,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         await loadTimeline();
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to upload photo for technician.");
+      alert(err instanceof Error ? err.message : "Failed to upload case evidence.");
     } finally {
       setProxyUploading(false);
       e.target.value = "";
@@ -626,14 +630,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     if (!isServiceFollowUp) return;
 
     const appendNote = appendNoteOverride?.trim() ?? "";
-    const nextLessonsTakeaways = appendNote
-      ? [
-          caseLessonsTakeaways.trim(),
-          `Case Update (${new Date().toLocaleString()}):\n${appendNote}`,
-        ]
-          .filter(Boolean)
-          .join("\n\n")
-      : caseLessonsTakeaways.trim();
+    const nextLessonsTakeaways = caseLessonsTakeaways.trim();
 
     setBusy(true);
     try {
@@ -646,6 +643,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           customerContactFeedback: caseCustomerContactFeedback.trim() || null,
           lessonsTakeaways: nextLessonsTakeaways || null,
           caseStatus: nextStatus ?? serviceCaseStatus ?? "open",
+          caseUpdateNote: appendNote || null,
         }),
       });
 
@@ -656,7 +654,6 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
       if (appendNote) {
         setCaseAppendNote("");
-        setCaseLessonsTakeaways(nextLessonsTakeaways);
       }
 
       await refreshDetail();
@@ -744,13 +741,25 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">
-          <FieldLogWorkflowCard
-            workflow={workflow}
-            recordEntrySourceRole={data.entry_source_role}
-            recordWorkflowMode={data.workflow_mode}
-            requiresApprovalToClose={data.requires_approval_to_close}
-            canCloseOnEntry={data.can_close_on_entry}
+<FieldLogServiceFollowUpCaseActionsCard
+            visible={canManageServiceFollowUpCase}
+            busy={busy}
+            uploadingEvidence={proxyUploading}
+            caseStatus={serviceCaseStatus}
+            technicianComments={caseTechnicianComments}
+            customerContactFeedback={caseCustomerContactFeedback}
+            lessonsTakeaways={caseLessonsTakeaways}
+            appendNote={caseAppendNote}
+            onTechnicianCommentsChange={setCaseTechnicianComments}
+            onCustomerContactFeedbackChange={setCaseCustomerContactFeedback}
+            onLessonsTakeawaysChange={setCaseLessonsTakeaways}
+            onAppendNoteChange={setCaseAppendNote}
+            onCommitUpdate={() => updateServiceFollowUpCase()}
+            onAppendNote={() => updateServiceFollowUpCase(undefined, caseAppendNote)}
+            onChangeStatus={(status) => updateServiceFollowUpCase(status)}
+            onPickEvidenceFiles={onSupervisorPickFiles}
           />
+
 
           <FieldLogSubmissionCard
             createdAt={data.created_at}
@@ -769,6 +778,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           />
 
           <FieldLogCommentCard
+            title="Original Technician Narrative"
             comment={data.comment}
             followupNote={data.followup_note}
           />
@@ -784,40 +794,13 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             escalationRequired={data.not_done?.escalation_required ?? null}
             escalationType={data.not_done?.escalation_type ?? null}
           />
-
-          <FieldLogPostCallDetailCard
-            visible={data.category_key === "post_call"}
-            riskLevel={data.post_call?.risk_level ?? null}
-            tnpsRiskFlag={data.post_call?.tnps_risk_flag ?? null}
-            followupRecommended={data.post_call?.followup_recommended ?? null}
-            technicianComments={data.post_call?.technician_comments ?? null}
-            customerContactFeedback={data.post_call?.customer_contact_feedback ?? null}
-            lessonsTakeaways={data.post_call?.lessons_takeaways ?? null}
-            caseStatus={data.post_call?.case_status ?? null}
-          />
         </div>
 
         <div className="space-y-4">
+
           <FieldLogAttachmentsCard attachments={data.attachments ?? []} />
 
           <FieldLogReviewActionsCard actions={data.actions ?? []} />
-
-          <FieldLogServiceFollowUpCaseActionsCard
-            visible={canManageServiceFollowUpCase}
-            busy={busy}
-            caseStatus={serviceCaseStatus}
-            technicianComments={caseTechnicianComments}
-            customerContactFeedback={caseCustomerContactFeedback}
-            lessonsTakeaways={caseLessonsTakeaways}
-            appendNote={caseAppendNote}
-            onTechnicianCommentsChange={setCaseTechnicianComments}
-            onCustomerContactFeedbackChange={setCaseCustomerContactFeedback}
-            onLessonsTakeawaysChange={setCaseLessonsTakeaways}
-            onAppendNoteChange={setCaseAppendNote}
-            onCommitUpdate={() => updateServiceFollowUpCase()}
-            onAppendNote={() => updateServiceFollowUpCase(undefined, caseAppendNote)}
-            onChangeStatus={(status) => updateServiceFollowUpCase(status)}
-          />
 
           {showTimeline ? (
             <>

@@ -12,6 +12,7 @@ type PostCallDraftBody = {
   customerContactFeedback?: string | null;
   lessonsTakeaways?: string | null;
   caseStatus?: "open" | "in_progress" | "pending_customer" | "resolved" | "closed" | "reopened" | null;
+  caseUpdateNote?: string | null;
 };
 
 function badRequest(message: string) {
@@ -34,15 +35,14 @@ export async function POST(req: NextRequest) {
 
   const supabase = await supabaseServer();
 
-  const { data, error } = await supabase.rpc("field_log_set_post_call_detail", {
+  const { data, error } = await supabase.rpc("field_log_manage_post_call_case", {
     p_report_id: reportId,
-    p_risk_level: body.riskLevel ?? null,
-    p_tnps_risk_flag: body.tnpsRiskFlag ?? null,
-    p_followup_recommended: body.followupRecommended ?? null,
+    p_case_status: body.caseStatus ?? null,
+    p_note: body.caseUpdateNote ?? null,
+    p_comment_type: "case_update",
     p_technician_comments: body.technicianComments ?? null,
     p_customer_contact_feedback: body.customerContactFeedback ?? null,
     p_lessons_takeaways: body.lessonsTakeaways ?? null,
-    p_case_status: body.caseStatus ?? null,
   });
 
   if (error) {

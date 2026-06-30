@@ -10,6 +10,7 @@ type CaseStatus =
 
 type Props = {
   busy: boolean;
+  uploadingEvidence: boolean;
   visible: boolean;
   caseStatus: string | null;
   technicianComments: string;
@@ -23,6 +24,7 @@ type Props = {
   onCommitUpdate: () => void | Promise<void>;
   onAppendNote: () => void | Promise<void>;
   onChangeStatus: (status: CaseStatus) => void | Promise<void>;
+  onPickEvidenceFiles: (event: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
 };
 
 function niceStatus(value: string | null | undefined) {
@@ -32,6 +34,7 @@ function niceStatus(value: string | null | undefined) {
 export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
   const {
     busy,
+    uploadingEvidence,
     visible,
     caseStatus,
     technicianComments,
@@ -45,32 +48,89 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
     onCommitUpdate,
     onAppendNote,
     onChangeStatus,
+    onPickEvidenceFiles,
   } = props;
 
   if (!visible) return null;
 
   const normalizedStatus = caseStatus ?? "open";
   const isClosed = normalizedStatus === "closed";
+  const disabled = busy || uploadingEvidence;
 
   return (
-    <section className="rounded-2xl border bg-card p-5">
+    <section className="rounded-2xl border bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-base font-semibold">Case Actions</div>
+          <div className="text-base font-semibold">Case Management</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Current status: {niceStatus(normalizedStatus)}
+            Status: <span className="font-medium text-foreground">{niceStatus(normalizedStatus)}</span>
           </div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Service Follow Up is case management. Evidence is optional, and closed cases can receive appended updates.
+            Add updates, upload evidence, and move this case through close or reopen.
           </div>
         </div>
       </div>
 
       {isClosed ? (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          This case is closed. Existing case notes are preserved below. Use append to add new information without rewriting the saved thread.
+          This case is closed. You can still append updates, upload evidence, or reopen it.
         </div>
       ) : null}
+
+      <div className="mt-4 rounded-xl border border-dashed p-3">
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Add Case Update</span>
+          <textarea
+            value={appendNote}
+            onChange={(e) => onAppendNoteChange(e.target.value)}
+            rows={4}
+            placeholder="Add customer contact, correction, follow-up note, or case progress."
+            disabled={disabled}
+            className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
+          />
+        </label>
+
+        <button
+          type="button"
+          disabled={disabled || !appendNote.trim()}
+          onClick={() => void onAppendNote()}
+          className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
+        >
+          {busy ? "Adding Update…" : "Add Update"}
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="block rounded-xl border px-3 py-3 text-sm">
+          <div className="font-medium">Upload Evidence</div>
+          <div className="mt-1 text-muted-foreground">
+            Add images, PDFs, or support files.
+          </div>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            multiple
+            disabled={disabled}
+            className="mt-3 block w-full text-sm"
+            onChange={(e) => void onPickEvidenceFiles(e)}
+          />
+        </label>
+
+        <label className="block rounded-xl border px-3 py-3 text-sm">
+          <div className="font-medium">Capture Evidence</div>
+          <div className="mt-1 text-muted-foreground">
+            Use the device camera.
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            disabled={disabled}
+            className="mt-3 block w-full text-sm"
+            onChange={(e) => void onPickEvidenceFiles(e)}
+          />
+        </label>
+      </div>
 
       <div className="mt-4 space-y-3">
         <label className="block space-y-2">
@@ -78,8 +138,8 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
           <textarea
             value={technicianComments}
             onChange={(e) => onTechnicianCommentsChange(e.target.value)}
-            rows={4}
-            disabled={isClosed || busy}
+            rows={3}
+            disabled={isClosed || disabled}
             className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
           />
         </label>
@@ -89,8 +149,8 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
           <textarea
             value={customerContactFeedback}
             onChange={(e) => onCustomerContactFeedbackChange(e.target.value)}
-            rows={4}
-            disabled={isClosed || busy}
+            rows={3}
+            disabled={isClosed || disabled}
             className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
           />
         </label>
@@ -100,47 +160,22 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
           <textarea
             value={lessonsTakeaways}
             onChange={(e) => onLessonsTakeawaysChange(e.target.value)}
-            rows={4}
-            disabled={isClosed || busy}
+            rows={3}
+            disabled={isClosed || disabled}
             className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
           />
         </label>
-
-        {isClosed ? (
-          <label className="block space-y-2 rounded-xl border border-dashed p-3">
-            <span className="text-sm font-medium">Append Case Update</span>
-            <textarea
-              value={appendNote}
-              onChange={(e) => onAppendNoteChange(e.target.value)}
-              rows={4}
-              placeholder="Add new information, customer contact, correction, or follow-up detail. This will append to the saved case thread."
-              disabled={busy}
-              className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
-            />
-          </label>
-        ) : null}
       </div>
 
       <div className="mt-4 grid gap-2">
-        {isClosed ? (
-          <button
-            type="button"
-            disabled={busy || !appendNote.trim()}
-            onClick={() => void onAppendNote()}
-            className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
-          >
-            {busy ? "Appending…" : "Append Update"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onCommitUpdate()}
-            className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
-          >
-            {busy ? "Committing…" : "Commit Update"}
-          </button>
-        )}
+        <button
+          type="button"
+          disabled={isClosed || disabled}
+          onClick={() => void onCommitUpdate()}
+          className="rounded-xl border px-4 py-3 font-semibold disabled:opacity-60"
+        >
+          {busy ? "Saving…" : "Save Case Detail"}
+        </button>
 
         <div className="grid gap-2 sm:grid-cols-2">
           <button
@@ -180,7 +215,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
                 : "border border-green-300 text-green-700"
             }`}
           >
-            {isClosed ? "Reopen" : "Close"}
+            {isClosed ? "Reopen Case" : "Close Case"}
           </button>
         </div>
       </div>
