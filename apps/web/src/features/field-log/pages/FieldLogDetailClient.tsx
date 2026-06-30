@@ -209,6 +209,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const canActAsFieldLogReviewer =
     entrySource !== "TECH" && entrySource !== "UNKNOWN" && !isSelfSubmittedReport;
 
+  const canManageServiceFollowUpCase =
+    isServiceFollowUp && entrySource !== "TECH" && entrySource !== "UNKNOWN";
+
   const showsTechReviewActions =
     canActAsFieldLogReviewer &&
     (hasRecordWorkflowTruth
@@ -800,7 +803,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           <FieldLogReviewActionsCard actions={data.actions ?? []} />
 
           <FieldLogServiceFollowUpCaseActionsCard
-            visible={isServiceFollowUp && canActAsFieldLogReviewer}
+            visible={canManageServiceFollowUpCase}
             busy={busy}
             caseStatus={serviceCaseStatus}
             technicianComments={caseTechnicianComments}
