@@ -154,6 +154,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const [caseLessonsTakeaways, setCaseLessonsTakeaways] = useState(
     initialData.post_call?.lessons_takeaways ?? "",
   );
+  const [caseAppendNote, setCaseAppendNote] = useState("");
 
   const showTimeline = useMemo(() => canViewTimeline(accessPass), [accessPass]);
 
@@ -615,8 +616,21 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     }
   }
 
-  async function updateServiceFollowUpCase(nextStatus?: "open" | "in_progress" | "pending_customer" | "resolved" | "closed" | "reopened") {
+  async function updateServiceFollowUpCase(
+    nextStatus?: "open" | "in_progress" | "pending_customer" | "resolved" | "closed" | "reopened",
+    appendNoteOverride?: string,
+  ) {
     if (!isServiceFollowUp) return;
+
+    const appendNote = appendNoteOverride?.trim() ?? "";
+    const nextLessonsTakeaways = appendNote
+      ? [
+          caseLessonsTakeaways.trim(),
+          `Case Update (${new Date().toLocaleString()}):\n${appendNote}`,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : caseLessonsTakeaways.trim();
 
     setBusy(true);
     try {
@@ -627,7 +641,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
           reportId: data.report_id,
           technicianComments: caseTechnicianComments.trim() || null,
           customerContactFeedback: caseCustomerContactFeedback.trim() || null,
-          lessonsTakeaways: caseLessonsTakeaways.trim() || null,
+          lessonsTakeaways: nextLessonsTakeaways || null,
           caseStatus: nextStatus ?? serviceCaseStatus ?? "open",
         }),
       });
@@ -635,6 +649,11 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
       const json = (await res.json()) as FieldLogApiResponse;
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Failed to commit Service Follow Up case.");
+      }
+
+      if (appendNote) {
+        setCaseAppendNote("");
+        setCaseLessonsTakeaways(nextLessonsTakeaways);
       }
 
       await refreshDetail();
@@ -787,10 +806,13 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             technicianComments={caseTechnicianComments}
             customerContactFeedback={caseCustomerContactFeedback}
             lessonsTakeaways={caseLessonsTakeaways}
+            appendNote={caseAppendNote}
             onTechnicianCommentsChange={setCaseTechnicianComments}
             onCustomerContactFeedbackChange={setCaseCustomerContactFeedback}
             onLessonsTakeawaysChange={setCaseLessonsTakeaways}
+            onAppendNoteChange={setCaseAppendNote}
             onCommitUpdate={() => updateServiceFollowUpCase()}
+            onAppendNote={() => updateServiceFollowUpCase(undefined, caseAppendNote)}
             onChangeStatus={(status) => updateServiceFollowUpCase(status)}
           />
 

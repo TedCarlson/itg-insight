@@ -15,10 +15,13 @@ type Props = {
   technicianComments: string;
   customerContactFeedback: string;
   lessonsTakeaways: string;
+  appendNote: string;
   onTechnicianCommentsChange: (value: string) => void;
   onCustomerContactFeedbackChange: (value: string) => void;
   onLessonsTakeawaysChange: (value: string) => void;
+  onAppendNoteChange: (value: string) => void;
   onCommitUpdate: () => void | Promise<void>;
+  onAppendNote: () => void | Promise<void>;
   onChangeStatus: (status: CaseStatus) => void | Promise<void>;
 };
 
@@ -34,10 +37,13 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
     technicianComments,
     customerContactFeedback,
     lessonsTakeaways,
+    appendNote,
     onTechnicianCommentsChange,
     onCustomerContactFeedbackChange,
     onLessonsTakeawaysChange,
+    onAppendNoteChange,
     onCommitUpdate,
+    onAppendNote,
     onChangeStatus,
   } = props;
 
@@ -54,8 +60,17 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
           <div className="mt-1 text-sm text-muted-foreground">
             Current status: {niceStatus(normalizedStatus)}
           </div>
+          <div className="mt-1 text-sm text-muted-foreground">
+            Service Follow Up is case management. Evidence is optional, and closed cases can receive appended updates.
+          </div>
         </div>
       </div>
+
+      {isClosed ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          This case is closed. Existing case notes are preserved below. Use append to add new information without rewriting the saved thread.
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         <label className="block space-y-2">
@@ -64,7 +79,8 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
             value={technicianComments}
             onChange={(e) => onTechnicianCommentsChange(e.target.value)}
             rows={4}
-            className="w-full rounded-xl border px-3 py-3"
+            disabled={isClosed || busy}
+            className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
           />
         </label>
 
@@ -74,7 +90,8 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
             value={customerContactFeedback}
             onChange={(e) => onCustomerContactFeedbackChange(e.target.value)}
             rows={4}
-            className="w-full rounded-xl border px-3 py-3"
+            disabled={isClosed || busy}
+            className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
           />
         </label>
 
@@ -84,25 +101,51 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
             value={lessonsTakeaways}
             onChange={(e) => onLessonsTakeawaysChange(e.target.value)}
             rows={4}
-            className="w-full rounded-xl border px-3 py-3"
+            disabled={isClosed || busy}
+            className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
           />
         </label>
+
+        {isClosed ? (
+          <label className="block space-y-2 rounded-xl border border-dashed p-3">
+            <span className="text-sm font-medium">Append Case Update</span>
+            <textarea
+              value={appendNote}
+              onChange={(e) => onAppendNoteChange(e.target.value)}
+              rows={4}
+              placeholder="Add new information, customer contact, correction, or follow-up detail. This will append to the saved case thread."
+              disabled={busy}
+              className="w-full rounded-xl border px-3 py-3 disabled:bg-muted/40 disabled:text-muted-foreground"
+            />
+          </label>
+        ) : null}
       </div>
 
       <div className="mt-4 grid gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void onCommitUpdate()}
-          className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
-        >
-          {busy ? "Committing…" : "Commit Update"}
-        </button>
+        {isClosed ? (
+          <button
+            type="button"
+            disabled={busy || !appendNote.trim()}
+            onClick={() => void onAppendNote()}
+            className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
+          >
+            {busy ? "Appending…" : "Append Update"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onCommitUpdate()}
+            className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
+          >
+            {busy ? "Committing…" : "Commit Update"}
+          </button>
+        )}
 
         <div className="grid gap-2 sm:grid-cols-2">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || isClosed}
             onClick={() => void onChangeStatus("in_progress")}
             className="rounded-xl border px-4 py-3 font-semibold disabled:opacity-60"
           >
@@ -111,7 +154,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
 
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || isClosed}
             onClick={() => void onChangeStatus("pending_customer")}
             className="rounded-xl border px-4 py-3 font-semibold disabled:opacity-60"
           >
@@ -120,7 +163,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
 
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || isClosed}
             onClick={() => void onChangeStatus("resolved")}
             className="rounded-xl border px-4 py-3 font-semibold disabled:opacity-60"
           >

@@ -361,11 +361,14 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const conduitPullMode = isConduitPullCategory(categoryKey);
   const specialBillingMode = isSpecialBillingCategory(categoryKey);
   const serviceFollowUpMode = categoryKey === SERVICE_FOLLOWUP_CATEGORY_KEY;
+  const caseManagementMode = serviceFollowUpMode;
   const specialEvidenceRequirements = getSpecialEvidenceRequirements(categoryKey);
 
-  const requiredPhotoCount = specialBillingMode
-    ? specialEvidenceRequirements.length
-    : rule?.min_photo_count ?? 0;
+  const requiredPhotoCount = caseManagementMode
+    ? 0
+    : specialBillingMode
+      ? specialEvidenceRequirements.length
+      : rule?.min_photo_count ?? 0;
   const isTechSubmissionFlow = workflow.isTechSourced || isTechUploader;
   const requiresReviewBeforeClose =
     specialBillingMode || isTechSubmissionFlow || workflow.requiresApprovalToClose;
@@ -385,9 +388,11 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   const canUseXm =
     !specialBillingMode && (rule?.xm_allowed ?? false) && requiresReviewBeforeClose;
   const outcomeProfile = getFieldLogOutcomeProfile(categoryKey);
-  const photoRequirements = specialBillingMode
-    ? specialEvidenceRequirements
-    : rule?.photo_requirements ?? [];
+  const photoRequirements = caseManagementMode
+    ? []
+    : specialBillingMode
+      ? specialEvidenceRequirements
+      : rule?.photo_requirements ?? [];
   const locationRequired = !!rule?.location_required;
   const totalPhotoCount = existingPhotoCount + photos.length;
   const newDropLoadedKeys = useMemo(() => {
@@ -713,7 +718,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       return;
     }
 
-    if (!specialBillingMode && !useXm && totalPhotoCount < requiredPhotoCount) {
+    if (!caseManagementMode && !specialBillingMode && !useXm && totalPhotoCount < requiredPhotoCount) {
       alert(`At least ${requiredPhotoCount} photo(s) required.`);
       return;
     }
@@ -910,8 +915,14 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           <div>
             <div className="text-base font-semibold">Evidence</div>
             <div className="text-sm text-muted-foreground">
-              {specialBillingMode ? "Required evidence items: " : "Photos required: "}
-              <span className="font-medium text-foreground">{requiredPhotoCount}</span>
+              {caseManagementMode
+                ? "Optional evidence: upload from device or capture with camera."
+                : specialBillingMode
+                  ? "Required evidence items: "
+                  : "Photos required: "}
+              {!caseManagementMode ? (
+                <span className="font-medium text-foreground">{requiredPhotoCount}</span>
+              ) : null}
             </div>
           </div>
           <div className="text-sm font-medium">{photoCountText}</div>
@@ -963,6 +974,36 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
                   />
                 </label>
               ))
+            ) : caseManagementMode ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block rounded-xl border border-gray-200 px-3 py-3">
+                  <div className="font-medium">Upload Evidence</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Choose images, PDFs, or supporting files from this device.
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    multiple
+                    className="mt-3 block w-full text-sm"
+                    onChange={(e) => void onPickFiles(e, null)}
+                  />
+                </label>
+
+                <label className="block rounded-xl border border-gray-200 px-3 py-3">
+                  <div className="font-medium">Capture Evidence</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Open the device camera and attach the image to this case.
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="mt-3 block w-full text-sm"
+                    onChange={(e) => void onPickFiles(e, null)}
+                  />
+                </label>
+              </div>
             ) : (
               <label className="block rounded-xl border border-gray-200 px-3 py-3">
                 <div className="font-medium">Add Photo</div>
