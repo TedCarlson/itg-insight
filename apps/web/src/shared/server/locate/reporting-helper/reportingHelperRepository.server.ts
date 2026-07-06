@@ -34,16 +34,44 @@ export async function saveCotpReportingRecord(args: {
   const rows = args.report.rows.map((row) => ({
     locate_reporting_record_id: recordId,
     state_code: row.state,
-    week_ending_value: row.weekEndingValue,
-    prior_week_value: row.priorWeekValue,
-    current_week_trend: row.currentWeekTrend,
-    change_points: row.changePoints,
+    week_ending_value: row.completedWeekCurrent.value,
+    prior_week_value: row.completedWeekPrevious.value,
+    current_week_trend: row.liveWeek.value,
+    change_points: row.liveWeekDelta ?? row.completedWeekDelta,
     status: row.status,
-    prior_week_range: row.priorWeekRange,
+    prior_week_range: row.completedWeekPrevious.weekEnding,
   }));
 
   const { error: rowError } = await admin.from("locate_cotp_report_row").insert(rows);
   if (rowError) throw new Error(rowError.message);
+
+  const observationRows = args.report.rows
+    .filter((row) => row.liveWeek.value != null && args.report.weekEndingDate)
+    .map((row) => ({
+      metric_key: "COTP",
+      state_code: row.state,
+      observation_date: args.report.weekEndingDate,
+      observation_status: "IN_PROGRESS",
+      numeric_value: row.liveWeek.value,
+      source_record_id: recordId,
+      source_family: "COTP_HELPER",
+      source_as_of_at: new Date().toISOString(),
+      raw_context: {
+        report_type: "COTP",
+        week_ending_date: args.report.weekEndingDate,
+        source_row: row,
+      },
+    }));
+
+  if (observationRows.length) {
+    const { error: observationError } = await admin
+      .from("locate_metric_observation")
+      .upsert(observationRows, {
+        onConflict: "metric_key,state_code,observation_date,observation_status",
+      });
+
+    if (observationError) throw new Error(observationError.message);
+  }
 
   return { recordId };
 }

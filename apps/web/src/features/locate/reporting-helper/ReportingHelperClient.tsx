@@ -25,6 +25,35 @@ function copyText(value: string) {
   void navigator.clipboard.writeText(value);
 }
 
+function pct(value: unknown) {
+  return value == null ? "—" : `${value}%`;
+}
+
+function deltaDisplay(value: unknown) {
+  if (value == null) return "—";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  const unit = Math.abs(num) === 1 ? "pt" : "pts";
+  if (num > 0) return `▲ +${num} ${unit}`;
+  if (num < 0) return `▼ ${num} ${unit}`;
+  return "— 0 pts";
+}
+
+function timelineLabels(report: Report) {
+  const first = report?.rows?.[0];
+  const previous = first?.completedWeekPrevious?.weekEnding ?? "Observation 1";
+  const current = first?.completedWeekCurrent?.weekEnding ?? "Observation 2";
+  const live = first?.liveWeek?.weekEnding ?? report?.weekEnding ?? "Observation 3";
+
+  return {
+    previous,
+    current,
+    live,
+    completedDelta: `Δ ${previous}→${current}`,
+    liveDelta: `Δ ${current}→${live}`,
+  };
+}
+
 async function copyRichClipboard(args: { html: string; text: string }) {
   const clipboardItem = typeof ClipboardItem !== "undefined"
     ? new ClipboardItem({
@@ -67,6 +96,7 @@ function rowStyle(status: string) {
 function reportTableHtml(report: Report) {
   if (!report?.rows?.length) return "";
 
+  const labels = timelineLabels(report);
   const th =
     "border:1px solid #d1d5db;padding:8px;background:#f8fafc;color:#111827;font-weight:700;text-align:left;";
   const td = "border:1px solid #d1d5db;padding:8px;color:inherit;";
@@ -77,10 +107,11 @@ function reportTableHtml(report: Report) {
       const style = rowStyle(r.status);
       return `<tr style="${style}">
         <td style="${td}font-weight:700;">${escapeHtml(r.state)}</td>
-        <td style="${num}">${escapeHtml(r.weekEndingValue)}%</td>
-        <td style="${num}">${escapeHtml(r.priorWeekValue)}%</td>
-        <td style="${num}">${escapeHtml(r.changeDisplay)}</td>
-        <td style="${num}">${escapeHtml(r.currentWeekTrend)}%</td>
+        <td style="${num}">${escapeHtml(pct(r.completedWeekPrevious?.value))}</td>
+        <td style="${num}">${escapeHtml(pct(r.completedWeekCurrent?.value))}</td>
+        <td style="${num}">${escapeHtml(pct(r.liveWeek?.value))}</td>
+        <td style="${num}">${escapeHtml(deltaDisplay(r.completedWeekDelta))}</td>
+        <td style="${num}">${escapeHtml(deltaDisplay(r.liveWeekDelta))}</td>
         <td style="${td}font-weight:700;">${escapeHtml(r.status)}</td>
       </tr>`;
     })
@@ -90,10 +121,11 @@ function reportTableHtml(report: Report) {
     <thead>
       <tr>
         <th style="${th}">State</th>
-        <th style="${th}text-align:right;">Week Ending ${escapeHtml(report.weekEnding ?? "")}</th>
-        <th style="${th}text-align:right;">Prior Week</th>
-        <th style="${th}text-align:right;">Change</th>
-        <th style="${th}text-align:right;">Current Week Trend</th>
+        <th style="${th}text-align:right;">${escapeHtml(labels.previous)}</th>
+        <th style="${th}text-align:right;">${escapeHtml(labels.current)}</th>
+        <th style="${th}text-align:right;">${escapeHtml(labels.live)}</th>
+        <th style="${th}text-align:right;">${escapeHtml(labels.completedDelta)}</th>
+        <th style="${th}text-align:right;">${escapeHtml(labels.liveDelta)}</th>
         <th style="${th}">Status</th>
       </tr>
     </thead>
@@ -137,15 +169,20 @@ function fullEmailText(report: Report, keyTakeawaysText: string) {
 
 function tableText(report: Report) {
   if (!report?.rows?.length) return "";
-  const header = ["State", `Week Ending ${report.weekEnding ?? ""}`, "Prior Week", "Change", "Current Week Trend", "Status"];
+
+  const labels = timelineLabels(report);
+  const header = ["State", labels.previous, labels.current, labels.live, labels.completedDelta, labels.liveDelta, "Status"];
+
   const rows = report.rows.map((r: any) => [
     r.state,
-    `${r.weekEndingValue}%`,
-    `${r.priorWeekValue}%`,
-    r.changeDisplay,
-    `${r.currentWeekTrend}%`,
+    pct(r.completedWeekPrevious?.value),
+    pct(r.completedWeekCurrent?.value),
+    pct(r.liveWeek?.value),
+    deltaDisplay(r.completedWeekDelta),
+    deltaDisplay(r.liveWeekDelta),
     r.status,
   ]);
+
   return [header, ...rows].map((row) => row.join("\t")).join("\n");
 }
 
@@ -357,10 +394,11 @@ export function ReportingHelperClient() {
                 <thead className="bg-[var(--to-surface-2)]">
                   <tr className="text-left">
                     <th className="px-3 py-2">State</th>
-                    <th className="px-3 py-2 text-right">Week Ending {report.weekEnding}</th>
-                    <th className="px-3 py-2 text-right">Prior Week</th>
-                    <th className="px-3 py-2 text-right">Change</th>
-                    <th className="px-3 py-2 text-right">Current Trend</th>
+                    <th className="px-3 py-2 text-right">{timelineLabels(report).previous}</th>
+                    <th className="px-3 py-2 text-right">{timelineLabels(report).current}</th>
+                    <th className="px-3 py-2 text-right">{timelineLabels(report).live}</th>
+                    <th className="px-3 py-2 text-right">{timelineLabels(report).completedDelta}</th>
+                    <th className="px-3 py-2 text-right">{timelineLabels(report).liveDelta}</th>
                     <th className="px-3 py-2">Status</th>
                   </tr>
                 </thead>
@@ -368,10 +406,11 @@ export function ReportingHelperClient() {
                   {report.rows.map((row: any) => (
                     <tr key={row.state} className={cotpRowClass(row.status)} style={{ borderColor: "var(--to-border)" }}>
                       <td className="px-3 py-2 font-semibold">{row.state}</td>
-                      <td className="px-3 py-2 text-right">{row.weekEndingValue}%</td>
-                      <td className="px-3 py-2 text-right">{row.priorWeekValue}%</td>
-                      <td className="px-3 py-2 text-right">{row.changeDisplay}</td>
-                      <td className="px-3 py-2 text-right">{row.currentWeekTrend}%</td>
+                      <td className="px-3 py-2 text-right">{pct(row.completedWeekPrevious?.value)}</td>
+                      <td className="px-3 py-2 text-right">{pct(row.completedWeekCurrent?.value)}</td>
+                      <td className="px-3 py-2 text-right">{pct(row.liveWeek?.value)}</td>
+                      <td className="px-3 py-2 text-right">{deltaDisplay(row.completedWeekDelta)}</td>
+                      <td className="px-3 py-2 text-right">{deltaDisplay(row.liveWeekDelta)}</td>
                       <td className="px-3 py-2">{row.status}</td>
                     </tr>
                   ))}

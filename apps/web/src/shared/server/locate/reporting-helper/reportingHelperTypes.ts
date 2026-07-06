@@ -12,13 +12,29 @@ export type CotpStatus =
 
 export type CotpParsedRow = {
   state: string;
-  weekEndingValue: number;
+
+  completedWeekPrevious: {
+    weekEnding: string | null;
+    value: number;
+  };
+
+  completedWeekCurrent: {
+    weekEnding: string | null;
+    value: number;
+  };
+
+  liveWeek: {
+    weekEnding: string | null;
+    value: number | null;
+  };
+
   direction: string;
-  priorWeekValue: number;
-  priorWeekRange: string | null;
-  currentWeekTrend: number | null;
-  changePoints: number;
+
+  completedWeekDelta: number;
+  liveWeekDelta: number | null;
+
   changeDisplay: string;
+
   status: CotpStatus;
 };
 

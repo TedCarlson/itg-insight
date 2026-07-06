@@ -25,6 +25,32 @@ function percentValue(value: unknown) {
   return Number.isFinite(num) ? num / 100 : null;
 }
 
+function deltaValue(value: unknown) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function displayDelta(value: unknown) {
+  const num = deltaValue(value);
+  if (num == null) return "—";
+  return formatChange(num);
+}
+
+function timelineLabels(payload: any) {
+  const first = payload?.rows?.[0];
+  const previous = first?.completedWeekPrevious?.weekEnding ?? "Observation 1";
+  const current = first?.completedWeekCurrent?.weekEnding ?? "Observation 2";
+  const live = first?.liveWeek?.weekEnding ?? payload?.weekEnding ?? "Observation 3";
+
+  return {
+    previous,
+    current,
+    live,
+    completedDelta: `Δ ${previous}→${current}`,
+    liveDelta: `Δ ${current}→${live}`,
+  };
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await supabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
@@ -35,7 +61,7 @@ export async function GET(req: NextRequest) {
   if (!recordId) return NextResponse.json({ error: "record_id is required" }, { status: 400 });
 
   try {
-    const { record, rows } = await loadCotpReportingRecord(recordId);
+    const { record } = await loadCotpReportingRecord(recordId);
     const payload = record.parsed_payload as any;
 
     const workbook = new ExcelJS.Workbook();
@@ -59,24 +85,27 @@ export async function GET(req: NextRequest) {
     summary.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } };
     summary.getColumn(2).alignment = { wrapText: true, vertical: "top" };
 
+    const labels = timelineLabels(payload);
+
     const detail = workbook.addWorksheet("State Detail");
     detail.columns = [
       { header: "State", key: "state", width: 12 },
-      { header: `Week Ending ${record.week_ending_date ?? ""}`, key: "weekEnding", width: 20 },
-      { header: "Prior Week", key: "priorWeek", width: 16 },
-      { header: "Change", key: "change", width: 16 },
-      { header: "Current Trend %", key: "trend", width: 18 },
-      { header: "Performance Status", key: "status", width: 28 },
+      { header: labels.previous, key: "previous", width: 14 },
+      { header: labels.current, key: "current", width: 14 },
+      { header: labels.live, key: "live", width: 14 },
+      { header: labels.completedDelta, key: "completedDelta", width: 20 },
+      { header: labels.liveDelta, key: "liveDelta", width: 20 },
+      { header: "Status", key: "status", width: 28 },
     ];
 
-    for (const row of rows as any[]) {
-      const changePoints = Number(row.change_points);
+    for (const row of payload?.rows ?? []) {
       detail.addRow({
-        state: row.state_code,
-        weekEnding: percentValue(row.week_ending_value),
-        priorWeek: percentValue(row.prior_week_value),
-        change: formatChange(Number.isFinite(changePoints) ? changePoints : 0),
-        trend: row.current_week_trend == null ? null : percentValue(row.current_week_trend),
+        state: row.state,
+        previous: percentValue(row.completedWeekPrevious?.value),
+        current: percentValue(row.completedWeekCurrent?.value),
+        live: percentValue(row.liveWeek?.value),
+        completedDelta: displayDelta(row.completedWeekDelta),
+        liveDelta: displayDelta(row.liveWeekDelta),
         status: row.status,
       });
     }
@@ -84,7 +113,7 @@ export async function GET(req: NextRequest) {
     detail.views = [{ state: "frozen", ySplit: 1 }];
     detail.autoFilter = {
       from: { row: 1, column: 1 },
-      to: { row: 1, column: 6 },
+      to: { row: 1, column: 7 },
     };
 
     const header = detail.getRow(1);
@@ -94,7 +123,7 @@ export async function GET(req: NextRequest) {
 
     detail.getColumn(2).numFmt = "0%";
     detail.getColumn(3).numFmt = "0%";
-    detail.getColumn(5).numFmt = "0%";
+    detail.getColumn(4).numFmt = "0%";
 
     detail.eachRow((excelRow, rowNumber) => {
       excelRow.eachCell((cell) => {
@@ -109,7 +138,7 @@ export async function GET(req: NextRequest) {
 
       if (rowNumber === 1) return;
 
-      const status = String(excelRow.getCell(6).value ?? "");
+      const status = String(excelRow.getCell(7).value ?? "");
       const style = STATUS_STYLE[status];
       if (!style) return;
 

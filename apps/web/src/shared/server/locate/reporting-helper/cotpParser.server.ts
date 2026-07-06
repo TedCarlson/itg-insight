@@ -34,19 +34,19 @@ function changeDisplay(changePoints: number) {
 }
 
 function classify(row: Omit<CotpParsedRow, "status">): CotpStatus {
-  const finalValue = row.weekEndingValue;
-  const trend = row.currentWeekTrend;
-  const signalValue = trend ?? finalValue;
-  const recoveryLift = trend == null ? 0 : trend - finalValue;
+  const completedValue = row.completedWeekCurrent.value;
+  const liveValue = row.liveWeek.value;
+  const signalValue = liveValue ?? completedValue;
+  const recoveryLift = row.liveWeekDelta ?? 0;
 
-  if (finalValue === 100 && signalValue === 100) return "Excellent";
+  if (completedValue === 100 && signalValue === 100) return "Excellent";
 
   if (signalValue < 90) return "Needs attention";
 
   if (signalValue >= 96) {
-    if (trend != null && finalValue < 90 && recoveryLift >= 10) return "Recovery trending";
-    if (row.changePoints >= 10 && finalValue >= 96) return "Strong improvement";
-    if (finalValue < 96) return trend == null ? "Strong" : "Improving trend";
+    if (completedValue < 90 && recoveryLift >= 10) return "Recovery trending";
+    if (row.liveWeekDelta != null && row.liveWeekDelta >= 10 && completedValue >= 96) return "Strong improvement";
+    if (completedValue < 96) return liveValue == null ? "Strong" : "Improving trend";
     return "Strong";
   }
 
@@ -93,30 +93,44 @@ function parseRows(lines: string[]) {
     }
 
     const state = match[1].toUpperCase();
-    const weekEndingValue = Number(match[2]);
+    const completedWeekCurrentValue = Number(match[2]);
     const direction = match[3].toLowerCase();
-    const priorWeekValue = Number(match[4]);
+    const completedWeekPreviousValue = Number(match[4]);
     const priorWeekRange = match[5]?.trim() ?? null;
-    const currentWeekTrend = match[6] == null ? null : Number(match[6]);
-    const changePoints = weekEndingValue - priorWeekValue;
+    const liveWeekValue = match[6] == null ? null : Number(match[6]);
+
+    const rangeMatch = priorWeekRange?.match(/([\d/]+)\s+thru\s+([\d/]+)/i) ?? null;
+    const completedWeekPreviousEnding = rangeMatch?.[1] ?? null;
+    const completedWeekCurrentEnding = rangeMatch?.[2] ?? null;
+    const completedWeekDelta = completedWeekCurrentValue - completedWeekPreviousValue;
+    const liveWeekDelta = liveWeekValue == null ? null : liveWeekValue - completedWeekCurrentValue;
 
     if (
-      (direction === "up" && changePoints < 0) ||
-      (direction === "down" && changePoints > 0) ||
-      (direction === "flat" && changePoints !== 0)
+      (direction === "up" && completedWeekDelta < 0) ||
+      (direction === "down" && completedWeekDelta > 0) ||
+      (direction === "flat" && completedWeekDelta !== 0)
     ) {
-      warnings.push(`Direction text did not match calculated change for ${state}. Calculated value was used.`);
+      warnings.push(`Direction text did not match calculated completed-week movement for ${state}. Calculated value was used.`);
     }
 
     const base = {
       state,
-      weekEndingValue,
+      completedWeekPrevious: {
+        weekEnding: completedWeekPreviousEnding,
+        value: completedWeekPreviousValue,
+      },
+      completedWeekCurrent: {
+        weekEnding: completedWeekCurrentEnding,
+        value: completedWeekCurrentValue,
+      },
+      liveWeek: {
+        weekEnding: null,
+        value: liveWeekValue,
+      },
       direction,
-      priorWeekValue,
-      priorWeekRange,
-      currentWeekTrend,
-      changePoints,
-      changeDisplay: changeDisplay(changePoints),
+      completedWeekDelta,
+      liveWeekDelta,
+      changeDisplay: changeDisplay(liveWeekDelta ?? completedWeekDelta),
     };
 
     rows.push({
@@ -155,8 +169,8 @@ function generateExecutiveSummary(report: {
   contextNote: string | null;
   rows: CotpParsedRow[];
 }) {
-  const top = [...report.rows].sort((a, b) => b.weekEndingValue - a.weekEndingValue).slice(0, 5);
-  const improved = [...report.rows].sort((a, b) => b.changePoints - a.changePoints).slice(0, 3);
+  const top = [...report.rows].sort((a, b) => b.completedWeekCurrent.value - a.completedWeekCurrent.value).slice(0, 5);
+  const improved = [...report.rows].sort((a, b) => (b.liveWeekDelta ?? b.completedWeekDelta) - (a.liveWeekDelta ?? a.completedWeekDelta)).slice(0, 3);
   const attention = report.rows.filter((row) =>
     ["Needs attention", "Watch closely", "Recovery trending"].includes(row.status)
   );
@@ -235,7 +249,13 @@ export function generateCotpReport(rawText: string): CotpGeneratedReport {
 
   const base = {
     ...header,
-    rows: parsed.rows,
+    rows: parsed.rows.map((row) => ({
+      ...row,
+      liveWeek: {
+        ...row.liveWeek,
+        weekEnding: header.weekEnding,
+      },
+    })),
   };
 
   const executiveSummary = generateExecutiveSummary(base);
