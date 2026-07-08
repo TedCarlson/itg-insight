@@ -216,8 +216,13 @@ export default function FieldLogNewClient() {
     }
   }
 
+  const selectedCategoryRequiresSubcategory = rules.some(
+    (candidateRule) => candidateRule.category_key === categoryKey && candidateRule.require_subcategory,
+  );
+
   const continueDisabled =
     !categoryKey ||
+    (selectedCategoryRequiresSubcategory && !subcategoryKey) ||
     !jobNumber.trim() ||
     !jobType ||
     creating ||
