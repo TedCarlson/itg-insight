@@ -1,0 +1,312 @@
+{
+  "generated_at": "2026-07-08T21:15:13.999Z",
+  "total": {
+    "files": 1135,
+    "loc": 128228
+  },
+  "by_group": {
+    "apps": {
+      "files": 1112,
+      "loc": 122386
+    },
+    "root": {
+      "files": 8,
+      "loc": 4781
+    },
+    "supabase": {
+      "files": 9,
+      "loc": 642
+    },
+    "docs": {
+      "files": 2,
+      "loc": 239
+    },
+    "tooling": {
+      "files": 1,
+      "loc": 107
+    },
+    ".github": {
+      "files": 3,
+      "loc": 73
+    }
+  },
+  "apps_web_src": {
+    "src/features": {
+      "files": 377,
+      "loc": 54709
+    },
+    "src/shared": {
+      "files": 346,
+      "loc": 37966
+    },
+    "src/app": {
+      "files": 310,
+      "loc": 24392
+    },
+    "src/components": {
+      "files": 41,
+      "loc": 3425
+    },
+    "src/styles": {
+      "files": 6,
+      "loc": 556
+    },
+    "src/state": {
+      "files": 3,
+      "loc": 403
+    },
+    "src/lib": {
+      "files": 13,
+      "loc": 220
+    },
+    "src/hooks": {
+      "files": 4,
+      "loc": 84
+    }
+  },
+  "by_extension": {
+    ".tsx": {
+      "files": 491,
+      "loc": 62118
+    },
+    ".ts": {
+      "files": 604,
+      "loc": 58547
+    },
+    ".yaml": {
+      "files": 2,
+      "loc": 4556
+    },
+    ".md": {
+      "files": 9,
+      "loc": 1242
+    },
+    ".sql": {
+      "files": 9,
+      "loc": 642
+    },
+    ".css": {
+      "files": 5,
+      "loc": 554
+    },
+    ".mjs": {
+      "files": 3,
+      "loc": 248
+    },
+    ".json": {
+      "files": 6,
+      "loc": 155
+    },
+    ".js": {
+      "files": 2,
+      "loc": 84
+    },
+    ".yml": {
+      "files": 3,
+      "loc": 73
+    },
+    ".cjs": {
+      "files": 1,
+      "loc": 9
+    }
+  },
+  "large_files": [
+    {
+      "path": "pnpm-lock.yaml",
+      "loc": 4553,
+      "extension": ".yaml"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/schedule/ScheduleGridClient.tsx",
+      "loc": 1110,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/field-log/pages/FieldLogDraftClient.tsx",
+      "loc": 1088,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/surfaces/workforce/WorkforceSurfaceClient.tsx",
+      "loc": 943,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/roster/add-to-roster/components/AddToRosterDrawer.tsx",
+      "loc": 826,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/field-log/pages/FieldLogDetailClient.tsx",
+      "loc": 780,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/home/builder/WorkspaceBuilderPreview.tsx",
+      "loc": 700,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/metrics-admin/components/MetricsConsoleGrid.tsx",
+      "loc": 689,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/profile/pages/ProfilePageShell.tsx",
+      "loc": 645,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/schedule/server/loadScheduleRows.server.ts",
+      "loc": 645,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/exceptions/components/CreateExceptionModal.tsx",
+      "loc": 591,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/surfaces/MetricsTeamPerformanceTable.tsx",
+      "loc": 586,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/calendar/lib/getRouteLockDays.server.ts",
+      "loc": 547,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/features/tech/metrics/components/TnpsInspectorDrawer.tsx",
+      "loc": 527,
+      "extension": ".tsx"
+    }
+  ],
+  "largest_files": [
+    {
+      "path": "pnpm-lock.yaml",
+      "loc": 4553,
+      "extension": ".yaml"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/schedule/ScheduleGridClient.tsx",
+      "loc": 1110,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/field-log/pages/FieldLogDraftClient.tsx",
+      "loc": 1088,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/surfaces/workforce/WorkforceSurfaceClient.tsx",
+      "loc": 943,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/roster/add-to-roster/components/AddToRosterDrawer.tsx",
+      "loc": 826,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/field-log/pages/FieldLogDetailClient.tsx",
+      "loc": 780,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/home/builder/WorkspaceBuilderPreview.tsx",
+      "loc": 700,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/metrics-admin/components/MetricsConsoleGrid.tsx",
+      "loc": 689,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/profile/pages/ProfilePageShell.tsx",
+      "loc": 645,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/schedule/server/loadScheduleRows.server.ts",
+      "loc": 645,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/exceptions/components/CreateExceptionModal.tsx",
+      "loc": 591,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/shared/surfaces/MetricsTeamPerformanceTable.tsx",
+      "loc": 586,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/calendar/lib/getRouteLockDays.server.ts",
+      "loc": 547,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/features/tech/metrics/components/TnpsInspectorDrawer.tsx",
+      "loc": 527,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/app/api/route-lock/schedule/report/pdf/route.ts",
+      "loc": 487,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/features/admin/profile-access/pages/AdminAccessPage.tsx",
+      "loc": 486,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/tech/metrics/components/TechMetricsClient.tsx",
+      "loc": 485,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/app/api/route-lock/shift-validation/upload/route.ts",
+      "loc": 481,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/shared/server/workforce/buildWorkforceSurfacePayload.server.ts",
+      "loc": 476,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/app/(app)/route-lock/schedule/page.tsx",
+      "loc": 474,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/app/api/README.md",
+      "loc": 469,
+      "extension": ".md"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/landing/RouteLockSevenDayClient.tsx",
+      "loc": 468,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/roster/components/RosterTable.tsx",
+      "loc": 467,
+      "extension": ".tsx"
+    },
+    {
+      "path": "apps/web/src/features/roster/add-to-roster/hooks/useAddToRoster.ts",
+      "loc": 458,
+      "extension": ".ts"
+    },
+    {
+      "path": "apps/web/src/features/route-lock/calendar/RouteLockCalendarClient.tsx",
+      "loc": 449,
+      "extension": ".tsx"
+    }
+  ]
+}
