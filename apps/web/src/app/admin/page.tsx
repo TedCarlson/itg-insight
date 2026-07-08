@@ -44,6 +44,12 @@ export default async function AdminHomePage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <NavButton
+          href="/admin/owner"
+          title="Owner console"
+          desc="Team Optix-only engineering and operating health dashboard."
+        />
+
         <NavButton href="/admin/home-editor" title="Home editor" desc="Customize the org homepage (per PC + LOB) using blocks." />
         <NavButton href="/admin/edge-permissions" title="Edge permissions" desc="Grant/revoke admin + delegation permissions (global + PC-ORG)." />
         <NavButton
