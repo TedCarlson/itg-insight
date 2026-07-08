@@ -57,6 +57,13 @@ type ScheduleBaselineRow = {
   thu: boolean | null;
   fri: boolean | null;
   sat: boolean | null;
+  sch_hours_sun?: number | null;
+  sch_hours_mon?: number | null;
+  sch_hours_tue?: number | null;
+  sch_hours_wed?: number | null;
+  sch_hours_thu?: number | null;
+  sch_hours_fri?: number | null;
+  sch_hours_sat?: number | null;
 };
 
 function cls(...parts: Array<string | false | undefined>) {
@@ -375,7 +382,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   // Existing baselines for this fiscal month
   const { data: baselineRows, error: baselineErr } = await sb
     .from("schedule_baseline_month")
-    .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat")
+    .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat,sch_hours_sun,sch_hours_mon,sch_hours_tue,sch_hours_wed,sch_hours_thu,sch_hours_fri,sch_hours_sat")
     .eq("pc_org_id", pc_org_id)
     .eq("fiscal_month_id", activeFm.fiscal_month_id)
     .eq("is_active", true);
@@ -416,12 +423,19 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       tech_id,
       default_route_id: r?.default_route_id ? String(r.default_route_id) : null,
       sun: r?.sun ?? null,
+      sch_hours_sun: r?.sch_hours_sun == null ? null : Number(r.sch_hours_sun),
       mon: r?.mon ?? null,
+      sch_hours_mon: r?.sch_hours_mon == null ? null : Number(r.sch_hours_mon),
       tue: r?.tue ?? null,
+      sch_hours_tue: r?.sch_hours_tue == null ? null : Number(r.sch_hours_tue),
       wed: r?.wed ?? null,
+      sch_hours_wed: r?.sch_hours_wed == null ? null : Number(r.sch_hours_wed),
       thu: r?.thu ?? null,
+      sch_hours_thu: r?.sch_hours_thu == null ? null : Number(r.sch_hours_thu),
       fri: r?.fri ?? null,
+      sch_hours_fri: r?.sch_hours_fri == null ? null : Number(r.sch_hours_fri),
       sat: r?.sat ?? null,
+      sch_hours_sat: r?.sch_hours_sat == null ? null : Number(r.sch_hours_sat),
     };
 
     if (!rosterAssignmentIds.has(assignment_id)) {
@@ -440,7 +454,7 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
   if (previousSourceFm?.fiscal_month_id) {
     const { data: prevRows } = await sb
       .from("schedule_baseline_month")
-      .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat")
+      .select("schedule_baseline_month_id,assignment_id,tech_id,default_route_id,sun,mon,tue,wed,thu,fri,sat,sch_hours_sun,sch_hours_mon,sch_hours_tue,sch_hours_wed,sch_hours_thu,sch_hours_fri,sch_hours_sat")
       .eq("pc_org_id", pc_org_id)
       .eq("fiscal_month_id", previousSourceFm.fiscal_month_id)
       .eq("is_active", true);
@@ -460,12 +474,19 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
       tech_id,
       default_route_id: r?.default_route_id ? String(r.default_route_id) : null,
       sun: r?.sun ?? null,
+      sch_hours_sun: r?.sch_hours_sun == null ? null : Number(r.sch_hours_sun),
       mon: r?.mon ?? null,
+      sch_hours_mon: r?.sch_hours_mon == null ? null : Number(r.sch_hours_mon),
       tue: r?.tue ?? null,
+      sch_hours_tue: r?.sch_hours_tue == null ? null : Number(r.sch_hours_tue),
       wed: r?.wed ?? null,
+      sch_hours_wed: r?.sch_hours_wed == null ? null : Number(r.sch_hours_wed),
       thu: r?.thu ?? null,
+      sch_hours_thu: r?.sch_hours_thu == null ? null : Number(r.sch_hours_thu),
       fri: r?.fri ?? null,
+      sch_hours_fri: r?.sch_hours_fri == null ? null : Number(r.sch_hours_fri),
       sat: r?.sat ?? null,
+      sch_hours_sat: r?.sch_hours_sat == null ? null : Number(r.sch_hours_sat),
     };
   }
 

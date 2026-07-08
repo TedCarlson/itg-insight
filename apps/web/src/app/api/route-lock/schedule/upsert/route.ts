@@ -16,6 +16,7 @@ type ScheduleWriteRow = {
   tech_id: string;
   default_route_id?: string | null;
   days: DayFlags;
+  shiftHours?: 8 | 10;
 };
 
 function asUuid(v: unknown): string | null {
@@ -114,6 +115,7 @@ export async function POST(req: Request) {
       tech_id: String(r.tech_id ?? "").trim(),
       default_route_id: r.default_route_id == null ? null : asUuid(r.default_route_id),
       days: normalizeDays(r.days),
+      shiftHours: Number(r.shiftHours) === 10 ? 10 : 8,
     }));
 
     if (clean.some((r) => !r.assignment_id)) {
@@ -157,13 +159,15 @@ export async function POST(req: Request) {
     let rows_updated = 0;
 
     for (const r of clean) {
-      const sch_hours_sun = r.days.sun ? hoursPerDay : 0;
-      const sch_hours_mon = r.days.mon ? hoursPerDay : 0;
-      const sch_hours_tue = r.days.tue ? hoursPerDay : 0;
-      const sch_hours_wed = r.days.wed ? hoursPerDay : 0;
-      const sch_hours_thu = r.days.thu ? hoursPerDay : 0;
-      const sch_hours_fri = r.days.fri ? hoursPerDay : 0;
-      const sch_hours_sat = r.days.sat ? hoursPerDay : 0;
+      const rowHoursPerDay = r.shiftHours || hoursPerDay;
+
+      const sch_hours_sun = r.days.sun ? rowHoursPerDay : 0;
+      const sch_hours_mon = r.days.mon ? rowHoursPerDay : 0;
+      const sch_hours_tue = r.days.tue ? rowHoursPerDay : 0;
+      const sch_hours_wed = r.days.wed ? rowHoursPerDay : 0;
+      const sch_hours_thu = r.days.thu ? rowHoursPerDay : 0;
+      const sch_hours_fri = r.days.fri ? rowHoursPerDay : 0;
+      const sch_hours_sat = r.days.sat ? rowHoursPerDay : 0;
 
       const sch_units_sun = sch_hours_sun * unitsPerHour;
       const sch_units_mon = sch_hours_mon * unitsPerHour;

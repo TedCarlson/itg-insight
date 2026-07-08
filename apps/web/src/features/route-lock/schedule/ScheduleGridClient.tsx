@@ -42,9 +42,18 @@ type ScheduleBaselineRow = {
   thu: boolean | null;
   fri: boolean | null;
   sat: boolean | null;
+  sch_hours_sun?: number | null;
+  sch_hours_mon?: number | null;
+  sch_hours_tue?: number | null;
+  sch_hours_wed?: number | null;
+  sch_hours_thu?: number | null;
+  sch_hours_fri?: number | null;
+  sch_hours_sat?: number | null;
 };
 
 type DayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+const SHIFT_HOURS = [8, 10] as const;
+
 const DAYS: Array<{ key: DayKey; label: string }> = [
   { key: "sun", label: "Sun" },
   { key: "mon", label: "Mon" },
@@ -63,6 +72,7 @@ type RowState = {
   notOnRoster: boolean;
   routeId: string; // "" means unset
   days: Record<DayKey, boolean>;
+  shiftHours: 8 | 10;
 
   // staged "purge" flag (delete trigger = dirty)
   deleteArmed: boolean;
@@ -80,9 +90,24 @@ function cls(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-function techSortKey(techId: string) {
-  const n = Number(techId);
-  return Number.isFinite(n) ? n : techId;
+const techIdCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+function compareTechId(a: string, b: string) {
+  return techIdCollator.compare(String(a ?? "").trim(), String(b ?? "").trim());
+}
+
+function shiftHoursFromBaselineRow(row: ScheduleBaselineRow | undefined): 8 | 10 {
+  if (!row) return 8;
+
+  const values = DAYS
+    .map((d) => Number(row[`sch_hours_${d.key}` as keyof ScheduleBaselineRow] ?? 0))
+    .filter((value) => value > 0);
+
+  if (values.some((value) => value >= 10)) return 10;
+  return 8;
 }
 
 function DayToggle({
@@ -140,12 +165,8 @@ function buildRows(
   scheduleByAssignment: Record<string, ScheduleBaselineRow>
 ): RowState[] {
   const sorted = [...technicians].sort((a, b) => {
-    const ak = techSortKey(String(a.tech_id ?? ""));
-    const bk = techSortKey(String(b.tech_id ?? ""));
-    // @ts-ignore
-    if (ak < bk) return -1;
-    // @ts-ignore
-    if (ak > bk) return 1;
+    const techOrder = compareTechId(a.tech_id, b.tech_id);
+    if (techOrder !== 0) return techOrder;
     return String(a.full_name ?? "").localeCompare(String(b.full_name ?? ""));
   });
 
@@ -160,6 +181,7 @@ function buildRows(
       notOnRoster: !!t.not_on_roster,
       routeId: norm.routeId,
       days: norm.days,
+      shiftHours: shiftHoursFromBaselineRow(s),
       deleteArmed: false,
     };
   });
@@ -256,13 +278,13 @@ export function ScheduleGridClient({
   const [search, setSearch] = useState<string>("");
   const [rows, setRows] = useState<RowState[]>(() => buildRows(technicians, scheduleByAssignment));
 
-  const baselineRef = useRef<Record<string, { routeId: string; days: Record<DayKey, boolean> }> | null>(null);
+  const baselineRef = useRef<Record<string, { routeId: string; days: Record<DayKey, boolean>; shiftHours: 8 | 10 }> | null>(null);
 
   if (baselineRef.current === null) {
-    const snap: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
+    const snap: Record<string, { routeId: string; days: Record<DayKey, boolean>; shiftHours: 8 | 10 }> = {};
     for (const t of technicians) {
       const s = scheduleByAssignment[t.assignment_id];
-      snap[t.assignment_id] = normalizeFromBaselineRow(s);
+      snap[t.assignment_id] = { ...normalizeFromBaselineRow(s), shiftHours: shiftHoursFromBaselineRow(s) };
     }
     baselineRef.current = snap;
   }
@@ -289,10 +311,10 @@ export function ScheduleGridClient({
     const nextRows = buildRows(technicians, scheduleByAssignment);
     setRows(nextRows);
 
-    const snap: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
+    const snap: Record<string, { routeId: string; days: Record<DayKey, boolean>; shiftHours: 8 | 10 }> = {};
     for (const t of technicians) {
       const s = scheduleByAssignment[t.assignment_id];
-      snap[t.assignment_id] = normalizeFromBaselineRow(s);
+      snap[t.assignment_id] = { ...normalizeFromBaselineRow(s), shiftHours: shiftHoursFromBaselineRow(s) };
     }
     baselineRef.current = snap;
 
@@ -321,7 +343,10 @@ export function ScheduleGridClient({
       }
     }
 
-    const totalHours = totalDaysOn * defaults.hoursPerDay;
+    const totalHours = rows.reduce(
+      (sum, row) => sum + DAYS.reduce((daySum, d) => daySum + (row.days[d.key] ? row.shiftHours : 0), 0),
+      0,
+    );
     const totalUnits = totalHours * defaults.unitsPerHour;
 
     return {
@@ -331,7 +356,7 @@ export function ScheduleGridClient({
       totalHours,
       totalUnits,
     };
-  }, [rows, defaults.hoursPerDay, defaults.unitsPerHour]);
+  }, [rows, defaults.unitsPerHour]);
 
   useEffect(() => {
     onTotalsChange?.(totals);
@@ -344,7 +369,7 @@ export function ScheduleGridClient({
 
       const b = base[r.assignmentId];
       if (!b) return true;
-      return !rowsEqual(r, b);
+      return !rowsEqual(r, b) || r.shiftHours !== b.shiftHours;
     });
   }, [rows]);
 
@@ -357,6 +382,10 @@ export function ScheduleGridClient({
 
   function setRoute(assignmentId: string, nextRouteId: string) {
     setRows((prev) => prev.map((r) => (r.assignmentId === assignmentId ? { ...r, routeId: nextRouteId } : r)));
+  }
+
+  function setShiftHours(assignmentId: string, shiftHours: 8 | 10) {
+    setRows((prev) => prev.map((r) => (r.assignmentId === assignmentId ? { ...r, shiftHours } : r)));
   }
 
   function toggleDay(assignmentId: string, day: DayKey) {
@@ -409,6 +438,7 @@ export function ScheduleGridClient({
           ...r,
           routeId: norm.routeId,
           days: { ...norm.days },
+          shiftHours: shiftHoursFromBaselineRow(source),
           deleteArmed: false,
         };
       })
@@ -443,12 +473,8 @@ export function ScheduleGridClient({
         });
 
     return [...filtered].sort((a, b) => {
-      const ak = techSortKey(String(a.techId ?? ""));
-      const bk = techSortKey(String(b.techId ?? ""));
-      // @ts-ignore
-      if (ak < bk) return -1;
-      // @ts-ignore
-      if (ak > bk) return 1;
+      const techOrder = compareTechId(a.techId, b.techId);
+      if (techOrder !== 0) return techOrder;
       return String(a.name ?? "").localeCompare(String(b.name ?? ""));
     });
   }, [rows, search, routeNameById]);
@@ -466,7 +492,10 @@ export function ScheduleGridClient({
       }
     }
 
-    const totalHours = totalDaysOn * defaults.hoursPerDay;
+    const totalHours = rows.reduce(
+      (sum, row) => sum + DAYS.reduce((daySum, d) => daySum + (row.days[d.key] ? row.shiftHours : 0), 0),
+      0,
+    );
     const totalUnits = totalHours * defaults.unitsPerHour;
 
     return {
@@ -476,7 +505,7 @@ export function ScheduleGridClient({
       totalHours,
       totalUnits,
     };
-  }, [viewRows, defaults.hoursPerDay, defaults.unitsPerHour]);
+  }, [viewRows, rows, defaults.unitsPerHour]);
 
   const unscheduledRowsCount = useMemo(() => {
     return rows.filter((r) => allDaysOff(r.days)).length;
@@ -505,6 +534,48 @@ export function ScheduleGridClient({
 
     return sumQuotaByDay(scopedRows);
   }, [quotaRows, quotaTotals, search, viewRows]);
+
+  const activeShiftMix = useMemo(() => {
+    const source = filterActive ? viewRows : rows;
+    const byDay: Record<DayKey, { eight: number; ten: number; hours: number; units: number }> = {
+      sun: { eight: 0, ten: 0, hours: 0, units: 0 },
+      mon: { eight: 0, ten: 0, hours: 0, units: 0 },
+      tue: { eight: 0, ten: 0, hours: 0, units: 0 },
+      wed: { eight: 0, ten: 0, hours: 0, units: 0 },
+      thu: { eight: 0, ten: 0, hours: 0, units: 0 },
+      fri: { eight: 0, ten: 0, hours: 0, units: 0 },
+      sat: { eight: 0, ten: 0, hours: 0, units: 0 },
+    };
+
+    let weeklyEight = 0;
+    let weeklyTen = 0;
+    let weeklyHours = 0;
+    let weeklyUnits = 0;
+
+    for (const row of source) {
+      for (const d of DAYS) {
+        if (!row.days[d.key]) continue;
+
+        const hours = row.shiftHours;
+        const units = hours * defaults.unitsPerHour;
+
+        if (hours === 10) {
+          byDay[d.key].ten += 1;
+          weeklyTen += 1;
+        } else {
+          byDay[d.key].eight += 1;
+          weeklyEight += 1;
+        }
+
+        byDay[d.key].hours += hours;
+        byDay[d.key].units += units;
+        weeklyHours += hours;
+        weeklyUnits += units;
+      }
+    }
+
+    return { byDay, weeklyEight, weeklyTen, weeklyHours, weeklyUnits };
+  }, [filterActive, viewRows, rows, defaults.unitsPerHour]);
 
   const activeQuotaTotals = filterActive ? filteredQuotaTotals : quotaTotals;
   const activeScheduledTotals = filterActive ? filteredTotals.perDay : totals.perDay;
@@ -562,6 +633,7 @@ export function ScheduleGridClient({
             tech_id: r.techId,
             default_route_id: r.routeId ? r.routeId : null,
             days: r.days,
+            shiftHours: r.shiftHours,
           })),
         };
 
@@ -598,10 +670,13 @@ export function ScheduleGridClient({
             json?.sweep?.rows_deleted
         );
 
-        const nextBase: Record<string, { routeId: string; days: Record<DayKey, boolean> }> = {};
-        for (const r of rows) {
-          if (r.deleteArmed) continue;
-          nextBase[r.assignmentId] = { routeId: r.routeId, days: { ...r.days } };
+        const nextBase: Record<string, { routeId: string; days: Record<DayKey, boolean>; shiftHours: 8 | 10 }> = {};
+        for (const r of upsertRows) {
+          nextBase[r.assignmentId] = {
+            routeId: r.routeId,
+            days: { ...r.days },
+            shiftHours: r.shiftHours,
+          };
         }
         baselineRef.current = nextBase;
 
@@ -630,7 +705,7 @@ export function ScheduleGridClient({
 
   const gridStyle: CSSProperties = useMemo(
     () => ({
-      gridTemplateColumns: "6rem minmax(14rem,1fr) 5.75rem 11rem repeat(7, 5.25rem) minmax(16rem, 0.9fr) 5.25rem",
+      gridTemplateColumns: "6rem minmax(13rem,18rem) 5.75rem 11rem repeat(7, 5.25rem) minmax(19rem,1fr) 5.25rem",
     }),
     []
   );
@@ -720,6 +795,17 @@ export function ScheduleGridClient({
       <div className={cls("relative", "max-h-[calc(100vh-16rem)]", "overflow-auto")}>
         <div className="sticky top-0 z-20 bg-[var(--to-surface)] border-b border-[var(--to-border)]">
           <DataTable layout="fixed" gridStyle={gridStyle}>
+            <div className="px-0 pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
+              Planning Summary
+            </div>
+
+            <div className="grid items-center bg-[var(--to-surface-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]" style={gridStyle}>
+              <div className="col-start-4 py-1">Coverage</div>
+              <div className="col-span-7" />
+              <div />
+              <div />
+            </div>
+
             <div
               className="grid items-center border-b border-[var(--to-border)] text-sm"
               style={gridStyle}
@@ -788,6 +874,71 @@ export function ScheduleGridClient({
               <div />
             </div>
 
+            <div className="grid items-center bg-[var(--to-surface-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]" style={gridStyle}>
+              <div className="col-start-4 py-1">Capacity</div>
+              <div className="col-span-7" />
+              <div />
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">8h Tech-Days</div>
+              {DAYS.map((d) => (
+                <div key={`eight-${d.key}`} className="text-center font-medium">
+                  {activeShiftMix.byDay[d.key].eight}
+                </div>
+              ))}
+              <div className="font-medium tabular-nums">{activeShiftMix.weeklyEight} tech-days</div>
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">10h Tech-Days</div>
+              {DAYS.map((d) => (
+                <div key={`ten-${d.key}`} className="text-center font-medium">
+                  {activeShiftMix.byDay[d.key].ten}
+                </div>
+              ))}
+              <div className="font-medium tabular-nums">{activeShiftMix.weeklyTen} tech-days</div>
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">Hours</div>
+              {DAYS.map((d) => (
+                <div key={`hours-${d.key}`} className="text-center font-medium">
+                  {activeShiftMix.byDay[d.key].hours}
+                </div>
+              ))}
+              <div className="font-medium tabular-nums">{activeShiftMix.weeklyHours} hours</div>
+              <div />
+            </div>
+
+            <div
+              className="grid items-center border-b border-[var(--to-border)] text-sm"
+              style={gridStyle}
+            >
+              <div className="col-start-4 font-medium text-[var(--to-ink)]">Units</div>
+              {DAYS.map((d) => (
+                <div key={`units-${d.key}`} className="text-center font-medium">
+                  {Math.round(activeShiftMix.byDay[d.key].units)}
+                </div>
+              ))}
+              <div className="font-medium tabular-nums">{Math.round(activeShiftMix.weeklyUnits)} units</div>
+              <div />
+            </div>
+
+            <div className="h-3 border-b border-[var(--to-border)]" />
+
             <DataTableHeader gridStyle={gridStyle}>
               <div className="whitespace-nowrap">Tech Id</div>
               <div className="min-w-0">Name</div>
@@ -811,7 +962,7 @@ export function ScheduleGridClient({
               const btnLabel = isAllOff ? "Add" : "Remove";
 
               const daysOn = Object.values(r.days).reduce((acc, v) => acc + (v ? 1 : 0), 0);
-              const hours = daysOn * defaults.hoursPerDay;
+              const hours = daysOn * r.shiftHours;
               const units = hours * defaults.unitsPerHour;
 
               const deleteEnabled = r.notOnRoster;
@@ -877,8 +1028,28 @@ export function ScheduleGridClient({
                     </div>
                   ))}
 
-                  <div className="whitespace-nowrap text-sm">
-                    {daysOn} days • {Math.round(units)} units • {hours.toFixed(0)} hours
+                  <div className="flex items-center gap-2 whitespace-nowrap text-sm">
+                    <div className="flex items-center gap-1">
+                      {SHIFT_HOURS.map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={cls(
+                            "to-pill h-7 px-2 text-xs leading-none",
+                            r.shiftHours === value
+                              ? "border-blue-500 text-blue-700 bg-blue-50"
+                              : "border-[var(--to-border)] text-[var(--to-ink-muted)] bg-[var(--to-surface-soft)]"
+                          )}
+                          onClick={() => setShiftHours(r.assignmentId, value)}
+                          disabled={r.deleteArmed}
+                          aria-pressed={r.shiftHours === value}
+                          title={`${value} hour shift`}
+                        >
+                          {value}h
+                        </button>
+                      ))}
+                    </div>
+                    <span>{daysOn} days • {Math.round(units)} units • {hours.toFixed(0)} hours</span>
                   </div>
 
                   <div className="flex items-center justify-center">
