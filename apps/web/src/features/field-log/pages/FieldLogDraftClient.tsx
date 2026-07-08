@@ -207,9 +207,14 @@ function makeDbFilePath(objectPath: string) {
   return `field-log/${objectPath}`;
 }
 
-function needsSubcategory(rule: FieldLogRule | null, subcategoryKey: string | null) {
+function needsSubcategory(
+  rule: FieldLogRule | null,
+  subcategoryKey: string | null,
+  availableSubcategoryCount = 0,
+) {
   if (!rule) return false;
   if (!rule.require_subcategory) return false;
+  if (availableSubcategoryCount <= 0) return false;
   return !subcategoryKey;
 }
 
@@ -313,7 +318,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   } = props;
 
   const { selectedOrgId } = useOrg();
-  const { getRuleForSelection } = useFieldLogRuntime();
+  const { getRuleForSelection, getSubcategoriesForCategory, ucodes } = useFieldLogRuntime();
   const entrySource = useFieldLogEntrySource();
   const supabase = useMemo(() => createClient(), []);
 
@@ -336,6 +341,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       : "",
   );
   const [comment, setComment] = useState(initialComment ?? "");
+  const [selectedUcode, setSelectedUcode] = useState("");
   const [technicianComments, setTechnicianComments] = useState("");
   const [customerContactFeedback, setCustomerContactFeedback] = useState("");
   const [lessonsTakeaways, setLessonsTakeaways] = useState("");
@@ -393,6 +399,8 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     : specialBillingMode
       ? specialEvidenceRequirements
       : rule?.photo_requirements ?? [];
+  const ucodeRequired = !!rule?.require_ucode;
+  const showUcodePicker = !!rule?.show_ucode || ucodeRequired;
   const locationRequired = !!rule?.location_required;
   const totalPhotoCount = existingPhotoCount + photos.length;
   const newDropLoadedKeys = useMemo(() => {
@@ -471,6 +479,24 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
     ]
       .filter(Boolean)
       .join("\n\n");
+  }
+
+  async function saveUcodeDetail() {
+    if (!showUcodePicker) return;
+
+    const res = await fetch("/api/field-log/draft/not-done", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reportId,
+        selectedUcode: selectedUcode || null,
+      }),
+    });
+
+    const json = (await res.json()) as ApiResponse;
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || "Failed to save U-code detail.");
+    }
   }
 
   async function saveServiceFollowUpDetail() {
@@ -699,8 +725,13 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       return;
     }
 
-    if (needsSubcategory(rule, subcategoryKey)) {
+    if (needsSubcategory(rule, subcategoryKey, getSubcategoriesForCategory(categoryKey).length)) {
       alert("Subcategory is required.");
+      return;
+    }
+
+    if (ucodeRequired && !selectedUcode) {
+      alert("U-Code is required.");
       return;
     }
 
@@ -733,6 +764,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
         await saveBaseFields();
       }
 
+      await saveUcodeDetail();
       await saveServiceFollowUpDetail();
 
       if (locationRequired && !hasCapturedLocation(activeLocation)) {
@@ -879,6 +911,34 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           ))}
         </div>
       </section>
+
+      {showUcodePicker ? (
+        <section className="space-y-3 rounded-2xl border bg-card p-4">
+          <div>
+            <div className="text-base font-semibold">
+              U-Code {ucodeRequired ? <span className="text-red-600">*</span> : null}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Select the U-code applied for this Field Log.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {ucodes.map((item) => (
+              <button
+                key={item.ucode}
+                type="button"
+                onClick={() => setSelectedUcode(item.ucode)}
+                className={`rounded-xl border px-3 py-3 text-sm font-medium ${
+                  selectedUcode === item.ucode ? "border-blue-600 bg-blue-50" : "border-gray-200"
+                }`}
+              >
+                {item.label || item.ucode}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-3 rounded-2xl border bg-card p-4">
         <div className="flex items-start justify-between gap-3">

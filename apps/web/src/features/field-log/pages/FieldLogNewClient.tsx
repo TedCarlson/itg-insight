@@ -216,9 +216,8 @@ export default function FieldLogNewClient() {
     }
   }
 
-  const selectedCategoryRequiresSubcategory = rules.some(
-    (candidateRule) => candidateRule.category_key === categoryKey && candidateRule.require_subcategory,
-  );
+  const selectedCategoryRequiresSubcategory =
+    !!rule?.require_subcategory && getSubcategoriesForCategory(categoryKey).length > 0;
 
   const continueDisabled =
     !categoryKey ||
