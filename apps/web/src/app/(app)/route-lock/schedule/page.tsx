@@ -157,6 +157,7 @@ function MonthToggle({
   currentFiscalMonthId,
   nextFiscalMonthId,
   previousFiscalMonthId,
+  pcOrgId,
 }: {
   active: "current" | "next";
   currentHref: string;
@@ -166,6 +167,7 @@ function MonthToggle({
   currentFiscalMonthId: string;
   nextFiscalMonthId: string;
   previousFiscalMonthId?: string | null;
+  pcOrgId?: string;
 }) {
   return (
     <Card variant="subtle">
@@ -185,6 +187,15 @@ function MonthToggle({
         }
         right={
           <div className="flex items-center gap-2">
+            {pcOrgId && ((active === "current" && previousFiscalMonthId) || active === "next") ? (
+              <a
+                href={`/api/route-lock/schedule/report/pdf?pc_org_id=${encodeURIComponent(pcOrgId)}&current_fiscal_month_id=${encodeURIComponent(active === "current" ? currentFiscalMonthId : nextFiscalMonthId)}&prior_fiscal_month_id=${encodeURIComponent(active === "current" ? String(previousFiscalMonthId) : currentFiscalMonthId)}`}
+                className="to-btn to-btn--secondary h-8 px-3 text-xs inline-flex items-center"
+              >
+                PDF Report
+              </a>
+            ) : null}
+
             <Link
               href={currentHref}
               className={cls("to-btn h-8 px-3 text-xs", active === "current" ? "to-btn--primary" : "to-btn--secondary")}
@@ -505,6 +516,8 @@ export default async function RouteLockSchedulePage({ searchParams }: Props) {
         nextLabel={String(fmNext.label ?? `${fmNext.start_date} → ${fmNext.end_date}`)}
         currentFiscalMonthId={fmCurrent.fiscal_month_id}
         nextFiscalMonthId={fmNext.fiscal_month_id}
+        previousFiscalMonthId={fmPrevious?.fiscal_month_id ?? null}
+        pcOrgId={pc_org_id}
       />
 
       <ScheduleGridClient

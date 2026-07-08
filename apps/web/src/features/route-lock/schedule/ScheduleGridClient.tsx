@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 
 import { Card } from "@/components/ui/Card";
 import { DataTable, DataTableBody, DataTableHeader, DataTableRow } from "@/components/ui/DataTable";
@@ -276,6 +277,8 @@ export function ScheduleGridClient({
   const toast = useToast();
 
   const [search, setSearch] = useState<string>("");
+  const [coverageOpen, setCoverageOpen] = useState(true);
+  const [capacityOpen, setCapacityOpen] = useState(true);
   const [rows, setRows] = useState<RowState[]>(() => buildRows(technicians, scheduleByAssignment));
 
   const baselineRef = useRef<Record<string, { routeId: string; days: Record<DayKey, boolean>; shiftHours: 8 | 10 }> | null>(null);
@@ -582,6 +585,153 @@ export function ScheduleGridClient({
 
   const commitLabel = stageAll ? "Commit changes (ALL)" : `Commit changes (${dirtyRows.length})`;
 
+  function exportScheduleGridExcel() {
+    const sourceRows = filterActive ? viewRows : rows;
+
+    const summaryRows = [
+      {
+        Section: "Coverage",
+        Metric: filterActive ? "Filtered Quota" : "Quota",
+        Sun: Math.trunc(activeQuotaTotals.sun),
+        Mon: Math.trunc(activeQuotaTotals.mon),
+        Tue: Math.trunc(activeQuotaTotals.tue),
+        Wed: Math.trunc(activeQuotaTotals.wed),
+        Thu: Math.trunc(activeQuotaTotals.thu),
+        Fri: Math.trunc(activeQuotaTotals.fri),
+        Sat: Math.trunc(activeQuotaTotals.sat),
+        Total: Math.trunc(Object.values(activeQuotaTotals).reduce((sum, value) => sum + value, 0)),
+      },
+      {
+        Section: "Coverage",
+        Metric: filterActive ? "Filtered Scheduled" : "Scheduled",
+        Sun: activeScheduledTotals.sun,
+        Mon: activeScheduledTotals.mon,
+        Tue: activeScheduledTotals.tue,
+        Wed: activeScheduledTotals.wed,
+        Thu: activeScheduledTotals.thu,
+        Fri: activeScheduledTotals.fri,
+        Sat: activeScheduledTotals.sat,
+        Total: Object.values(activeScheduledTotals).reduce((sum, value) => sum + value, 0),
+      },
+      {
+        Section: "Coverage",
+        Metric: "Gap",
+        Sun: activeScheduledTotals.sun - activeQuotaTotals.sun,
+        Mon: activeScheduledTotals.mon - activeQuotaTotals.mon,
+        Tue: activeScheduledTotals.tue - activeQuotaTotals.tue,
+        Wed: activeScheduledTotals.wed - activeQuotaTotals.wed,
+        Thu: activeScheduledTotals.thu - activeQuotaTotals.thu,
+        Fri: activeScheduledTotals.fri - activeQuotaTotals.fri,
+        Sat: activeScheduledTotals.sat - activeQuotaTotals.sat,
+        Total:
+          Object.values(activeScheduledTotals).reduce((sum, value) => sum + value, 0) -
+          Object.values(activeQuotaTotals).reduce((sum, value) => sum + value, 0),
+      },
+      {
+        Section: "Capacity",
+        Metric: "8 Hour Tech-Days",
+        Sun: activeShiftMix.byDay.sun.eight,
+        Mon: activeShiftMix.byDay.mon.eight,
+        Tue: activeShiftMix.byDay.tue.eight,
+        Wed: activeShiftMix.byDay.wed.eight,
+        Thu: activeShiftMix.byDay.thu.eight,
+        Fri: activeShiftMix.byDay.fri.eight,
+        Sat: activeShiftMix.byDay.sat.eight,
+        Total: activeShiftMix.weeklyEight,
+      },
+      {
+        Section: "Capacity",
+        Metric: "10 Hour Tech-Days",
+        Sun: activeShiftMix.byDay.sun.ten,
+        Mon: activeShiftMix.byDay.mon.ten,
+        Tue: activeShiftMix.byDay.tue.ten,
+        Wed: activeShiftMix.byDay.wed.ten,
+        Thu: activeShiftMix.byDay.thu.ten,
+        Fri: activeShiftMix.byDay.fri.ten,
+        Sat: activeShiftMix.byDay.sat.ten,
+        Total: activeShiftMix.weeklyTen,
+      },
+      {
+        Section: "Capacity",
+        Metric: "Hours",
+        Sun: activeShiftMix.byDay.sun.hours,
+        Mon: activeShiftMix.byDay.mon.hours,
+        Tue: activeShiftMix.byDay.tue.hours,
+        Wed: activeShiftMix.byDay.wed.hours,
+        Thu: activeShiftMix.byDay.thu.hours,
+        Fri: activeShiftMix.byDay.fri.hours,
+        Sat: activeShiftMix.byDay.sat.hours,
+        Total: activeShiftMix.weeklyHours,
+      },
+    ];
+
+    const detailRows = sourceRows.map((r) => {
+      const daysOn = DAYS.reduce((sum, d) => sum + (r.days[d.key] ? 1 : 0), 0);
+      const hours = daysOn * r.shiftHours;
+
+      return {
+        "Tech ID": r.techId,
+        Name: r.name,
+        Company: r.coName ?? "",
+        Route: routeNameById.get(String(r.routeId ?? "")) ?? "",
+        "Shift Hours": r.shiftHours,
+        Sun: r.days.sun ? "YES" : "NO",
+        Mon: r.days.mon ? "YES" : "NO",
+        Tue: r.days.tue ? "YES" : "NO",
+        Wed: r.days.wed ? "YES" : "NO",
+        Thu: r.days.thu ? "YES" : "NO",
+        Fri: r.days.fri ? "YES" : "NO",
+        Sat: r.days.sat ? "YES" : "NO",
+        "Scheduled Days": daysOn,
+        "Scheduled Hours": hours,
+        "Scheduled Units": hours * defaults.unitsPerHour,
+        "Not On Roster": r.notOnRoster ? "YES" : "NO",
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
+    summarySheet["!cols"] = [
+      { wch: 14 },
+      { wch: 24 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 12 },
+    ];
+
+    const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+    detailSheet["!cols"] = [
+      { wch: 12 },
+      { wch: 28 },
+      { wch: 24 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 8 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 14 },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+    XLSX.utils.book_append_sheet(wb, detailSheet, "Schedule Grid");
+
+    const scope = filterActive ? "filtered" : "all";
+    XLSX.writeFile(wb, `schedule-baseline-${scope}-${fiscalMonthId}.xlsx`);
+  }
+
   async function purgeOneTech(techId: string) {
     const res = await fetch("/api/route-lock/schedule/delete-tech", {
       method: "POST",
@@ -760,6 +910,15 @@ export function ScheduleGridClient({
             <button
               type="button"
               className="to-btn to-btn--secondary h-8 px-3 text-xs"
+              onClick={exportScheduleGridExcel}
+              title={filterActive ? "Export the filtered schedule grid to Excel" : "Export the full schedule grid to Excel"}
+            >
+              Export Excel
+            </button>
+
+            <button
+              type="button"
+              className="to-btn to-btn--secondary h-8 px-3 text-xs"
               disabled={isSaving || !canCommit}
               onClick={commitChanges}
               aria-disabled={isSaving || !canCommit}
@@ -799,12 +958,21 @@ export function ScheduleGridClient({
               Planning Summary
             </div>
 
-            <div className="grid items-center bg-[var(--to-surface-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]" style={gridStyle}>
-              <div className="col-start-4 py-1">Coverage</div>
+            <button
+              type="button"
+              onClick={() => setCoverageOpen((value) => !value)}
+              className="grid items-center bg-[var(--to-surface-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)] text-left"
+              style={gridStyle}
+              aria-expanded={coverageOpen}
+            >
+              <div className="col-start-4 py-1">{coverageOpen ? "▾" : "▸"} Coverage</div>
               <div className="col-span-7" />
               <div />
               <div />
-            </div>
+            </button>
+
+            {coverageOpen ? (
+              <>
 
             <div
               className="grid items-center border-b border-[var(--to-border)] text-sm"
@@ -874,12 +1042,24 @@ export function ScheduleGridClient({
               <div />
             </div>
 
-            <div className="grid items-center bg-[var(--to-surface-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]" style={gridStyle}>
-              <div className="col-start-4 py-1">Capacity</div>
+              </>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => setCapacityOpen((value) => !value)}
+              className="grid items-center bg-[var(--to-surface-soft)] text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)] text-left"
+              style={gridStyle}
+              aria-expanded={capacityOpen}
+            >
+              <div className="col-start-4 py-1">{capacityOpen ? "▾" : "▸"} Capacity</div>
               <div className="col-span-7" />
               <div />
               <div />
-            </div>
+            </button>
+
+            {capacityOpen ? (
+              <>
 
             <div
               className="grid items-center border-b border-[var(--to-border)] text-sm"
@@ -937,7 +1117,10 @@ export function ScheduleGridClient({
               <div />
             </div>
 
-            <div className="h-3 border-b border-[var(--to-border)]" />
+              </>
+            ) : null}
+
+            <div className="h-2 border-b border-[var(--to-border)]" />
 
             <DataTableHeader gridStyle={gridStyle}>
               <div className="whitespace-nowrap">Tech Id</div>
