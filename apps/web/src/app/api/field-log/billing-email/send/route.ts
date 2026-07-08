@@ -17,7 +17,24 @@ export const runtime = "nodejs";
 // - enabled/disabled
 // - duplicate policy
 // - resend/manual resend permissions
-const BILLING_TO = "Comcast_Billing@itgcomm.com";
+const FALLBACK_BILLING_TO = "Comcast_Billing@itgcomm.com";
+
+async function loadBillingRecipients(admin: any, pcOrgId: string): Promise<string[]> {
+  const { data, error } = await admin
+    .from("field_log_billing_email_recipient")
+    .select("email")
+    .eq("pc_org_id", pcOrgId)
+    .eq("enabled", true)
+    .order("created_at", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  const emails: string[] = Array.from(
+    new Set<string>((data ?? []).map((row: any) => String(row.email ?? "").trim()).filter(Boolean)),
+  );
+
+  return emails.length > 0 ? emails : [FALLBACK_BILLING_TO];
+}
 
 type SendMode = "auto" | "manual_resend";
 
@@ -183,7 +200,7 @@ export async function POST(req: NextRequest) {
       jobNumber: report.job_number ?? null,
       sendMode,
       status: "skipped_duplicate",
-      toEmail: BILLING_TO,
+      toEmail: FALLBACK_BILLING_TO,
       backupEmail: user.email ?? null,
       requestedByUserId: user.id,
       requestedByEmail: user.email ?? null,
@@ -198,14 +215,18 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const billingRecipients = await loadBillingRecipients(admin, String(report.pc_org_id));
+  const primaryBillingRecipient = billingRecipients[0] ?? FALLBACK_BILLING_TO;
+  const backupBillingRecipients = billingRecipients.slice(1);
+
   const pending = await insertLog({
     reportId,
     categoryKey,
     jobNumber: report.job_number ?? null,
     sendMode,
     status: "pending",
-    toEmail: BILLING_TO,
-    backupEmail: user.email ?? null,
+    toEmail: primaryBillingRecipient,
+    backupEmail: backupBillingRecipients.join(",") || null,
     requestedByUserId: user.id,
     requestedByEmail: user.email ?? null,
   });
@@ -264,7 +285,7 @@ export async function POST(req: NextRequest) {
     const resend = new Resend(resendKey);
     const sendResult = await resend.emails.send({
       from,
-      to: [BILLING_TO],
+      to: billingRecipients,
       cc: user.email ? [user.email] : undefined,
       subject,
       html: `

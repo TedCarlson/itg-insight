@@ -60,6 +60,12 @@ export default async function AdminHomePage() {
         <NavButton href="/admin/leadership" title="Leadership" desc="Leadership assignments and controls." />
         <NavButton href="/admin/catalogue" title="Admin catalogue" desc="Manage core tables and foundational data." />
         <NavButton href="/admin/metrics" title="Metrics admin" desc="Manage metrics rubric and weighted scores." />
+        <NavButton
+          href="/admin/field-log-email"
+          title="Field Log email"
+          desc="Manage recipients for approved billing packets."
+        />
+
         <NavButton href="/admin/calendar-governance" title="Calendar governance" desc="Manage blackout windows and manager-controlled intake rules." />
       </div>
     </div>
