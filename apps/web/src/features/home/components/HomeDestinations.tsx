@@ -97,7 +97,7 @@ function DirectorOrgLauncher(props: {
         throw new Error(json?.error ?? "Failed to save org selection");
       }
 
-      router.push("/director/executive");
+      router.push("/director/workspace");
       router.refresh();
     } catch (e: any) {
       setSaveErr(e?.message ?? "Failed to open Director snapshot");
@@ -118,7 +118,7 @@ function DirectorOrgLauncher(props: {
       </div>
 
       <p className="mt-1 text-xs text-muted-foreground">
-        Select a PC org to enter the Executive Suite while preserving the app’s
+        Select a PC org to enter the Director Workspace while preserving the app’s
         single-org guardrails.
       </p>
 
@@ -148,7 +148,7 @@ function DirectorOrgLauncher(props: {
               >
                 <div className="text-sm font-semibold">{org.text}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {isSaving ? "Opening snapshot…" : "Open Director Executive Snapshot"}
+                  {isSaving ? "Opening snapshot…" : "Open Director Workspace"}
                 </div>
               </button>
             );

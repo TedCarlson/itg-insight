@@ -16,7 +16,7 @@ export function resolveRoleFromAssignments(assignments: AssignmentHealthRow[]) {
     titles.has("Regional Director") ||
     titles.has("Senior Director")
   ) {
-    return { role_key: "DIRECTOR", home_href: "/director/executive" };
+    return { role_key: "DIRECTOR", home_href: "/director/workspace" };
   }
 
   if (

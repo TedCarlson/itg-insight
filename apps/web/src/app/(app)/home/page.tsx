@@ -14,7 +14,7 @@ export default async function Page() {
   }
 
   if (payload.context.role === "DIRECTOR") {
-    redirect("/director/executive");
+    redirect("/director/workspace");
   }
 
   if (payload.context.role === "BP_OWNER") {

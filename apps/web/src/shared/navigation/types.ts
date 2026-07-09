@@ -29,7 +29,7 @@ export type NavigationIconKey =
 
 export type NavigationItemKey =
   | "home"
-  | "director_executive"
+  | "director_workspace"
   | "director_workforce"
   | "director_people"
   | "admin"

@@ -1,4 +1,4 @@
-// path: apps/web/src/features/role-director/pages/DirectorExecutiveSuitePageShell.tsx
+// path: apps/web/src/features/role-director/pages/DirectorWorkspacePageShell.tsx
 
 import { PageHeader, PageShell } from "@/components/ui/PageShell";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
@@ -9,7 +9,7 @@ import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforce
 import type { MetricsRangeKey } from "@/shared/types/metrics/surfacePayload";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
 import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
-import DirectorExecutiveSuiteClient from "../components/DirectorExecutiveSuiteClient";
+import DirectorWorkspaceClient from "../components/DirectorWorkspaceClient";
 import { getDirectorExecutivePayload } from "../lib/getDirectorExecutivePayload.server";
 
 type DirectorDimensionKey = "overview" | "workforce" | "metrics" | "route-lock";
@@ -86,7 +86,7 @@ async function loadRegionLabel(pcOrgId: string | null) {
   return region?.region_name ?? org.pc_org_name ?? "Region";
 }
 
-export default async function DirectorExecutiveSuitePageShell(props: {
+export default async function DirectorWorkspacePageShell(props: {
   range?: string;
   dimension?: string;
 }) {
@@ -126,7 +126,7 @@ export default async function DirectorExecutiveSuitePageShell(props: {
 
       <DirectorWorkspaceSelector />
 
-      <DirectorExecutiveSuiteClient
+      <DirectorWorkspaceClient
         payload={payload}
         activeDimension={normalizeDimension(props.dimension)}
         workforceReports={{

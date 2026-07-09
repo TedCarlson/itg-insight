@@ -3,7 +3,7 @@ import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforce
 import type { ExecutiveDimensionPayload } from "@/shared/types/executive/executiveSuite";
 import type { MetricsRangeKey } from "@/shared/types/metrics/surfacePayload";
 
-const DIRECTOR_EXECUTIVE_HREF = "/director/executive";
+const DIRECTOR_EXECUTIVE_HREF = "/director/workspace";
 
 export async function buildMetricsExecutiveDimension(args: {
   pc_org_id: string;

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 type DirectorWorkspaceKey =
-  | "overview"
+  | "workspace"
   | "workforce"
   | "people"
   | "metrics"
@@ -20,9 +20,9 @@ type Item = {
 
 const ITEMS: Item[] = [
   {
-    key: "overview",
-    label: "Overview",
-    href: "/director/executive",
+    key: "workspace",
+    label: "Workspace",
+    href: "/director/workspace",
   },
   {
     key: "workforce",
@@ -65,7 +65,7 @@ function normalizePath(pathname: string): DirectorWorkspaceKey {
     return "route-lock";
   }
 
-  return "overview";
+  return "workspace";
 }
 
 export function DirectorWorkspaceSelector() {

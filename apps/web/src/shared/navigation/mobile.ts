@@ -12,7 +12,7 @@ export function buildMobileFooterItems(navItems: ResolvedNavigationItem[]) {
     find("tech_home") ??
     find("bp_owner_overview") ??
     find("bp_supervisor_overview") ??
-    find("director_executive") ??
+    find("director_workspace") ??
     find("home");
 
   const metrics =

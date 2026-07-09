@@ -1,4 +1,4 @@
-// path: apps/web/src/features/role-director/components/DirectorExecutiveSuiteClient.tsx
+// path: apps/web/src/features/role-director/components/DirectorWorkspaceClient.tsx
 
 import type {
   ExecutiveDimensionPayload,
@@ -85,7 +85,7 @@ function DirectorDimensionRenderer({
   return <FallbackDimensionCard dimension={dimension} />;
 }
 
-export default function DirectorExecutiveSuiteClient({
+export default function DirectorWorkspaceClient({
   payload,
   activeDimension,
   workforceReports,

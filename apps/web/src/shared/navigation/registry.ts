@@ -14,9 +14,9 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
   },
 
   {
-    key: "director_executive",
-    label: "Executive",
-    href: "/director/executive",
+    key: "director_workspace",
+    label: "Workspace",
+    href: "/director/workspace",
     icon: "chart",
     visibility: "default",
     defaultRoles: ["DIRECTOR"],

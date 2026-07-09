@@ -14,7 +14,7 @@ export default async function HomePageShell() {
   const payload = await getHomePayload();
 
   if (payload.role === "DIRECTOR") {
-    redirect("/director/executive");
+    redirect("/director/workspace");
   }
 
   if (payload.role === "BP_OWNER") {

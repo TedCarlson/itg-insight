@@ -3,5 +3,5 @@
 import { redirect } from "next/navigation";
 
 export default function Page() {
-  redirect("/director/executive");
+  redirect("/director/workspace");
 }

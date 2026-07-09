@@ -82,7 +82,7 @@ function resolveRole(assignments: AssignmentRow[]) {
     titles.has("Regional Director") ||
     titles.has("Senior Director")
   ) {
-    return { role: "DIRECTOR", home: "/director/executive" };
+    return { role: "DIRECTOR", home: "/director/workspace" };
   }
 
   if (titles.has("BP Owner")) {

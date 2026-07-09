@@ -43,9 +43,9 @@ type BootShape = {
 };
 
 const DIRECTOR_EXECUTIVE_DESTINATION: HomeDestination = {
-  label: "Director Executive Snapshot",
-  href: "/director/executive",
-  description: "Executive operating layer across Workforce, Metrics, and Route-Lock",
+  label: "Director Workspace",
+  href: "/director/workspace",
+  description: "Director workspace across Workforce, Metrics, and Route-Lock",
 };
 
 function resolveRole(

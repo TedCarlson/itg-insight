@@ -26,7 +26,7 @@ function workspaceHomeForRole(role: AppRole) {
       return "/admin";
 
     case "DIRECTOR":
-      return "/director/executive";
+      return "/director/workspace";
 
     case "BP_OWNER":
       return "/bp-owner";

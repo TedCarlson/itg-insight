@@ -13,7 +13,7 @@ import type {
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
 import type { WorkforceSourceRow } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
 
-const DIRECTOR_WORKFORCE_HREF = "/director/executive?dimension=workforce";
+const DIRECTOR_WORKFORCE_HREF = "/director/workspace?dimension=workforce";
 const CONTRIBUTING_LEADERSHIP_TECH_IDS = new Set(["7109"]);
 
 type AffiliationLikeRow = {
