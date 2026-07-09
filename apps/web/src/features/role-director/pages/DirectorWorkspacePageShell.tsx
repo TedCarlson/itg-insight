@@ -1,40 +1,15 @@
 // path: apps/web/src/features/role-director/pages/DirectorWorkspacePageShell.tsx
 
-import { PageHeader, PageShell } from "@/components/ui/PageShell";
+import { PageShell } from "@/components/ui/PageShell";
 import { requireSelectedPcOrgServer } from "@/lib/auth/requireSelectedPcOrg.server";
 import { supabaseServer } from "@/shared/data/supabase/server";
 import { DirectorWorkspaceSelector } from "@/shared/surfaces/navigation/DirectorWorkspaceSelector";
 import { buildWorkforceSurfacePayload } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
 import { loadWorkforceSourceRows } from "@/shared/server/workforce/loadWorkforceSourceRows.server";
-import type { MetricsRangeKey } from "@/shared/types/metrics/surfacePayload";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
 import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
-import DirectorWorkspaceClient from "../components/DirectorWorkspaceClient";
-import { getDirectorExecutivePayload } from "../lib/getDirectorExecutivePayload.server";
-
-type DirectorDimensionKey = "overview" | "workforce" | "metrics" | "route-lock";
-
-function normalizeRange(value: string | undefined): MetricsRangeKey {
-  const upper = String(value ?? "FM").trim().toUpperCase();
-
-  if (upper === "PREVIOUS") return "PREVIOUS";
-  if (upper === "3FM") return "3FM";
-  if (upper === "12FM") return "12FM";
-
-  return "FM";
-}
-
-function normalizeDimension(value: string | undefined): DirectorDimensionKey {
-  const normalized = String(value ?? "overview").trim().toLowerCase();
-
-  if (normalized === "workforce") return "workforce";
-  if (normalized === "metrics") return "metrics";
-  if (normalized === "route-lock" || normalized === "routelock") {
-    return "route-lock";
-  }
-
-  return "overview";
-}
+import { DirectorExecutiveWorkforceCard } from "@/shared/executive/DirectorExecutiveWorkforceCard";
+import { buildWorkforceExecutiveDimension } from "@/shared/server/executive/pipelines/workforceExecutivePipeline.server";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -86,18 +61,22 @@ async function loadRegionLabel(pcOrgId: string | null) {
   return region?.region_name ?? org.pc_org_name ?? "Region";
 }
 
-export default async function DirectorWorkspacePageShell(props: {
-  range?: string;
-  dimension?: string;
-}) {
+export default async function DirectorWorkspacePageShell() {
   const asOfDate = todayIso();
 
-  const [payload, scope] = await Promise.all([
-    getDirectorExecutivePayload({
-      range: normalizeRange(props.range),
-    }),
-    requireSelectedPcOrgServer(),
-  ]);
+  const scope = await requireSelectedPcOrgServer();
+
+  const workforceDimension = scope.ok
+    ? await buildWorkforceExecutiveDimension({
+        pc_org_id: scope.selected_pc_org_id,
+        as_of_date: asOfDate,
+      })
+    : {
+        dimension: "workforce" as const,
+        title: "Workforce",
+        status: "empty" as const,
+        artifacts: [],
+      };
 
   let workforceRows: WorkforceRow[] = [];
   let workforceAffiliations: WorkforceAffiliationOption[] = [];
@@ -126,17 +105,18 @@ export default async function DirectorWorkspacePageShell(props: {
 
       <DirectorWorkspaceSelector />
 
-      <DirectorWorkspaceClient
-        payload={payload}
-        activeDimension={normalizeDimension(props.dimension)}
-        workforceReports={{
-          rows: workforceRows,
-          affiliations: workforceAffiliations,
-          scopedAffiliations,
-          regionLabel,
-          reportMonthLabel: fiscalMonthLabel(asOfDate),
-        }}
-      />
+      <div className="space-y-4">
+        <DirectorExecutiveWorkforceCard
+          dimension={workforceDimension}
+          workforceReports={{
+            rows: workforceRows,
+            affiliations: workforceAffiliations,
+            scopedAffiliations,
+            regionLabel,
+            reportMonthLabel: fiscalMonthLabel(asOfDate),
+          }}
+        />
+      </div>
     </PageShell>
   );
 }
