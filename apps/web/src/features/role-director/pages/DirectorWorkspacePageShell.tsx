@@ -109,6 +109,7 @@ export default async function DirectorWorkspacePageShell() {
         <DirectorExecutiveWorkforceCard
           dimension={workforceDimension}
           workforceReports={{
+            pcOrgId: scope.ok ? scope.selected_pc_org_id : undefined,
             rows: workforceRows,
             affiliations: workforceAffiliations,
             scopedAffiliations,

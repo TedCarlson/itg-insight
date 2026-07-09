@@ -11,6 +11,7 @@ export type DirectorDimensionKey =
   | "route-lock";
 
 export type WorkforceReportsPayload = {
+  pcOrgId?: string;
   rows: WorkforceRow[];
   affiliations: WorkforceAffiliationOption[];
   scopedAffiliations: string[];

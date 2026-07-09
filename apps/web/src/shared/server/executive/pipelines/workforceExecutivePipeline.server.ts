@@ -227,17 +227,63 @@ export async function buildWorkforceExecutiveDimension(args: {
 
   const activeOnboardingRows = getActivePeopleOnboardingRows(onboardingRows);
 
+  const onboardingAffiliateMappedCount = activeOnboardingRows.filter((row) =>
+    normalize(row.prospecting_affiliation_id) || normalize(row.affiliation)
+  ).length;
+
+  const onboardingOrgScopedCount = activeOnboardingRows.length;
+
+  const onboardingPipelineCounts = new Map<string, number>();
+  const onboardingPipelineDays = new Map<string, number[]>();
+
+  for (const row of activeOnboardingRows) {
+    const label = affiliationLabel(row, affiliations);
+    increment(onboardingPipelineCounts, label);
+
+    const days = Number(row.days_in_pipeline ?? 0);
+    if (Number.isFinite(days)) {
+      const existing = onboardingPipelineDays.get(label) ?? [];
+      existing.push(days);
+      onboardingPipelineDays.set(label, existing);
+    }
+  }
+
+  const onboardingPipelineCards = [...onboardingPipelineCounts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([label, count]) => {
+      const days = onboardingPipelineDays.get(label) ?? [];
+      const maxDays = days.length ? Math.max(...days) : 0;
+      const avgDays = days.length
+        ? Math.round(days.reduce((total, value) => total + value, 0) / days.length)
+        : 0;
+
+      return {
+        key: `onboarding_pipeline_${label
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")}`,
+        label,
+        value: String(count),
+        helper: `${avgDays} avg days • ${maxDays} max days`,
+        meta: {
+          section: "onboarding_pipeline",
+          hc: count,
+          active_onboarding: count,
+          avg_days_in_pipeline: avgDays,
+          max_days_in_pipeline: maxDays,
+        },
+      };
+    });
+
+
   const bpCounts = new Map<string, number>();
   const bpLocalCounts = new Map<string, number>();
   const bpTravelCounts = new Map<string, number>();
-  const bpOnboardingCounts = new Map<string, number>();
   const bpTrainingCounts = new Map<string, number>();
 
   const officeCounts = new Map<string, number>();
   const officeLocalCounts = new Map<string, number>();
   const officeTravelCounts = new Map<string, number>();
 
-  let w2OnboardingCount = 0;
   let w2TrainingCount = 0;
 
   for (const row of productionBpRows) {
@@ -246,16 +292,6 @@ export async function buildWorkforceExecutiveDimension(args: {
 
     if (isLocalProductionSeat(row)) increment(bpLocalCounts, label);
     if (isTravelProductionSeat(row)) increment(bpTravelCounts, label);
-  }
-
-  for (const row of activeOnboardingRows) {
-    const label = affiliationLabel(row, affiliations);
-
-    if (isW2Affiliation(label)) {
-      w2OnboardingCount += 1;
-    } else if (isBpAffiliation(label)) {
-      increment(bpOnboardingCounts, label);
-    }
   }
 
   for (const row of trainingRows) {
@@ -358,7 +394,6 @@ export async function buildWorkforceExecutiveDimension(args: {
               hc: w2ProductionHc,
               local: w2LocalHc,
               travel: w2TravelHc,
-              onboarding: w2OnboardingCount,
               training: w2TrainingCount,
             },
           },
@@ -367,7 +402,6 @@ export async function buildWorkforceExecutiveDimension(args: {
             valueLabel: "Production HC",
             localCounts: bpLocalCounts,
             travelCounts: bpTravelCounts,
-            onboardingCounts: bpOnboardingCounts,
             trainingCounts: bpTrainingCounts,
           }),
           ...countCards(officeCounts, {
@@ -378,6 +412,25 @@ export async function buildWorkforceExecutiveDimension(args: {
           }),
         ],
       },
+      {
+        key: "onboarding_pipeline",
+        title: "Onboarding Pipeline",
+        description:
+          "People-sourced onboarding pipeline grouped by prospecting affiliation.",
+        status: onboardingOrgScopedCount > 0 ? "ready" : "empty",
+        href: DIRECTOR_WORKFORCE_HREF,
+        cards: onboardingPipelineCards,
+      },
+
+      {
+        key: "fuse_onboarding",
+        title: "FUSE Onboarding",
+        description: "Import and reconcile the FUSE onboarding report.",
+        status: "not_wired",
+        href: DIRECTOR_WORKFORCE_HREF,
+        cards: [],
+      },
+
       {
         key: "workforce_reports",
         title: "Workforce Reports",
@@ -401,7 +454,12 @@ export async function buildWorkforceExecutiveDimension(args: {
             key: "report_onboarding",
             label: "Onboarding",
             value: "Onboarding",
-            meta: { section: "report_button" },
+            meta: {
+              section: "report_button",
+              active_onboarding: onboardingOrgScopedCount,
+              affiliate_mapped: onboardingAffiliateMappedCount,
+              office_mapped: 0,
+            },
           },
           {
             key: "report_roster_export",
