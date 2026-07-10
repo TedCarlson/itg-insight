@@ -33,6 +33,18 @@ type GridResponse = {
   pageSize: number;
 };
 
+type SortKey =
+  | "fuse_date"
+  | "contractor"
+  | "candidate"
+  | "tech"
+  | "status"
+  | "updated"
+  | "history"
+  | "id";
+
+type SortDirection = "asc" | "desc";
+
 const FILTERS: { key: keyof GridCounts; label: string }[] = [
   { key: "all", label: "All" },
   { key: "started", label: "Started" },
@@ -42,6 +54,47 @@ const FILTERS: { key: keyof GridCounts; label: string }[] = [
   { key: "inactive", label: "Inactive" },
   { key: "history", label: "History" },
 ];
+
+function SortHeader({
+  sort,
+  label,
+  align = "left",
+  activeSort,
+  direction,
+  onSort,
+}: {
+  sort: SortKey;
+  label: string;
+  align?: "left" | "center";
+  activeSort: SortKey | null;
+  direction: SortDirection;
+  onSort: (sort: SortKey) => void;
+}) {
+  const indicator =
+    activeSort === sort ? (direction === "asc" ? "↑" : "↓") : null;
+
+  return (
+    <th
+      className={[
+        "px-3 py-2 uppercase tracking-wide text-[var(--to-ink-muted)]",
+        align === "center" ? "text-center" : "text-left",
+      ].join(" ")}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sort)}
+        className={[
+          "inline-flex items-center gap-1 hover:text-[var(--to-ink)]",
+          align === "center" ? "justify-center" : "justify-start",
+        ].join(" ")}
+        aria-label={`Sort by ${label}`}
+      >
+        <span>{label}</span>
+        {indicator ? <span aria-hidden="true">{indicator}</span> : null}
+      </button>
+    </th>
+  );
+}
 
 export function FuseOnboardingGrid() {
   const [rows, setRows] = useState<FuseRow[]>([]);
@@ -58,6 +111,12 @@ export function FuseOnboardingGrid() {
     history: 0,
   });
   const [q, setQ] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDirection, setSortDirection] =
+    useState<SortDirection>("asc");
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const pageSize = 25;
@@ -69,8 +128,42 @@ export function FuseOnboardingGrid() {
     sp.set("pageSize", String(pageSize));
     if (groups.length) sp.set("groups", groups.join(","));
     if (q.trim()) sp.set("q", q.trim());
+    if (dateFrom) sp.set("dateFrom", dateFrom);
+    if (dateTo) sp.set("dateTo", dateTo);
+
+    if (sortKey) {
+      sp.set("sort", sortKey);
+      sp.set("direction", sortDirection);
+    }
+
     return sp.toString();
-  }, [page, groups, q]);
+  }, [
+    page,
+    groups,
+    q,
+    dateFrom,
+    dateTo,
+    sortKey,
+    sortDirection,
+  ]);
+
+  function handleSort(nextKey: SortKey) {
+    setPage(1);
+
+    if (sortKey !== nextKey) {
+      setSortKey(nextKey);
+      setSortDirection("asc");
+      return;
+    }
+
+    if (sortDirection === "asc") {
+      setSortDirection("desc");
+      return;
+    }
+
+    setSortKey(null);
+    setSortDirection("asc");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +190,7 @@ export function FuseOnboardingGrid() {
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [params, refreshVersion]);
 
   return (
     <div className="rounded-2xl border border-[var(--to-border)] p-3">
@@ -109,8 +202,19 @@ export function FuseOnboardingGrid() {
           </div>
         </div>
 
-        <div className="text-xs text-[var(--to-ink-muted)]">
-          {loading ? "Loading…" : `${count} candidates`}
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-[var(--to-ink-muted)]">
+            {loading ? "Loading…" : `${count} candidates`}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setRefreshVersion((value) => value + 1)}
+            disabled={loading}
+            className="rounded-xl border px-3 py-1 text-xs disabled:opacity-40"
+          >
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
 
@@ -154,15 +258,59 @@ export function FuseOnboardingGrid() {
           })}
         </div>
 
-        <input
-          value={q}
-          onChange={(event) => {
-            setPage(1);
-            setQ(event.target.value);
-          }}
-          placeholder="Search candidate, contractor, Tech ID..."
-          className="h-9 w-full rounded-xl border px-3 text-sm"
-        />
+        <div className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_160px_160px_auto]">
+          <input
+            value={q}
+            onChange={(event) => {
+              setPage(1);
+              setQ(event.target.value);
+            }}
+            placeholder="Search candidate, contractor, Tech ID..."
+            className="h-9 min-w-0 rounded-xl border px-3 text-sm"
+          />
+
+          <label className="grid grid-cols-[auto_1fr] items-center gap-2 rounded-xl border px-3 text-xs text-[var(--to-ink-muted)]">
+            <span>From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(event) => {
+                setPage(1);
+                setDateFrom(event.target.value);
+              }}
+              className="min-w-0 bg-transparent text-sm text-[var(--to-ink)] outline-none"
+            />
+          </label>
+
+          <label className="grid grid-cols-[auto_1fr] items-center gap-2 rounded-xl border px-3 text-xs text-[var(--to-ink-muted)]">
+            <span>To</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(event) => {
+                setPage(1);
+                setDateTo(event.target.value);
+              }}
+              className="min-w-0 bg-transparent text-sm text-[var(--to-ink)] outline-none"
+            />
+          </label>
+
+          <button
+            type="button"
+            disabled={!q && !dateFrom && !dateTo}
+            onClick={() => {
+              setPage(1);
+              setQ("");
+              setDateFrom("");
+              setDateTo("");
+            }}
+            className="h-9 rounded-xl border px-3 text-xs disabled:opacity-40"
+          >
+            Clear
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 overflow-hidden rounded-xl border border-[var(--to-border)]">
@@ -180,14 +328,64 @@ export function FuseOnboardingGrid() {
 
           <thead>
             <tr className="border-b bg-[var(--to-surface-soft)]">
-              <th className="px-3 py-2 text-left uppercase tracking-wide text-[var(--to-ink-muted)]">FUSE Date</th>
-              <th className="px-3 py-2 text-left uppercase tracking-wide text-[var(--to-ink-muted)]">Contractor</th>
-              <th className="px-3 py-2 text-left uppercase tracking-wide text-[var(--to-ink-muted)]">Candidate</th>
-              <th className="px-3 py-2 text-left uppercase tracking-wide text-[var(--to-ink-muted)]">Tech</th>
-              <th className="px-3 py-2 text-left uppercase tracking-wide text-[var(--to-ink-muted)]">Status</th>
-              <th className="px-3 py-2 text-left uppercase tracking-wide text-[var(--to-ink-muted)]">Updated</th>
-              <th className="px-3 py-2 text-center uppercase tracking-wide text-[var(--to-ink-muted)]">Hist</th>
-              <th className="px-3 py-2 text-center uppercase tracking-wide text-[var(--to-ink-muted)]">ID</th>
+              <SortHeader
+                sort="fuse_date"
+                label="FUSE Date"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="contractor"
+                label="Contractor"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="candidate"
+                label="Candidate"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="tech"
+                label="Tech"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="status"
+                label="Status"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="updated"
+                label="Updated"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="history"
+                label="Hist"
+                align="center"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+              <SortHeader
+                sort="id"
+                label="ID"
+                align="center"
+                activeSort={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
             </tr>
           </thead>
 

@@ -17,6 +17,39 @@ const STATUS_GROUPS = {
 
 type StatusGroupKey = keyof typeof STATUS_GROUPS | "history";
 
+type SortKey =
+  | "fuse_date"
+  | "contractor"
+  | "candidate"
+  | "tech"
+  | "status"
+  | "updated"
+  | "history"
+  | "id";
+
+type SortDirection = "asc" | "desc";
+
+function parseSortKey(value: string | null): SortKey | null {
+  if (
+    value === "fuse_date" ||
+    value === "contractor" ||
+    value === "candidate" ||
+    value === "tech" ||
+    value === "status" ||
+    value === "updated" ||
+    value === "history" ||
+    value === "id"
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function parseSortDirection(value: string | null): SortDirection {
+  return value === "desc" ? "desc" : "asc";
+}
+
 function clampPageSize(value: string | null) {
   const n = Number(value ?? 25);
   if (!Number.isFinite(n)) return 25;
@@ -65,6 +98,8 @@ export async function GET(req: Request) {
   const from = pageOffset(searchParams.get("page"), pageSize);
   const to = from + pageSize - 1;
   const groups = parseGroups(searchParams.get("groups"));
+  const sortKey = parseSortKey(searchParams.get("sort"));
+  const sortDirection = parseSortDirection(searchParams.get("direction"));
 
   const { data: pcOrg, error: pcOrgError } = await sb
     .from("pc_org")
@@ -89,10 +124,50 @@ export async function GET(req: Request) {
   let query = sb
     .from("fuse_onboarding_candidate_current_v")
     .select("*", { count: "exact" })
-    .ilike("office_text", `${pcOrgNumber}-%`)
-    .order("company_name", { ascending: true })
-    .order("display_name", { ascending: true })
-    .range(from, to);
+    .ilike("office_text", `${pcOrgNumber}-%`);
+
+  const ascending = sortDirection === "asc";
+
+  if (sortKey === "fuse_date") {
+    query = query
+      .order("row_date", { ascending, nullsFirst: false })
+      .order("company_name", { ascending: true })
+      .order("display_name", { ascending: true });
+  } else if (sortKey === "contractor") {
+    query = query
+      .order("company_name", { ascending, nullsFirst: false })
+      .order("display_name", { ascending: true });
+  } else if (sortKey === "candidate") {
+    query = query
+      .order("display_name", { ascending, nullsFirst: false })
+      .order("company_name", { ascending: true });
+  } else if (sortKey === "tech") {
+    query = query
+      .order("tech_id", { ascending, nullsFirst: false })
+      .order("display_name", { ascending: true });
+  } else if (sortKey === "status") {
+    query = query
+      .order("raw->>Status", { ascending, nullsFirst: false })
+      .order("display_name", { ascending: true });
+  } else if (sortKey === "updated") {
+    query = query
+      .order("raw->>Status Update", { ascending, nullsFirst: false })
+      .order("display_name", { ascending: true });
+  } else if (sortKey === "history") {
+    query = query
+      .order("snapshot_count", { ascending, nullsFirst: false })
+      .order("display_name", { ascending: true });
+  } else if (sortKey === "id") {
+    query = query
+      .order("personnel_id", { ascending, nullsFirst: false })
+      .order("display_name", { ascending: true });
+  } else {
+    query = query
+      .order("company_name", { ascending: true })
+      .order("display_name", { ascending: true });
+  }
+
+  query = query.range(from, to);
 
   const statusValues = statusValuesForGroups(groups);
   const wantsHistory = groups.includes("history");

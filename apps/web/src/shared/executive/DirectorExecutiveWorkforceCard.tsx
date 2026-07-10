@@ -103,9 +103,9 @@ function WorkforceRowGrid({ cards }: { cards: ExecutiveArtifactCard[] }) {
     <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
       <table className="w-full table-fixed border-collapse text-xs">
         <colgroup>
-          <col style={{ width: "46%" }} />
-          <col style={{ width: "13%" }} />
-          <col style={{ width: "13%" }} />
+          <col style={{ width: "44%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "14%" }} />
           <col style={{ width: "14%" }} />
           <col style={{ width: "14%" }} />
         </colgroup>
@@ -185,7 +185,7 @@ function WorkforceCompositionArtifact({
 
         <section className="space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wide text-[var(--to-ink-muted)]">
-            Staffing Pipeline
+            Affiliation Mix
           </div>
 
           <div className="overflow-hidden rounded-xl border border-[var(--to-border)]">
