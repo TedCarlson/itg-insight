@@ -36,6 +36,21 @@ export async function GET(req: NextRequest) {
 
   const supabase = supabaseAdmin();
 
+  let activeTnpsReportIds: string[] | null = null;
+  if (view === "tnps") {
+    const { data: activeCases, error: activeCaseError } = await supabase
+      .from("field_log_report_post_call")
+      .select("report_id")
+      .not("case_status", "in", "(closed,resolved)");
+    if (activeCaseError) {
+      return NextResponse.json({ ok: false, error: activeCaseError.message }, { status: 500 });
+    }
+    activeTnpsReportIds = (activeCases ?? []).map((row) => row.report_id);
+    if (activeTnpsReportIds.length === 0) {
+      return NextResponse.json({ ok: true, data: [], meta: { count: 0, limit, offset, has_more: false } });
+    }
+  }
+
   let builder = supabase
     .from("field_log_report")
     .select(
@@ -96,6 +111,7 @@ export async function GET(req: NextRequest) {
   if (view === "tnps") {
     builder = builder.eq("category_key", "post_call");
     builder = builder.in("subcategory_key", TNPS_SUBCATEGORY_KEYS);
+    builder = builder.in("report_id", activeTnpsReportIds ?? []);
   }
 
   if (query) {
@@ -124,6 +140,7 @@ export async function GET(req: NextRequest) {
   const reportRows = data ?? [];
   const reportIds = reportRows.map((row) => row.report_id);
   const caseStatusByReportId = new Map<string, string | null>();
+  const emailStatusByReportId = new Map<string, { sent_at: string; report_updated_at: string }>();
 
   if (reportIds.length > 0) {
     const { data: caseRows, error: caseError } = await supabase
@@ -141,6 +158,33 @@ export async function GET(req: NextRequest) {
     for (const row of caseRows ?? []) {
       caseStatusByReportId.set(row.report_id, row.case_status ?? null);
     }
+
+    if (view === "tnps") {
+      const { data: itemRows, error: itemError } = await supabase
+        .from("field_log_tnps_email_digest_item")
+        .select("digest_id,report_id,report_updated_at")
+        .in("report_id", reportIds);
+      if (itemError) {
+        return NextResponse.json({ ok: false, error: itemError.message }, { status: 500 });
+      }
+      const digestIds = Array.from(new Set((itemRows ?? []).map((row) => row.digest_id)));
+      if (digestIds.length > 0) {
+        const { data: digestRows, error: digestError } = await supabase
+          .from("field_log_tnps_email_digest")
+          .select("digest_id,sent_at,send_mode")
+          .eq("status", "sent")
+          .neq("send_mode", "test")
+          .in("digest_id", digestIds)
+          .order("sent_at", { ascending: false });
+        if (digestError) return NextResponse.json({ ok: false, error: digestError.message }, { status: 500 });
+        const sentByDigest = new Map((digestRows ?? []).map((row) => [row.digest_id, row.sent_at]));
+        for (const item of itemRows ?? []) {
+          const sentAt = sentByDigest.get(item.digest_id);
+          if (!sentAt || emailStatusByReportId.has(item.report_id)) continue;
+          emailStatusByReportId.set(item.report_id, { sent_at: sentAt, report_updated_at: item.report_updated_at });
+        }
+      }
+    }
   }
 
   const normalizedRows = reportRows.map((row) => ({
@@ -148,6 +192,7 @@ export async function GET(req: NextRequest) {
     tech_full_name: row.subject_full_name ?? null,
     tech_id: row.subject_tech_id ?? null,
     case_status: caseStatusByReportId.get(row.report_id) ?? null,
+    email_delivery: emailStatusByReportId.get(row.report_id) ?? null,
     evidence_badge: "",
   }));
 

@@ -32,6 +32,7 @@ type QueueRow = {
   tech_id?: string | null;
   approved_by_full_name?: string | null;
   last_action_type?: string | null;
+  email_delivery?: { sent_at: string; report_updated_at: string } | null;
 };
 
 type QueueResponse = {
@@ -95,6 +96,12 @@ export function FieldLogReviewClient(props: {
   const [selectedDetail, setSelectedDetail] = useState<FieldLogDetailPayload | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [selectedEmailIds, setSelectedEmailIds] = useState<string[]>([]);
+  const [emailPreview, setEmailPreview] = useState<{ subject: string; text: string; html: string } | null>(null);
+  const [emailPreviewLoading, setEmailPreviewLoading] = useState(false);
+  const [testSending, setTestSending] = useState(false);
+  const [testSendMessage, setTestSendMessage] = useState<string | null>(null);
+  const [cutoffPreview, setCutoffPreview] = useState<{ count: number; records: QueueRow[] } | null>(null);
 
   const load = useCallback(
     async (showLoading = false) => {
@@ -207,6 +214,54 @@ export function FieldLogReviewClient(props: {
     setJobSearch("");
   }
 
+  async function previewEmail() {
+    if (!selectedOrgId || selectedEmailIds.length === 0) return;
+    setEmailPreviewLoading(true);
+    try {
+      const res = await fetch("/api/field-log/tnps-email/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pcOrgId: selectedOrgId, reportIds: selectedEmailIds }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Failed to build email preview.");
+      setEmailPreview(json.data);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Failed to build email preview.");
+    } finally {
+      setEmailPreviewLoading(false);
+    }
+  }
+
+  async function sendTestEmail() {
+    if (!selectedOrgId || selectedEmailIds.length === 0) return;
+    setTestSending(true);
+    setTestSendMessage(null);
+    try {
+      const res = await fetch("/api/field-log/tnps-email/test-send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pcOrgId: selectedOrgId, reportIds: selectedEmailIds }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Test email failed.");
+      setTestSendMessage(`Test sent to ${json.email}`);
+    } catch (err) {
+      setTestSendMessage(err instanceof Error ? err.message : "Test email failed.");
+    } finally {
+      setTestSending(false);
+    }
+  }
+
+  async function runInitialCutoff(execute: boolean) {
+    if (!selectedOrgId) return;
+    const res = await fetch("/api/field-log/tnps-email/initial-cutoff", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pcOrgId: selectedOrgId, execute }) });
+    const json = await res.json();
+    if (!res.ok || !json.ok) { setDetailError(json.error || "Cutoff operation failed."); return; }
+    setCutoffPreview(json.data);
+    if (json.data.executed) await load(false);
+  }
+
   async function openRecord(row: QueueRow) {
     if (window.matchMedia("(max-width: 1023px)").matches) {
       window.location.href = `/field-log/${row.report_id}?from=review`;
@@ -248,6 +303,7 @@ export function FieldLogReviewClient(props: {
           <table className={`w-full border-collapse text-sm ${compact ? "min-w-[440px]" : "min-w-[1180px]"}`}>
             <thead className="bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
+                {viewMode === "tnps" && !compact ? <th className="w-10 px-3 py-2"><span className="sr-only">Select</span></th> : null}
                 <th className="whitespace-nowrap px-3 py-2 font-semibold">Record date</th>
                 <th className="whitespace-nowrap px-3 py-2 font-semibold">Order / Job</th>
                 <th className="whitespace-nowrap px-3 py-2 font-semibold">Tech ID</th>
@@ -257,6 +313,7 @@ export function FieldLogReviewClient(props: {
                 {!compact ? <th className="whitespace-nowrap px-3 py-2 font-semibold">Case</th> : null}
                 <th className="whitespace-nowrap px-3 py-2 font-semibold">Workflow</th>
                 {!compact ? <th className="px-3 py-2 font-semibold">Detail</th> : null}
+                {viewMode === "tnps" && !compact ? <th className="whitespace-nowrap px-3 py-2 font-semibold">Email status</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -272,6 +329,14 @@ export function FieldLogReviewClient(props: {
                     }}
                     className="cursor-pointer border-t align-top hover:bg-muted/40 focus:bg-muted/40 focus:outline-none"
                   >
+                    {viewMode === "tnps" && !compact ? <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedEmailIds.includes(row.report_id)}
+                        onChange={(event) => setSelectedEmailIds((current) => event.target.checked ? [...current, row.report_id] : current.filter((id) => id !== row.report_id))}
+                        aria-label={`Select job ${row.job_number} for email`}
+                      />
+                    </td> : null}
                     <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
                       {formatGridDate(row.submitted_at ?? row.created_at)}
                     </td>
@@ -288,6 +353,11 @@ export function FieldLogReviewClient(props: {
                     </td>
                     {!compact ? <td className="max-w-[320px] px-3 py-2.5 text-muted-foreground">
                       <div className="line-clamp-2">{row.comment?.trim() || "—"}</div>
+                    </td> : null}
+                    {viewMode === "tnps" && !compact ? <td className="whitespace-nowrap px-3 py-2.5 text-xs">
+                      {!row.email_delivery ? "Never sent" : new Date(row.updated_at ?? row.submitted_at ?? 0).getTime() > new Date(row.email_delivery.report_updated_at).getTime() ? (
+                        <span className="font-semibold text-amber-700">Updated since email</span>
+                      ) : `Sent ${formatGridDate(row.email_delivery.sent_at)}`}
                     </td> : null}
                   </tr>
                 );
@@ -354,7 +424,42 @@ export function FieldLogReviewClient(props: {
         </div>
 
         <div className="text-xs text-muted-foreground">{scopeText}</div>
+        {viewMode === "tnps" ? (
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setSelectedEmailIds(rows.map((row) => row.report_id))} className="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Select queue</button>
+            <button type="button" onClick={() => setSelectedEmailIds([])} className="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Clear</button>
+            <button type="button" onClick={() => void previewEmail()} disabled={selectedEmailIds.length === 0 || emailPreviewLoading} className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-50">
+              {emailPreviewLoading ? "Preparing…" : `Preview email (${selectedEmailIds.length})`}
+            </button>
+            <button type="button" onClick={() => void runInitialCutoff(false)} className="ml-auto rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Review initial cutoff</button>
+          </div>
+        ) : null}
       </section>
+
+      {viewMode === "tnps" && cutoffPreview ? <section className="rounded-xl border bg-card p-3 text-sm">
+        <div className="flex items-center justify-between gap-3"><div><strong>{cutoffPreview.count}</strong> active cases submitted before July 12, 2026</div><div className="flex gap-2">{cutoffPreview.count > 0 ? <button type="button" onClick={() => void runInitialCutoff(true)} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700">Confirm close</button> : null}<button type="button" onClick={() => setCutoffPreview(null)} className="rounded-lg border px-3 py-1.5 text-xs">Dismiss</button></div></div>
+        {cutoffPreview.count > 0 ? <div className="mt-2 text-xs text-muted-foreground">{cutoffPreview.records.map((row) => row.job_number).join(", ")}</div> : null}
+      </section> : null}
+
+      {viewMode === "tnps" && emailPreview ? (
+        <section className="rounded-xl border bg-card p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div><div className="text-xs text-muted-foreground">Subject</div><div className="text-sm font-semibold">{emailPreview.subject}</div></div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void navigator.clipboard.writeText(`Subject: ${emailPreview.subject}\n\n${emailPreview.text}`)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-muted">Copy email</button>
+              <button type="button" onClick={() => void sendTestEmail()} disabled={testSending} className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-50">{testSending ? "Sending…" : "Send test to me"}</button>
+              <button type="button" onClick={() => setEmailPreview(null)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-muted">Close</button>
+            </div>
+          </div>
+          {testSendMessage ? <div className="mb-2 text-xs font-medium">{testSendMessage}</div> : null}
+          <iframe
+            title="tNPS email preview"
+            srcDoc={emailPreview.html}
+            className="h-80 w-full rounded-lg border bg-white"
+            sandbox=""
+          />
+        </section>
+      ) : null}
 
       {!selectedOrgId ? (
         <div className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">
