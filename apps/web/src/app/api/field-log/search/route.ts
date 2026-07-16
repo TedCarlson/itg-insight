@@ -4,6 +4,8 @@ import { requireAccessPass } from "@/shared/access/requireAccessPass";
 
 export const runtime = "nodejs";
 
+const TNPS_SUBCATEGORY_KEYS = ["detractor_risk", "tnps_detractor", "tnps_passive"];
+
 function intParam(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number.parseInt(value || "", 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -45,6 +47,7 @@ export async function GET(req: NextRequest) {
       job_number,
       job_type,
       comment,
+      created_at,
       submitted_at,
       updated_at,
       approved_at,
@@ -87,11 +90,12 @@ export async function GET(req: NextRequest) {
 
   if (view === "cases") {
     builder = builder.eq("category_key", "post_call");
+    builder = builder.not("subcategory_key", "in", `(${TNPS_SUBCATEGORY_KEYS.join(",")})`);
   }
 
   if (view === "tnps") {
     builder = builder.eq("category_key", "post_call");
-    builder = builder.in("subcategory_key", ["detractor_risk", "tnps_detractor", "tnps_passive"]);
+    builder = builder.in("subcategory_key", TNPS_SUBCATEGORY_KEYS);
   }
 
   if (query) {
@@ -117,9 +121,39 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const reportRows = data ?? [];
+  const reportIds = reportRows.map((row) => row.report_id);
+  const caseStatusByReportId = new Map<string, string | null>();
+
+  if (reportIds.length > 0) {
+    const { data: caseRows, error: caseError } = await supabase
+      .from("field_log_report_post_call")
+      .select("report_id,case_status")
+      .in("report_id", reportIds);
+
+    if (caseError) {
+      return NextResponse.json(
+        { ok: false, error: caseError.message || "Failed to load follow-up status." },
+        { status: 500 },
+      );
+    }
+
+    for (const row of caseRows ?? []) {
+      caseStatusByReportId.set(row.report_id, row.case_status ?? null);
+    }
+  }
+
+  const normalizedRows = reportRows.map((row) => ({
+    ...row,
+    tech_full_name: row.subject_full_name ?? null,
+    tech_id: row.subject_tech_id ?? null,
+    case_status: caseStatusByReportId.get(row.report_id) ?? null,
+    evidence_badge: "",
+  }));
+
   return NextResponse.json({
     ok: true,
-    data: data ?? [],
+    data: normalizedRows,
     meta: {
       count: count ?? 0,
       limit,

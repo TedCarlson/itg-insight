@@ -74,6 +74,7 @@ type SelfTechResponse = {
 const NEW_DROP_CATEGORY_KEY = "new_drop";
 const CONDUIT_PULL_CATEGORY_KEY = "conduit_pull_install";
 const SERVICE_FOLLOWUP_CATEGORY_KEY = "post_call";
+const DEVICE_UPLOAD_UCODES = new Set(["U31", "U44"]);
 
 const NEW_DROP_EVIDENCE_REQUIREMENTS = [
   {
@@ -318,7 +319,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
   } = props;
 
   const { selectedOrgId } = useOrg();
-  const { getRuleForSelection, getSubcategoriesForCategory, ucodes } = useFieldLogRuntime();
+  const { getRuleForSelection, getSubcategoriesForCategory } = useFieldLogRuntime();
   const entrySource = useFieldLogEntrySource();
   const supabase = useMemo(() => createClient(), []);
 
@@ -401,6 +402,10 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
       : rule?.photo_requirements ?? [];
   const ucodeRequired = !!rule?.require_ucode;
   const showUcodePicker = !!rule?.show_ucode || ucodeRequired;
+  const allowedUcodes = rule?.ucodes ?? [];
+  const allowsDeviceEvidenceUpload = DEVICE_UPLOAD_UCODES.has(
+    selectedUcode.trim().toUpperCase(),
+  );
   const locationRequired = !!rule?.location_required;
   const totalPhotoCount = existingPhotoCount + photos.length;
   const newDropLoadedKeys = useMemo(() => {
@@ -924,7 +929,7 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {ucodes.map((item) => (
+            {allowedUcodes.map((item) => (
               <button
                 key={item.ucode}
                 type="button"
@@ -936,6 +941,11 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
                 {item.label || item.ucode}
               </button>
             ))}
+            {allowedUcodes.length === 0 ? (
+              <div className="col-span-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                No U-codes are configured for this submission type. Contact an administrator.
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -1066,11 +1076,20 @@ export default function FieldLogDraftClient(props: FieldLogDraftClientProps) {
               </div>
             ) : (
               <label className="block rounded-xl border border-gray-200 px-3 py-3">
-                <div className="font-medium">Add Photo</div>
+                <div className="font-medium">
+                  {allowsDeviceEvidenceUpload ? "Add Evidence" : "Capture Photo"}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {allowsDeviceEvidenceUpload
+                    ? "Choose an existing image or screenshot from this device, or take a new photo."
+                    : "Take a new photo with the device camera."}
+                </div>
                 <input
                   type="file"
                   accept="image/*"
-                  {...(isTechUploader ? { capture: "environment" as const } : {})}
+                  {...(!allowsDeviceEvidenceUpload
+                    ? { capture: "environment" as const }
+                    : {})}
                   multiple
                   className="mt-3 block w-full text-sm"
                   onChange={(e) => void onPickFiles(e, null)}

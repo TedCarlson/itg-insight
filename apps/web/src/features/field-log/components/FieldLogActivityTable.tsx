@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useOrg } from "@/state/org";
 
 type SnapshotRow = {
@@ -95,89 +96,10 @@ function rate(summary: LogSummary) {
   return `${Math.round((handled / summary.submitted) * 100)}%`;
 }
 
-function Metric(props: { label: string; value: string | number; emphasis?: boolean }) {
-  return (
-    <div className="rounded-xl border bg-card px-3 py-2">
-      <div className="text-xs text-muted-foreground">{props.label}</div>
-      <div className={`mt-1 text-lg ${props.emphasis ? "font-semibold" : "font-medium"}`}>
-        {props.value}
-      </div>
-    </div>
-  );
-}
-
-function LogTypeCard({ summary }: { summary: LogSummary }) {
-  if (isPacketType(summary.key)) {
-    return (
-      <section className="rounded-2xl border bg-card p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-base font-semibold">{summary.label}</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              Packet workflow: review, approve, reject, and billing email completion.
-            </div>
-          </div>
-          <div className="rounded-full border px-2 py-1 text-xs font-semibold">
-            {rate(summary)} handled
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
-          <Metric label="Submitted" value={summary.submitted} emphasis />
-          <Metric label="Approved" value={num(summary.approved)} />
-          <Metric label="Rejected" value={num(summary.rejected)} emphasis={summary.rejected > 0} />
-          <Metric label="Unresolved" value={num(summary.unresolved)} emphasis={summary.unresolved > 0} />
-          <Metric label="Billing Pending" value={num(summary.billingPending)} emphasis={summary.billingPending > 0} />
-          <Metric label="Billing Sent" value={num(summary.billingSent)} />
-        </div>
-      </section>
-    );
-  }
-
-  if (summary.key === "post_call") {
-    return (
-      <section className="rounded-2xl border bg-card p-4">
-        <div className="text-base font-semibold">{summary.label}</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          Case management: customer follow-up, tNPS, damage claims, and escalations.
-        </div>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
-          <Metric label="Submitted" value={summary.submitted} emphasis />
-          <Metric label="Open Cases" value={num(summary.openCases)} emphasis={summary.openCases > 0} />
-          <Metric label="tNPS Open" value={num(summary.tnpsOpen)} emphasis={summary.tnpsOpen > 0} />
-          <Metric label="Closed" value={num(summary.approved)} />
-          <Metric label="Aging 2d+" value={num(summary.agingRisk)} emphasis={summary.agingRisk > 0} />
-          <Metric label="Handle Rate" value={rate(summary)} />
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="rounded-2xl border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold">{summary.label}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Review workflow: submitted, handled, follow-up, and aging.
-          </div>
-        </div>
-        <div className="rounded-full border px-2 py-1 text-xs font-semibold">
-          {rate(summary)} handled
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
-        <Metric label="Submitted" value={summary.submitted} emphasis />
-        <Metric label="Approved" value={num(summary.approved)} />
-        <Metric label="Rejected" value={num(summary.rejected)} emphasis={summary.rejected > 0} />
-        <Metric label="Unresolved" value={num(summary.unresolved)} emphasis={summary.unresolved > 0} />
-        <Metric label="Follow-Up" value={num(summary.followup)} emphasis={summary.followup > 0} />
-        <Metric label="Aging 2d+" value={num(summary.agingRisk)} emphasis={summary.agingRisk > 0} />
-      </div>
-    </section>
-  );
+function hrefFor(summary: LogSummary) {
+  if (summary.key === "post_call") return "/field-log/cases";
+  if (isPacketType(summary.key)) return "/field-log/new-drop-report";
+  return "/field-log/review";
 }
 
 export function FieldLogActivityTable() {
@@ -296,44 +218,108 @@ export function FieldLogActivityTable() {
       });
   }, [rows]);
 
+  const totals = useMemo(() => {
+    const submitted = summaries.reduce((sum, item) => sum + item.submitted, 0);
+    const handled = summaries.reduce((sum, item) => sum + item.approved + item.rejected, 0);
+    const unresolved = summaries.reduce((sum, item) => sum + item.unresolved, 0);
+    const followup = summaries.reduce((sum, item) => sum + item.followup + item.tnpsOpen, 0);
+    const aging = summaries.reduce((sum, item) => sum + item.agingRisk, 0);
+    return { submitted, handled, unresolved, followup, aging };
+  }, [summaries]);
+
   return (
-    <section className="rounded-2xl border bg-card p-5">
+    <section className="overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="px-4 pt-4">
           <div className="text-base font-semibold">Field Log Snapshot</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Thirty-day handling by log type. Each card shows only the signals relevant to that workflow.
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            Last 30 days · select a workflow to open its queue
           </div>
         </div>
 
         <button
           type="button"
           onClick={() => void load()}
-          className="rounded-xl border px-3 py-2 text-sm font-medium hover:bg-muted"
+          className="mr-4 mt-4 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
         >
           Refresh
         </button>
       </div>
 
       {!selectedOrgId ? (
-        <div className="mt-4 text-sm text-muted-foreground">
+        <div className="p-4 text-sm text-muted-foreground">
           Select a PC scope to load the snapshot.
         </div>
       ) : loading ? (
-        <div className="mt-4 text-sm text-muted-foreground">Loading snapshot…</div>
+        <div className="p-4 text-sm text-muted-foreground">Loading snapshot…</div>
       ) : error ? (
-        <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+        <div className="m-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
       ) : summaries.length === 0 ? (
-        <div className="mt-4 text-sm text-muted-foreground">
+        <div className="p-4 text-sm text-muted-foreground">
           No Field Log activity in the last 30 days.
         </div>
       ) : (
-        <div className="mt-5 grid gap-4">
-          {summaries.map((summary) => (
-            <LogTypeCard key={summary.key} summary={summary} />
-          ))}
+        <div className="mt-4">
+          <div className="grid grid-cols-2 border-y bg-muted/20 sm:grid-cols-5">
+            {[
+              ["Submitted", totals.submitted],
+              ["Handled", totals.handled],
+              ["Open", totals.unresolved],
+              ["Follow-up", totals.followup],
+              ["Aging 2d+", totals.aging],
+            ].map(([label, value]) => (
+              <div key={label} className="border-r px-4 py-2 last:border-r-0">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+                <div className="text-lg font-semibold tabular-nums">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="border-b bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Workflow</th>
+                  <th className="px-3 py-2 text-right font-medium">Submitted</th>
+                  <th className="px-3 py-2 text-right font-medium">Handled</th>
+                  <th className="px-3 py-2 text-right font-medium">Open</th>
+                  <th className="px-3 py-2 text-right font-medium">Follow-up</th>
+                  <th className="px-3 py-2 text-right font-medium">Aging 2d+</th>
+                  <th className="px-3 py-2 text-right font-medium">Billing / tNPS</th>
+                  <th className="px-4 py-2 text-right font-medium">Rate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {summaries.map((summary) => {
+                  const handled = summary.approved + summary.rejected;
+                  const special = summary.key === "post_call"
+                    ? `${summary.tnpsOpen} tNPS open`
+                    : isPacketType(summary.key)
+                      ? `${summary.billingPending} pending`
+                      : "—";
+
+                  return (
+                    <tr key={summary.key} className="transition hover:bg-muted/30">
+                      <td className="px-4 py-3">
+                        <Link href={hrefFor(summary)} className="font-semibold hover:underline">
+                          {summary.label}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">{summary.submitted}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{num(handled)}</td>
+                      <td className={`px-3 py-3 text-right tabular-nums ${summary.unresolved ? "font-semibold" : ""}`}>{num(summary.unresolved)}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{num(summary.followup)}</td>
+                      <td className={`px-3 py-3 text-right tabular-nums ${summary.agingRisk ? "text-amber-700" : ""}`}>{num(summary.agingRisk)}</td>
+                      <td className="px-3 py-3 text-right text-xs text-muted-foreground">{special}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums">{rate(summary)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </section>

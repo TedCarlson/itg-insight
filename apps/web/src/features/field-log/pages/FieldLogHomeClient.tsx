@@ -28,28 +28,36 @@ export function hasManagerUpFieldLogAccess(accessPass: any) {
   );
 }
 
-function Tile(props: { href: string; title: string; description: string }) {
+function Action(props: { href: string; title: string; description: string; primary?: boolean }) {
   return (
     <Link
       href={props.href}
-      className="rounded-2xl border bg-card p-4 transition hover:bg-muted/40"
+      className={`flex min-w-0 items-center gap-3 rounded-xl border px-4 py-3 transition hover:bg-muted/40 ${
+        props.primary ? "border-blue-300 bg-blue-50/60" : "bg-card"
+      }`}
     >
-      <div className="text-base font-semibold">{props.title}</div>
-      <div className="mt-2 text-sm text-muted-foreground">{props.description}</div>
+      <span className="text-lg leading-none text-blue-600" aria-hidden="true">
+        {props.primary ? "+" : "→"}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{props.title}</span>
+        <span className="block truncate text-xs text-muted-foreground">{props.description}</span>
+      </span>
     </Link>
   );
 }
 
 export function FieldLogHomeClient() {
   return (
-    <section className="grid gap-3 md:grid-cols-2">
-      <Tile
+    <section className="grid gap-2 sm:grid-cols-2">
+      <Action
         href="/field-log/new"
         title="New Field Log"
         description="Start a new field submission."
+        primary
       />
 
-      <Tile
+      <Action
         href="/field-log/mine"
         title="My Work"
         description="View your drafts, pending logs, follow-ups, and approvals."

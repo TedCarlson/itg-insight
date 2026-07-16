@@ -159,6 +159,9 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const showTimeline = useMemo(() => canViewTimeline(accessPass), [accessPass]);
 
   const isServiceFollowUp = data.category_key === SERVICE_FOLLOWUP_CATEGORY_KEY;
+  const isTnpsFollowUp =
+    isServiceFollowUp &&
+    String(data.subcategory_key ?? "").toLowerCase().includes("tnps");
   const serviceCaseStatus = data.post_call?.case_status ?? "open";
   const serviceCaseClosed = serviceCaseStatus === "closed";
 
@@ -743,6 +746,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
         <div className="space-y-4">
 <FieldLogServiceFollowUpCaseActionsCard
             visible={canManageServiceFollowUpCase}
+            allowEvidence={!isTnpsFollowUp}
             busy={busy}
             uploadingEvidence={proxyUploading}
             caseStatus={serviceCaseStatus}
@@ -862,7 +866,7 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
             />
           ) : null}
 
-          {canUseSupervisorProxyUpload ? (
+          {canUseSupervisorProxyUpload && !isTnpsFollowUp ? (
             <section className="rounded-2xl border bg-card p-5">
               <div className="text-base font-semibold">Supervisor Upload (Adoption Mode)</div>
               <div className="mt-2 text-sm text-muted-foreground">

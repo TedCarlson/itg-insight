@@ -10,7 +10,16 @@ function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export function isActiveWorkforceRow(row: WorkforceRow, today: string) {
+type WorkforceEligibilityRow = {
+  person_status?: WorkforceRow["person_status"];
+  assignment_status?: WorkforceRow["assignment_status"];
+  end_date?: WorkforceRow["end_date"];
+};
+
+export function isActiveWorkforceRow(
+  row: WorkforceEligibilityRow,
+  today: string
+) {
   if (row.person_status && row.person_status !== "active") return false;
   if (row.assignment_status && row.assignment_status !== "active") return false;
   if (row.end_date && row.end_date <= today) return false;

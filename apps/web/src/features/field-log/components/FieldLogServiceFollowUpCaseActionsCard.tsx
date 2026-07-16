@@ -12,6 +12,7 @@ type Props = {
   busy: boolean;
   uploadingEvidence: boolean;
   visible: boolean;
+  allowEvidence?: boolean;
   caseStatus: string | null;
   technicianComments: string;
   customerContactFeedback: string;
@@ -36,6 +37,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
     busy,
     uploadingEvidence,
     visible,
+    allowEvidence = true,
     caseStatus,
     technicianComments,
     customerContactFeedback,
@@ -66,7 +68,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
             Status: <span className="font-medium text-foreground">{niceStatus(normalizedStatus)}</span>
           </div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Add updates, upload evidence, and move this case through close or reopen.
+            Add updates and move this case through close or reopen.
           </div>
         </div>
       </div>
@@ -100,7 +102,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
         </button>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      {allowEvidence ? <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="block rounded-xl border px-3 py-3 text-sm">
           <div className="font-medium">Upload Evidence</div>
           <div className="mt-1 text-muted-foreground">
@@ -130,7 +132,7 @@ export function FieldLogServiceFollowUpCaseActionsCard(props: Props) {
             onChange={(e) => void onPickEvidenceFiles(e)}
           />
         </label>
-      </div>
+      </div> : null}
 
       <div className="mt-4 space-y-3">
         <label className="block space-y-2">

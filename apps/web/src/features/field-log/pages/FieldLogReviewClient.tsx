@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/state/org";
 import { FieldLogLiveHeader } from "../components/FieldLogLiveHeader";
 import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { formatFreshness } from "../lib/freshness";
+import { FieldLogDetailClient } from "./FieldLogDetailClient";
+import type { FieldLogDetailPayload } from "../lib/fieldLogDetail.types";
 import {
   getPriority,
-  getStatusBorder,
   getStatusChip,
   niceStatus,
 } from "../lib/statusStyles";
@@ -24,7 +24,10 @@ type QueueRow = {
   job_number: string;
   job_type: string | null;
   evidence_badge: string;
+  comment?: string | null;
+  created_at?: string | null;
   submitted_at: string | null;
+  updated_at?: string | null;
   tech_full_name?: string | null;
   tech_id?: string | null;
   approved_by_full_name?: string | null;
@@ -43,50 +46,33 @@ type QueueResponse = {
   };
 };
 
-function getSectionTextClass(status: string) {
-  switch (status) {
-    case "pending_review":
-      return "text-blue-700";
-    case "tech_followup_required":
-      return "text-red-700";
-    case "sup_followup_required":
-      return "text-amber-700";
-    case "approved":
-      return "text-green-700";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
-function isReturnedForReview(lastActionType?: string | null) {
-  return !!lastActionType && lastActionType.toLowerCase().includes("resubmit");
-}
-
 function isServiceFollowUp(row: QueueRow) {
   return row.category_key === "post_call" || row.category_label === "Service Follow Up";
-}
-
-function isTnpsEvent(row: QueueRow) {
-  if (!isServiceFollowUp(row)) return false;
-
-  const key = (row.subcategory_key ?? "").toLowerCase();
-  const label = (row.subcategory_label ?? "").toLowerCase();
-
-  return key.includes("tnps") || label.includes("tnps");
 }
 
 function normalizedCaseStatus(row: QueueRow) {
   return row.case_status ?? (row.status === "approved" ? "closed" : "open");
 }
 
-function isClosedCase(row: QueueRow) {
-  const caseStatus = normalizedCaseStatus(row);
-  return caseStatus === "closed" || row.status === "approved";
-}
-
 function niceCaseStatus(value: string | null | undefined) {
   const next = value ?? "open";
   return next.replaceAll("_", " ").toUpperCase();
+}
+
+function formatGridDate(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function niceKey(value: string | null | undefined) {
+  if (!value) return "—";
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 
@@ -106,6 +92,9 @@ export function FieldLogReviewClient(props: {
   const [jobSearchInput, setJobSearchInput] = useState("");
   const [jobSearch, setJobSearch] = useState("");
   const [resultMeta, setResultMeta] = useState<{ count: number; hasMore: boolean }>({ count: 0, hasMore: false });
+  const [selectedDetail, setSelectedDetail] = useState<FieldLogDetailPayload | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const load = useCallback(
     async (showLoading = false) => {
@@ -192,21 +181,6 @@ export function FieldLogReviewClient(props: {
     return () => window.clearInterval(id);
   }, []);
 
-  const grouped = useMemo(() => {
-    const normalRows = rows.filter((r) => !isServiceFollowUp(r));
-    const serviceRows = rows.filter((r) => isServiceFollowUp(r));
-
-    return {
-      open_cases: serviceRows.filter((r) => !isClosedCase(r)),
-      tnps_events: serviceRows.filter((r) => isTnpsEvent(r)),
-      closed_cases: serviceRows.filter((r) => isClosedCase(r)),
-      pending_review: normalRows.filter((r) => r.status === "pending_review"),
-      tech_followup_required: normalRows.filter((r) => r.status === "tech_followup_required"),
-      sup_followup_required: normalRows.filter((r) => r.status === "sup_followup_required"),
-      approved: normalRows.filter((r) => r.status === "approved"),
-    };
-  }, [rows]);
-
   const freshnessText = useMemo(() => formatFreshness(lastUpdatedAt), [lastUpdatedAt]);
 
   const scopeText = useMemo(() => {
@@ -233,78 +207,94 @@ export function FieldLogReviewClient(props: {
     setJobSearch("");
   }
 
-  function Section(props: { title: string; rows: QueueRow[]; status: string }) {
-    const { title, rows, status } = props;
+  async function openRecord(row: QueueRow) {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      window.location.href = `/field-log/${row.report_id}?from=review`;
+      return;
+    }
 
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const res = await fetch(
+        `/api/field-log/detail?reportId=${encodeURIComponent(row.report_id)}`,
+        { method: "GET", cache: "no-store" },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.ok || !json.data) {
+        throw new Error(json.error || "Failed to load record detail.");
+      }
+      setSelectedDetail(json.data as FieldLogDetailPayload);
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Failed to load record detail.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function RecordsGrid({ rows, compact = false }: { rows: QueueRow[]; compact?: boolean }) {
     if (rows.length === 0) return null;
 
     return (
-      <section className="space-y-3">
-        <div className={`text-sm font-semibold ${getSectionTextClass(status)}`}>{title}</div>
+      <section className="overflow-hidden rounded-xl border bg-card">
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <div className="text-sm font-semibold">
+            {viewMode === "tnps" ? "tNPS follow-up records" : title}
+          </div>
+          <div className="text-xs text-muted-foreground">{rows.length} records · newest first</div>
+        </div>
 
-        {rows.map((row) => {
-          const serviceFollowUp = isServiceFollowUp(row);
-          const chip = getStatusChip(row.status, row.last_action_type);
-          const borderClass = getStatusBorder(row.status, row.last_action_type);
-          const showClosedBy = row.status === "approved" && !!row.approved_by_full_name;
-          const showReturnedTag =
-            row.status === "pending_review" && isReturnedForReview(row.last_action_type);
-
-          return (
-            <Link
-              key={row.report_id}
-              href={`/field-log/${row.report_id}?from=review`}
-              className={`block rounded-2xl border bg-card p-4 transition hover:bg-muted/40 ${borderClass}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-base font-semibold">{row.job_number}</div>
-
-                  {row.tech_full_name || row.tech_id ? (
-                    <div className="mt-1 text-sm text-foreground">
-                      {row.tech_id ? `${row.tech_id} • ` : ""}
-                      {row.tech_full_name ?? "Unknown Technician"}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {row.category_label ?? "Field Log"}
-                    {row.subcategory_label ? ` • ${row.subcategory_label}` : ""}
-                    {serviceFollowUp ? ` • ${niceCaseStatus(normalizedCaseStatus(row))}` : ""}
-                  </div>
-                </div>
-
-                <div
-                  className={`inline-flex min-w-[44px] items-center justify-center rounded-full border px-2 py-1 text-xs font-semibold ${chip.className}`}
-                  title={niceStatus(row.status)}
-                >
-                  {chip.label}
-                </div>
-              </div>
-
-              <div className="mt-3 text-sm text-muted-foreground">
-                {row.job_type ? `Job Type: ${row.job_type.toUpperCase()} • ` : ""}
-                {row.evidence_badge}
-              </div>
-
-              {showReturnedTag ? (
-                <div className="mt-2 text-sm font-medium text-blue-700">
-                  Returned from tech follow-up for review
-                </div>
-              ) : null}
-
-              {showClosedBy ? (
-                <div className="mt-2 text-sm text-muted-foreground">
-                  Closed by {row.approved_by_full_name}
-                </div>
-              ) : null}
-
-              <div className="mt-3 text-xs font-medium text-muted-foreground">
-                {serviceFollowUp ? "Opens case detail" : "Opens review detail"}
-              </div>
-            </Link>
-          );
-        })}
+        <div className="overflow-x-auto">
+          <table className={`w-full border-collapse text-sm ${compact ? "min-w-[440px]" : "min-w-[1180px]"}`}>
+            <thead className="bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="whitespace-nowrap px-3 py-2 font-semibold">Record date</th>
+                <th className="whitespace-nowrap px-3 py-2 font-semibold">Order / Job</th>
+                <th className="whitespace-nowrap px-3 py-2 font-semibold">Tech ID</th>
+                <th className="whitespace-nowrap px-3 py-2 font-semibold">Technician</th>
+                {!compact ? <th className="whitespace-nowrap px-3 py-2 font-semibold">{viewMode === "tnps" ? "Survey segment" : "Record type"}</th> : null}
+                {!compact ? <th className="whitespace-nowrap px-3 py-2 font-semibold">Job type</th> : null}
+                {!compact ? <th className="whitespace-nowrap px-3 py-2 font-semibold">Case</th> : null}
+                <th className="whitespace-nowrap px-3 py-2 font-semibold">Workflow</th>
+                {!compact ? <th className="px-3 py-2 font-semibold">Detail</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const chip = getStatusChip(row.status, row.last_action_type);
+                return (
+                  <tr
+                    key={row.report_id}
+                    tabIndex={0}
+                    onClick={() => void openRecord(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") void openRecord(row);
+                    }}
+                    className="cursor-pointer border-t align-top hover:bg-muted/40 focus:bg-muted/40 focus:outline-none"
+                  >
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      {formatGridDate(row.submitted_at ?? row.created_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold">{row.job_number}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-medium">{row.tech_id ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{row.tech_full_name ?? "—"}</td>
+                    {!compact ? <td className="whitespace-nowrap px-3 py-2.5">{niceKey(row.subcategory_key ?? row.category_key)}</td> : null}
+                    {!compact ? <td className="whitespace-nowrap px-3 py-2.5 uppercase">{row.job_type ?? "—"}</td> : null}
+                    {!compact ? <td className="whitespace-nowrap px-3 py-2.5">{isServiceFollowUp(row) ? niceCaseStatus(normalizedCaseStatus(row)) : "—"}</td> : null}
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${chip.className}`}>
+                        {niceStatus(row.status)}
+                      </span>
+                    </td>
+                    {!compact ? <td className="max-w-[320px] px-3 py-2.5 text-muted-foreground">
+                      <div className="line-clamp-2">{row.comment?.trim() || "—"}</div>
+                    </td> : null}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </section>
     );
   }
@@ -326,7 +316,7 @@ export function FieldLogReviewClient(props: {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <FieldLogLiveHeader
         title={title}
         freshnessText={freshnessText}
@@ -334,8 +324,8 @@ export function FieldLogReviewClient(props: {
         onRefresh={manualRefresh}
       />
 
-      <section className="rounded-2xl border bg-card p-4 space-y-3">
-        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+      <section className="flex flex-col gap-2 border-b pb-3">
+        <div className="grid gap-2 lg:grid-cols-[1fr_auto_auto]">
           <input
             value={jobSearchInput}
             onChange={(e) => setJobSearchInput(e.target.value)}
@@ -343,13 +333,13 @@ export function FieldLogReviewClient(props: {
               if (e.key === "Enter") runSearch();
             }}
             placeholder="Search job, tech ID, tech name, or comment"
-            className="w-full rounded-xl border px-3 py-3"
+            className="h-9 w-full rounded-lg border px-3 text-sm"
           />
 
           <button
             type="button"
             onClick={runSearch}
-            className="rounded-xl border px-4 py-3 text-sm font-medium hover:bg-muted"
+            className="h-9 rounded-lg border px-4 text-sm font-medium hover:bg-muted"
           >
             Search
           </button>
@@ -357,13 +347,13 @@ export function FieldLogReviewClient(props: {
           <button
             type="button"
             onClick={clearSearch}
-            className="rounded-xl border px-4 py-3 text-sm font-medium hover:bg-muted"
+            className="h-9 rounded-lg border px-4 text-sm font-medium hover:bg-muted"
           >
             Reset
           </button>
         </div>
 
-        <div className="text-sm text-muted-foreground">{scopeText}</div>
+        <div className="text-xs text-muted-foreground">{scopeText}</div>
       </section>
 
       {!selectedOrgId ? (
@@ -375,33 +365,20 @@ export function FieldLogReviewClient(props: {
           No items found for the current queue slice.
         </div>
       ) : (
-        <div className="space-y-5">
-          {viewMode === "cases" ? (
-            <>
-              <Section title="Open Cases" rows={grouped.open_cases} status="sup_followup_required" />
-              <Section title="Closed Cases" rows={grouped.closed_cases} status="approved" />
-            </>
-          ) : viewMode === "tnps" ? (
-            <Section title="tNPS Events" rows={grouped.tnps_events} status="pending_review" />
-          ) : (
-            <>
-              <Section title="Open Cases" rows={grouped.open_cases} status="sup_followup_required" />
-              <Section title="tNPS Events" rows={grouped.tnps_events} status="pending_review" />
-              <Section title="Pending Review" rows={grouped.pending_review} status="pending_review" />
-              <Section
-                title="Technician Follow-Up"
-                rows={grouped.tech_followup_required}
-                status="tech_followup_required"
-              />
-              <Section
-                title="Supervisor Follow-Up"
-                rows={grouped.sup_followup_required}
-                status="sup_followup_required"
-              />
-              <Section title="Closed Cases" rows={grouped.closed_cases} status="approved" />
-              <Section title="Closed / Finalized" rows={grouped.approved} status="approved" />
-            </>
-          )}
+        <div className={selectedDetail ? "grid gap-4 lg:grid-cols-[minmax(420px,0.8fr)_minmax(0,2.2fr)]" : ""}>
+          <RecordsGrid rows={rows} compact={!!selectedDetail} />
+
+          {selectedDetail || detailLoading || detailError ? (
+            <aside className="min-w-0 rounded-2xl border bg-background p-3">
+              <div className="mb-3 flex items-center justify-between border-b pb-3">
+                <div className="text-sm font-semibold">Review panel</div>
+                <button type="button" onClick={() => setSelectedDetail(null)} className="rounded-lg border px-2.5 py-1 text-xs font-semibold">Close</button>
+              </div>
+              {detailLoading ? <div className="p-4 text-sm text-muted-foreground">Loading record…</div> : null}
+              {detailError ? <div className="p-4 text-sm text-red-700">{detailError}</div> : null}
+              {selectedDetail && !detailLoading ? <FieldLogDetailClient initialData={selectedDetail} /> : null}
+            </aside>
+          ) : null}
         </div>
       )}
     </div>

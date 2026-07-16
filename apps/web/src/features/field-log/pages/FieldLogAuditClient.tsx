@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/state/org";
 import { FieldLogLiveHeader } from "../components/FieldLogLiveHeader";
 import { formatFreshness } from "../lib/freshness";
-import { getStatusBorder, getStatusChip, niceStatus } from "../lib/statusStyles";
+import { getStatusChip, niceStatus } from "../lib/statusStyles";
 
 type HistoryRow = {
   report_id: string;
@@ -59,61 +59,6 @@ function labelForSubcategory(key: string | null | undefined) {
   if (key === "tnps_passive") return "tNPS Passive";
   if (key === "not_home_install") return "Not Home - Install";
   return key.replaceAll("_", " ");
-}
-
-function RowCard(props: { row: HistoryRow }) {
-  const { row } = props;
-  const chip = getStatusChip(row.status);
-  const borderClass = getStatusBorder(row.status);
-
-  const subLabel = labelForSubcategory(row.subcategory_key);
-
-  return (
-    <Link
-      href={`/field-log/${row.report_id}?from=audit-recent`}
-      className={`block rounded-2xl border bg-card p-4 transition hover:bg-muted/40 ${borderClass}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-base font-semibold">{row.job_number ?? "Field Log"}</div>
-
-          {row.subject_full_name || row.subject_tech_id ? (
-            <div className="mt-1 text-sm text-foreground">
-              {row.subject_tech_id ? `${row.subject_tech_id} • ` : ""}
-              {row.subject_full_name ?? "Unknown Technician"}
-            </div>
-          ) : null}
-
-          <div className="mt-1 text-sm text-muted-foreground">
-            {labelForCategory(row.category_key)}
-            {subLabel ? ` • ${subLabel}` : ""}
-          </div>
-        </div>
-
-        <div
-          className={`inline-flex min-w-[44px] items-center justify-center rounded-full border px-2 py-1 text-xs font-semibold ${chip.className}`}
-          title={niceStatus(row.status)}
-        >
-          {chip.label}
-        </div>
-      </div>
-
-      <div className="mt-3 text-sm text-muted-foreground">
-        {row.job_type ? `Job Type: ${row.job_type.toUpperCase()} • ` : ""}
-        Submitted: {formatDateTime(row.submitted_at)}
-      </div>
-
-      {row.comment ? (
-        <div className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-          {row.comment}
-        </div>
-      ) : null}
-
-      <div className="mt-3 text-xs font-medium text-muted-foreground">
-        Last activity: {formatDateTime(row.updated_at ?? row.approved_at ?? row.submitted_at)}
-      </div>
-    </Link>
-  );
 }
 
 export function FieldLogAuditClient() {
@@ -236,7 +181,7 @@ export function FieldLogAuditClient() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <FieldLogLiveHeader
         title="Field Log History"
         freshnessText={freshnessText}
@@ -244,8 +189,8 @@ export function FieldLogAuditClient() {
         onRefresh={manualRefresh}
       />
 
-      <section className="rounded-2xl border bg-card p-4 space-y-3">
-        <div className="grid gap-3 xl:grid-cols-[1fr_180px_180px_auto_auto]">
+      <section className="flex flex-col gap-2 border-b pb-3">
+        <div className="grid gap-2 xl:grid-cols-[1fr_180px_180px_auto_auto]">
           <input
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
@@ -253,7 +198,7 @@ export function FieldLogAuditClient() {
               if (e.key === "Enter") runSearch();
             }}
             placeholder="Search job, tech ID, tech name, or comment"
-            className="w-full rounded-xl border px-3 py-3"
+            className="h-9 w-full rounded-lg border px-3 text-sm"
           />
 
           <select
@@ -262,7 +207,7 @@ export function FieldLogAuditClient() {
               setCategoryKey(e.target.value);
               setOffset(0);
             }}
-            className="w-full rounded-xl border px-3 py-3 text-sm"
+            className="h-9 w-full rounded-lg border px-3 text-sm"
           >
             <option value="">All Types</option>
             <option value="qc">QC</option>
@@ -279,7 +224,7 @@ export function FieldLogAuditClient() {
               setStatus(e.target.value);
               setOffset(0);
             }}
-            className="w-full rounded-xl border px-3 py-3 text-sm"
+            className="h-9 w-full rounded-lg border px-3 text-sm"
           >
             <option value="">All Statuses</option>
             <option value="pending_review">Pending Review</option>
@@ -293,7 +238,7 @@ export function FieldLogAuditClient() {
           <button
             type="button"
             onClick={runSearch}
-            className="rounded-xl border px-4 py-3 text-sm font-medium hover:bg-muted"
+            className="h-9 rounded-lg border px-4 text-sm font-medium hover:bg-muted"
           >
             Search
           </button>
@@ -301,13 +246,13 @@ export function FieldLogAuditClient() {
           <button
             type="button"
             onClick={resetSearch}
-            className="rounded-xl border px-4 py-3 text-sm font-medium hover:bg-muted"
+            className="h-9 rounded-lg border px-4 text-sm font-medium hover:bg-muted"
           >
             Reset
           </button>
         </div>
 
-        <div className="text-sm text-muted-foreground">{scopeText}</div>
+        <div className="text-xs text-muted-foreground">{scopeText}</div>
       </section>
 
       {!selectedOrgId ? (
@@ -319,17 +264,58 @@ export function FieldLogAuditClient() {
           No Field Logs found.
         </div>
       ) : (
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <RowCard key={row.report_id} row={row} />
-          ))}
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="flex items-center justify-between border-b px-3 py-2">
+            <div className="text-sm font-semibold">Field Log History</div>
+            <div className="text-xs text-muted-foreground">{rows.length} records · newest first</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] border-collapse text-sm">
+              <thead className="bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Submitted</th>
+                  <th className="px-3 py-2 font-semibold">Order / Job</th>
+                  <th className="px-3 py-2 font-semibold">Tech ID</th>
+                  <th className="px-3 py-2 font-semibold">Technician</th>
+                  <th className="px-3 py-2 font-semibold">Record type</th>
+                  <th className="px-3 py-2 font-semibold">Job type</th>
+                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-3 py-2 font-semibold">Last activity</th>
+                  <th className="px-3 py-2 font-semibold">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const chip = getStatusChip(row.status);
+                  const subLabel = labelForSubcategory(row.subcategory_key);
+                  return (
+                    <tr key={row.report_id} className="border-t align-top hover:bg-muted/40">
+                      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">{formatDateTime(row.submitted_at)}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold">
+                        <Link href={`/field-log/${row.report_id}?from=audit-recent`} className="hover:underline">
+                          {row.job_number ?? "Field Log"}
+                        </Link>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">{row.subject_tech_id ?? "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5">{row.subject_full_name ?? "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5">{labelForCategory(row.category_key)}{subLabel ? ` · ${subLabel}` : ""}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 uppercase">{row.job_type ?? "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5"><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${chip.className}`}>{niceStatus(row.status)}</span></td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{formatDateTime(row.updated_at ?? row.approved_at ?? row.submitted_at)}</td>
+                      <td className="max-w-[320px] px-3 py-2.5 text-muted-foreground"><div className="line-clamp-2">{row.comment || "—"}</div></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {meta.hasMore ? (
             <button
               type="button"
               onClick={() => void loadMore()}
               disabled={loadingMore}
-              className="w-full rounded-xl border bg-card px-4 py-3 text-sm font-semibold hover:bg-muted disabled:opacity-60"
+              className="w-full border-t px-4 py-2.5 text-sm font-semibold hover:bg-muted disabled:opacity-60"
             >
               {loadingMore ? "Loading…" : "Load Next 50"}
             </button>

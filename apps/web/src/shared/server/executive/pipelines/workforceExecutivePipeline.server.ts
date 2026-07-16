@@ -12,6 +12,7 @@ import type {
 } from "@/shared/types/executive/executiveSuite";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
 import type { WorkforceSourceRow } from "@/shared/server/workforce/buildWorkforceSurfacePayload.server";
+import { isActiveWorkforceRow } from "@/shared/lib/workforce/workforceEligibility";
 
 const DIRECTOR_WORKFORCE_HREF = "/director/workspace";
 const CONTRIBUTING_LEADERSHIP_TECH_IDS = new Set(["7109"]);
@@ -44,6 +45,18 @@ function affiliationLabel(
   return normalize(row.affiliation) || "Unknown";
 }
 
+function affiliationMeta(
+  row: AffiliationLikeRow,
+  affiliations: WorkforceAffiliationOption[]
+): WorkforceAffiliationOption | undefined {
+  return affiliations.find(
+    (option) =>
+      option.affiliation_id === row.affiliation_id ||
+      option.affiliation_label === row.affiliation ||
+      option.affiliation_code === row.affiliation
+  );
+}
+
 function officeLabel(row: {
   office?: string | null;
   office_name?: string | null;
@@ -51,22 +64,18 @@ function officeLabel(row: {
   return normalize(row.office) || normalize(row.office_name) || "Unknown";
 }
 
-function isW2Affiliation(label: string): boolean {
-  const value = label.toUpperCase();
+function isW2Affiliation(
+  row: AffiliationLikeRow,
+  affiliations: WorkforceAffiliationOption[]
+): boolean {
+  const meta = affiliationMeta(row, affiliations);
+  const value = normalize(row.affiliation).toUpperCase();
 
   return (
+    meta?.affiliation_type === "COMPANY" ||
     value === "ITG" ||
-    value === "W2" ||
-    value === "EMPLOYEE" ||
-    value === "IN HOUSE" ||
-    value.includes("INTEGRATED TECH") ||
-    value.includes("INTERNAL")
+    value.includes("INTEGRATED TECH")
   );
-}
-
-function isBpAffiliation(label: string): boolean {
-  const value = label.toUpperCase();
-  return !isW2Affiliation(value) && value !== "UNKNOWN";
 }
 
 function roleType(row: { role_type?: string | null }) {
@@ -170,9 +179,7 @@ function countCards(
       const travel = args.travelCounts?.get(label) ?? 0;
 
       return {
-        key: `${args.section}_${label
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")}`,
+        key: `${args.section}_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
         label,
         value: String(count),
         helper: args.valueLabel,
@@ -204,31 +211,31 @@ export async function buildWorkforceExecutiveDimension(args: {
     loadAffiliationOptions(),
   ]);
 
-  const activeRows = rows.filter((row) => {
-    if (!row.is_active) return false;
-    if (row.end_date && row.end_date <= args.as_of_date) return false;
-    return true;
-  });
-
-  const techRows = dedupeWorkers(
-    activeRows.filter((row) => isExhibitEligibleWorker(row))
+  const activeRows = rows.filter(
+    (row) => row.is_active && isActiveWorkforceRow(row, args.as_of_date)
   );
 
-  const productionRows = techRows.filter(isProductionSeat);
+  const techRows = activeRows.filter((row) => isExhibitEligibleWorker(row));
+
+  // Production must use the same structured seat classification as Workforce.
+  // Title heuristics belong only to the separate All-In/exhibit population;
+  // otherwise a FIELD assignment with a title such as "Lead Technician" is lost.
+  const productionRows = activeRows.filter(isProductionSeat);
   const trainingRows = dedupeWorkers(activeRows.filter(isTrainingSeat));
 
   const productionW2Rows = productionRows.filter((row) =>
-    isW2Affiliation(affiliationLabel(row, affiliations))
+    isW2Affiliation(row, affiliations)
   );
 
-  const productionBpRows = productionRows.filter((row) =>
-    isBpAffiliation(affiliationLabel(row, affiliations))
+  const productionBpRows = productionRows.filter(
+    (row) => !isW2Affiliation(row, affiliations)
   );
 
   const activeOnboardingRows = getActivePeopleOnboardingRows(onboardingRows);
 
-  const onboardingAffiliateMappedCount = activeOnboardingRows.filter((row) =>
-    normalize(row.prospecting_affiliation_id) || normalize(row.affiliation)
+  const onboardingAffiliateMappedCount = activeOnboardingRows.filter(
+    (row) =>
+      normalize(row.prospecting_affiliation_id) || normalize(row.affiliation)
   ).length;
 
   const onboardingOrgScopedCount = activeOnboardingRows.length;
@@ -254,13 +261,13 @@ export async function buildWorkforceExecutiveDimension(args: {
       const days = onboardingPipelineDays.get(label) ?? [];
       const maxDays = days.length ? Math.max(...days) : 0;
       const avgDays = days.length
-        ? Math.round(days.reduce((total, value) => total + value, 0) / days.length)
+        ? Math.round(
+            days.reduce((total, value) => total + value, 0) / days.length
+          )
         : 0;
 
       return {
-        key: `onboarding_pipeline_${label
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")}`,
+        key: `onboarding_pipeline_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
         label,
         value: String(count),
         helper: `${avgDays} avg days • ${maxDays} max days`,
@@ -273,7 +280,6 @@ export async function buildWorkforceExecutiveDimension(args: {
         },
       };
     });
-
 
   const bpCounts = new Map<string, number>();
   const bpLocalCounts = new Map<string, number>();
@@ -297,9 +303,9 @@ export async function buildWorkforceExecutiveDimension(args: {
   for (const row of trainingRows) {
     const label = affiliationLabel(row, affiliations);
 
-    if (isW2Affiliation(label)) {
+    if (isW2Affiliation(row, affiliations)) {
       w2TrainingCount += 1;
-    } else if (isBpAffiliation(label)) {
+    } else {
       increment(bpTrainingCounts, label);
     }
   }
@@ -316,7 +322,9 @@ export async function buildWorkforceExecutiveDimension(args: {
   const allInHc = techRows.length;
   const productionHc = productionRows.length;
   const localProductionHc = productionRows.filter(isLocalProductionSeat).length;
-  const travelProductionHc = productionRows.filter(isTravelProductionSeat).length;
+  const travelProductionHc = productionRows.filter(
+    isTravelProductionSeat
+  ).length;
 
   const w2ProductionHc = productionW2Rows.length;
   const w2LocalHc = productionW2Rows.filter(isLocalProductionSeat).length;

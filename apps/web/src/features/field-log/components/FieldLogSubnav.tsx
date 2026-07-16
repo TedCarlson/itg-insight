@@ -79,7 +79,7 @@ export default function FieldLogSubnav() {
   const activeGroup = activeGroupForPath(pathname);
 
   return (
-    <div className="space-y-1.5">
+    <nav className="flex flex-wrap items-center gap-1.5 border-b pb-2" aria-label="Field Log workspace">
       <div className="flex flex-wrap gap-1.5">
         {NAV_GROUPS.map((group) => {
           const active = group.key === activeGroup.key;
@@ -102,6 +102,7 @@ export default function FieldLogSubnav() {
         })}
       </div>
 
+      <span className="mx-1 hidden h-5 border-l sm:block" aria-hidden="true" />
       <div className="flex flex-wrap gap-1.5">
         {activeGroup.items.map((item) => {
           const active = isActive(pathname, item.href);
@@ -123,6 +124,6 @@ export default function FieldLogSubnav() {
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 }
