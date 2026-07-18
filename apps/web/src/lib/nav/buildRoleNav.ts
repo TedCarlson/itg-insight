@@ -52,6 +52,7 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
     return [
       { key: "home", label: "Home", href: "/home" },
       { key: "metrics", label: "Metrics", href: "/bp-supervisor/metrics" },
+      { key: "schedule", label: "Schedule", href: "/schedule?role_context=bp_supervisor" },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
       { key: "fieldlog", label: "Field Log", href: "/field-log" },
     ];
@@ -61,6 +62,7 @@ export function buildRoleNav(role: AppRole): RoleNavItem[] {
     return [
       { key: "home", label: "Home", href: "/home" },
       { key: "metrics", label: "Metrics", href: "/bp-supervisor/metrics" },
+      { key: "schedule", label: "Schedule", href: "/schedule?role_context=bp_lead" },
       { key: "dispatch", label: "Dispatch Console", href: "/dispatch-console" },
       { key: "fieldlog", label: "Field Log", href: "/field-log" },
     ];

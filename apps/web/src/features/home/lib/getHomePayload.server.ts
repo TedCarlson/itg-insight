@@ -166,6 +166,11 @@ function buildBpSupervisorDestinations(): HomeDestination[] {
       description: "Your scoped team KPI comparison, focus view, and performance table",
     },
     {
+      label: "Schedule & Time Off",
+      href: "/schedule?role_context=bp_supervisor",
+      description: "Review team coverage and submit schedule or time-off requests",
+    },
+    {
       label: "Dispatch Console",
       href: "/dispatch-console",
       description: "Live job routing, assignments, and activity log",

@@ -115,9 +115,11 @@ function impactTone(state: ImpactPreviewRow["state"] | null | undefined) {
 export default function CreateExceptionModal({
   onClose,
   onCreated,
+  title = "Draft Exceptions",
 }: {
   onClose: () => void;
   onCreated: () => void;
+  title?: string;
 }) {
   const { selectedOrgId } = useOrg();
 
@@ -374,12 +376,12 @@ export default function CreateExceptionModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-[var(--to-surface)] shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--to-border)] px-5 py-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 sm:items-center sm:p-4">
+      <div className="flex h-[100dvh] w-full max-w-5xl flex-col overflow-hidden border bg-[var(--to-surface)] shadow-xl sm:h-auto sm:max-h-[90vh] sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--to-border)] px-3 py-3 sm:px-5 sm:py-4">
           <div>
-            <div className="text-lg font-semibold text-[var(--to-ink)]">Draft Exceptions</div>
-            <div className="text-sm text-[var(--to-ink-muted)]">
+            <div className="text-base font-semibold text-[var(--to-ink)] sm:text-lg">{title}</div>
+            <div className="hidden text-sm text-[var(--to-ink-muted)] sm:block">
               Pick a scheduled technician, date range, review the generated daily draft, then submit.
             </div>
           </div>
@@ -393,7 +395,7 @@ export default function CreateExceptionModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="relative flex flex-col gap-1 md:col-span-1">
               <label className="text-xs font-semibold uppercase text-[var(--to-ink-muted)]">
@@ -641,11 +643,11 @@ export default function CreateExceptionModal({
           {error ? <div className="text-sm text-[var(--to-danger,#b91c1c)]">{error}</div> : null}
         </div>
 
-        <div className="shrink-0 flex items-center justify-end gap-2 border-t border-[var(--to-border)] px-5 py-4">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--to-border)] bg-[var(--to-surface)] px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-[var(--to-border)] px-3 py-1.5 text-sm"
+            className="min-h-11 rounded-lg border border-[var(--to-border)] px-4 py-2 text-sm sm:min-h-0 sm:px-3 sm:py-1.5"
           >
             Cancel
           </button>
@@ -654,7 +656,7 @@ export default function CreateExceptionModal({
             type="button"
             disabled={!canSubmit}
             onClick={submit}
-            className="rounded-lg bg-[rgba(29,78,216,0.92)] px-3 py-1.5 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded-lg bg-[rgba(29,78,216,0.92)] px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0 sm:px-3 sm:py-1.5"
           >
             {busy ? "Submitting..." : "Submit Draft"}
           </button>

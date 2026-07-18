@@ -59,7 +59,7 @@ export default async function Page({
       });
 
     canSubmitExceptionRequest =
-      !isTechExperienceUser(pass as any) ||
+      !isTechExperienceUser(pass as any) &&
       hasScheduleExceptionSubmitAccess(pass as any);
   }
 
@@ -67,7 +67,7 @@ export default async function Page({
     <main className="p-4 md:p-6">
       <ScheduleSurface
         payload={payload}
-        canSubmitExceptionRequest={true}
+        canSubmitExceptionRequest={canSubmitExceptionRequest}
       />
     </main>
   );

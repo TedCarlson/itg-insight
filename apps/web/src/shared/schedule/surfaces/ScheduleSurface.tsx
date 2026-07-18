@@ -41,9 +41,9 @@ export default function ScheduleSurface({
             <button
               type="button"
               onClick={() => setExceptionModalOpen(true)}
-              className="rounded-md border bg-background px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm hover:bg-muted/40"
+              className="hidden rounded-md border bg-background px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm hover:bg-muted/40 md:inline-flex"
             >
-              Request Exception
+              Request Time Off
             </button>
           ) : null}
 
@@ -80,7 +80,18 @@ export default function ScheduleSurface({
         <CreateExceptionModal
           onClose={() => setExceptionModalOpen(false)}
           onCreated={() => window.location.reload()}
+          title="Request Time Off"
         />
+      ) : null}
+
+      {canSubmitExceptionRequest && !exceptionModalOpen ? (
+        <button
+          type="button"
+          onClick={() => setExceptionModalOpen(true)}
+          className="fixed bottom-20 right-4 z-40 inline-flex min-h-11 items-center rounded-full border border-blue-500 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg md:hidden"
+        >
+          Request Time Off
+        </button>
       ) : null}
 
     </div>
