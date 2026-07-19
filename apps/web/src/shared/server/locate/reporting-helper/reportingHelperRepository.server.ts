@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/shared/data/supabase/admin";
+import type { TicketReceiptAuditGeneratedReport } from "./reportingHelperTypes";
 import type { CotpGeneratedReport } from "./reportingHelperTypes";
 
 export async function saveCotpReportingRecord(args: {
@@ -97,4 +98,48 @@ export async function loadCotpReportingRecord(recordId: string) {
   if (rowsError) throw new Error(rowsError.message);
 
   return { record, rows: rows ?? [] };
+}
+
+
+function normalizeTicketReceiptTimestamp(value: string | null) {
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+export async function saveTicketReceiptAuditReportingRecord(args: {
+  report: TicketReceiptAuditGeneratedReport;
+  sourceText: string;
+  createdByAuthUserId: string | null;
+}) {
+  const admin = supabaseAdmin();
+  const sourceAsOfAt = normalizeTicketReceiptTimestamp(
+    args.report.emailReceivedAt
+  );
+  const reportDate = sourceAsOfAt?.slice(0, 10) ?? null;
+
+  const { data: record, error } = await admin
+    .from("locate_reporting_record")
+    .insert({
+      report_type: "TICKET_RECEIPT_AUDIT",
+      report_date: reportDate,
+      week_ending_date: null,
+      inferred_year: reportDate
+        ? Number(reportDate.slice(0, 4))
+        : null,
+      source_as_of_at: sourceAsOfAt,
+      source_text: args.sourceText,
+      parsed_payload: args.report,
+      summary_payload: args.report.inspection,
+      created_by_auth_user_id: args.createdByAuthUserId,
+    })
+    .select("locate_reporting_record_id")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  return {
+    recordId: record.locate_reporting_record_id as string,
+  };
 }

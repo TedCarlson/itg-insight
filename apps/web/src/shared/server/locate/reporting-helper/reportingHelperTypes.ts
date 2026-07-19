@@ -1,4 +1,4 @@
-export type LocateReportType = "COTP";
+export type LocateReportType = "COTP" | "TICKET_RECEIPT_AUDIT";
 
 export type CotpStatus =
   | "Excellent"
@@ -55,3 +55,22 @@ export type CotpGeneratedReport = {
   warnings: string[];
   skippedLines: string[];
 };
+
+
+export type TicketReceiptAuditGeneratedReport = {
+  reportName: "TICKET_RECEIPT_AUDIT";
+  family: string;
+  ticketNumber: string | null;
+  emailReceivedAt: string | null;
+  comment: string | null;
+  sourceScope: "FIRST_CLASS_EMAIL_BODY";
+  warnings: string[];
+  inspection: {
+    email_received_at: string | null;
+    family: string;
+    ticket_number: string | null;
+    comment: string | null;
+  };
+};
+
+export type LocateGeneratedReport = CotpGeneratedReport | TicketReceiptAuditGeneratedReport;

@@ -2,10 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
+import { TicketReceiptAuditPreview } from "./TicketReceiptAuditPreview";
 
 type Report = any;
+type ReportType = "COTP" | "TICKET_RECEIPT_AUDIT";
 
-const samplePlaceholder = `Paste raw COTP update here...`;
+const samplePlaceholders: Record<ReportType, string> = {
+  COTP: "Paste raw COTP update here...",
+  TICKET_RECEIPT_AUDIT: "Paste the email source here...",
+};
 
 function cotpRowClass(status: string) {
   const normalized = String(status ?? "").toLowerCase();
@@ -187,6 +192,7 @@ function tableText(report: Report) {
 }
 
 export function ReportingHelperClient() {
+  const [reportType, setReportType] = useState<ReportType>("COTP");
   const [rawText, setRawText] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [recordId, setRecordId] = useState<string | null>(null);
@@ -210,7 +216,7 @@ export function ReportingHelperClient() {
       const res = await fetch("/api/locate/reporting-helper/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ report_type: "COTP", raw_text: rawText }),
+        body: JSON.stringify({ report_type: reportType, raw_text: rawText }),
       });
 
       const json = await res.json();
@@ -232,7 +238,7 @@ export function ReportingHelperClient() {
       const res = await fetch("/api/locate/reporting-helper/save", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ report_type: "COTP", raw_text: rawText }),
+        body: JSON.stringify({ report_type: reportType, raw_text: rawText }),
       });
 
       const json = await res.json();
@@ -259,8 +265,18 @@ export function ReportingHelperClient() {
 
           <div className="grid gap-1">
             <label className="text-xs font-medium text-[var(--to-ink-muted)]">Report Type</label>
-            <select className="to-select max-w-[240px]" value="COTP" disabled>
+            <select
+              className="to-select max-w-[280px]"
+              value={reportType}
+              onChange={(event) => {
+                setReportType(event.target.value as ReportType);
+                setReport(null);
+                setRecordId(null);
+                setError(null);
+              }}
+            >
               <option value="COTP">COTP</option>
+              <option value="TICKET_RECEIPT_AUDIT">Ticket Receipt Audit</option>
             </select>
           </div>
 
@@ -269,7 +285,7 @@ export function ReportingHelperClient() {
             style={{ borderColor: "var(--to-border)" }}
             value={rawText}
             onChange={(event) => setRawText(event.target.value)}
-            placeholder={samplePlaceholder}
+            placeholder={samplePlaceholders[reportType]}
           />
 
           {error ? <div className="text-sm text-[var(--to-danger)]">{error}</div> : null}
@@ -324,7 +340,7 @@ export function ReportingHelperClient() {
             <div className="text-xs text-[var(--to-ink-muted)]">Saved record: {recordId}</div>
           ) : null}
 
-          {report ? (
+          {report?.reportName === "COTP" ? (
             <button
               type="button"
               className="to-btn rounded-md border px-3 py-2 text-sm font-medium"
@@ -342,7 +358,7 @@ export function ReportingHelperClient() {
         </div>
       </Card>
 
-      {report ? (
+      {report?.reportName === "COTP" ? (
         <>
           <Card>
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -432,6 +448,10 @@ export function ReportingHelperClient() {
             </div>
           </Card>
         </>
+      ) : null}
+
+      {report?.reportName === "TICKET_RECEIPT_AUDIT" ? (
+        <TicketReceiptAuditPreview report={report} />
       ) : null}
     </div>
   );
