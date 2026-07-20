@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { TicketReceiptAuditPreview } from "./TicketReceiptAuditPreview";
 
+import { useSearchParams } from "next/navigation";
 type Report = any;
 type ReportType = "COTP" | "TICKET_RECEIPT_AUDIT";
 
@@ -192,12 +193,27 @@ function tableText(report: Report) {
 }
 
 export function ReportingHelperClient() {
-  const [reportType, setReportType] = useState<ReportType>("COTP");
+  const searchParams = useSearchParams();
+  const requestedReportType = searchParams.get("reportType");
+  const initialReportType: ReportType =
+    requestedReportType === "TICKET_RECEIPT_AUDIT"
+      ? "TICKET_RECEIPT_AUDIT"
+      : "COTP";
+
+  const [reportType, setReportType] =
+    useState<ReportType>(initialReportType);
   const [rawText, setRawText] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [busy, setBusy] = useState<"generate" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const requestedType = new URLSearchParams(window.location.search).get("reportType");
+    if (requestedType === "COTP" || requestedType === "TICKET_RECEIPT_AUDIT") {
+      setReportType(requestedType);
+    }
+  }, []);
 
   const keyTakeawaysText = useMemo(() => {
     if (!report?.keyTakeaways) return "";

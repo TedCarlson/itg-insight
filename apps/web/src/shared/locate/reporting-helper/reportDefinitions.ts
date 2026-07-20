@@ -3,7 +3,10 @@ import type { LocateReportType } from "@/shared/server/locate/reporting-helper/r
 export type LocateReportDefinition = {
   reportType: LocateReportType;
   label: string;
+  description: string;
+  workspaceHref: string;
   historyHref: string;
+  progressHref: string | null;
   supportsExport: boolean;
 };
 
@@ -11,16 +14,26 @@ export const LOCATE_REPORT_DEFINITIONS: Record<LocateReportType, LocateReportDef
   COTP: {
     reportType: "COTP",
     label: "COTP",
+    description:
+      "Transform operational updates into a leadership-ready report, preserve canonical history, and track performance over time.",
+    workspaceHref: "/locate/reporting-helper?reportType=COTP",
     historyHref: "/locate/reporting-helper/history/cotp",
+    progressHref: "/locate/reporting-helper/progress/cotp",
     supportsExport: true,
   },
   TICKET_RECEIPT_AUDIT: {
     reportType: "TICKET_RECEIPT_AUDIT",
     label: "Ticket Receipt Audit",
+    description:
+      "Normalize ticket receipt emails into durable operational records with focused history and evidence-backed detail.",
+    workspaceHref: "/locate/reporting-helper?reportType=TICKET_RECEIPT_AUDIT",
     historyHref: "/locate/reporting-helper/history/ticket-receipt-audit",
+    progressHref: null,
     supportsExport: false,
   },
 };
+
+export const LOCATE_REPORT_MODULES = Object.values(LOCATE_REPORT_DEFINITIONS);
 
 export function getLocateReportDefinition(reportType: string | null | undefined) {
   if (!reportType) return null;

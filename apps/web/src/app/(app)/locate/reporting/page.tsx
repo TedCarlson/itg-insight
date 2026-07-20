@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageHeader, PageShell } from "@/components/ui/PageShell";
 import { Card } from "@/components/ui/Card";
 import { LocateReportingNav } from "@/features/locate/reporting-helper/LocateReportingNav";
+import { LOCATE_REPORT_MODULES } from "@/shared/locate/reporting-helper/reportDefinitions";
 
 export default function LocateReportingPage() {
   return (
@@ -10,52 +11,57 @@ export default function LocateReportingPage() {
 
       <PageHeader
         title="Reporting"
-        subtitle="Locate reporting workspace for helper tools, history, and progress tracking."
+        subtitle="Select a report workflow. Each report keeps its own history, detail, and intelligence surfaces."
       />
 
-      <div className="grid gap-3 lg:grid-cols-3">
-        <Card>
-          <div className="text-base font-semibold">Reporting Helper</div>
-          <p className="mt-2 text-sm text-[var(--to-ink-muted)]">
-            Paste messy operational updates and generate a leadership-ready COTP report.
-          </p>
-          <Link
-            href="/locate/reporting-helper"
-            className="mt-4 inline-flex rounded-md border px-3 py-2 text-sm font-medium"
-            style={{ borderColor: "var(--to-border)" }}
-          >
-            Open Helper
-          </Link>
-        </Card>
+      <section className="grid gap-4 lg:grid-cols-2" aria-label="Locate report workflows">
+        {LOCATE_REPORT_MODULES.map((report) => (
+          <Card key={report.reportType}>
+            <div className="flex h-full flex-col gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold">{report.label}</h2>
+                  <span
+                    className="rounded-full border px-2 py-0.5 text-xs font-medium text-[var(--to-ink-muted)]"
+                    style={{ borderColor: "var(--to-border)" }}
+                  >
+                    Report workflow
+                  </span>
+                </div>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--to-ink-muted)]">
+                  {report.description}
+                </p>
+              </div>
 
-        <Card>
-          <div className="text-base font-semibold">Reporting History</div>
-          <p className="mt-2 text-sm text-[var(--to-ink-muted)]">
-            Review saved canonical reporting records and export prior reports.
-          </p>
-          <Link
-            href="/locate/reporting-helper/history"
-            className="mt-4 inline-flex rounded-md border px-3 py-2 text-sm font-medium"
-            style={{ borderColor: "var(--to-border)" }}
-          >
-            Open History
-          </Link>
-        </Card>
-
-        <Card>
-          <div className="text-base font-semibold">Reports</div>
-          <p className="mt-2 text-sm text-[var(--to-ink-muted)]">
-            Track COTP progress over time with trends, slices, and reporting intelligence.
-          </p>
-          <Link
-            href="/locate/reporting-helper/progress/cotp"
-            className="mt-4 inline-flex rounded-md border px-3 py-2 text-sm font-medium"
-            style={{ borderColor: "var(--to-border)" }}
-          >
-            Open COTP Progress
-          </Link>
-        </Card>
-      </div>
+              <div className="mt-auto flex flex-wrap gap-2">
+                <Link
+                  href={report.workspaceHref}
+                  className="to-btn inline-flex rounded-md border px-3 py-2 text-sm font-medium"
+                  style={{ borderColor: "var(--to-border)" }}
+                >
+                  Create Report
+                </Link>
+                <Link
+                  href={report.historyHref}
+                  className="to-btn inline-flex rounded-md border px-3 py-2 text-sm font-medium"
+                  style={{ borderColor: "var(--to-border)" }}
+                >
+                  Open History
+                </Link>
+                {report.progressHref ? (
+                  <Link
+                    href={report.progressHref}
+                    className="to-btn inline-flex rounded-md border px-3 py-2 text-sm font-medium"
+                    style={{ borderColor: "var(--to-border)" }}
+                  >
+                    Open Progress
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+        ))}
+      </section>
     </PageShell>
   );
 }
