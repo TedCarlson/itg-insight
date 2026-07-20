@@ -77,17 +77,20 @@ export async function saveCotpReportingRecord(args: {
   return { recordId };
 }
 
-export async function loadCotpReportingRecord(recordId: string) {
+export async function loadLocateReportingRecord(recordId: string) {
   const admin = supabaseAdmin();
 
   const { data: record, error: recordError } = await admin
     .from("locate_reporting_record")
     .select("*")
     .eq("locate_reporting_record_id", recordId)
-    .eq("report_type", "COTP")
     .single();
 
   if (recordError) throw new Error(recordError.message);
+
+  if (record.report_type !== "COTP") {
+    return { record, rows: [] };
+  }
 
   const { data: rows, error: rowsError } = await admin
     .from("locate_cotp_report_row")
@@ -100,6 +103,15 @@ export async function loadCotpReportingRecord(recordId: string) {
   return { record, rows: rows ?? [] };
 }
 
+export async function loadCotpReportingRecord(recordId: string) {
+  const result = await loadLocateReportingRecord(recordId);
+
+  if (result.record.report_type !== "COTP") {
+    throw new Error("Requested reporting record is not a COTP report.");
+  }
+
+  return result;
+}
 
 function normalizeTicketReceiptTimestamp(value: string | null) {
   if (!value) return null;

@@ -1,56 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/shared/data/supabase/server";
-import { loadCotpReportingRecord } from "@/shared/server/locate/reporting-helper/reportingHelperRepository.server";
+import { loadLocateReportingRecord } from "@/shared/server/locate/reporting-helper/reportingHelperRepository.server";
 
 export const runtime = "nodejs";
 
-export async function GET(
-  _req: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supabase = await supabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await context.params;
-
   try {
-    const result = await loadCotpReportingRecord(id);
-    return NextResponse.json({
-      record: result.record,
-      rows: result.rows,
-      report: result.record.parsed_payload,
-    });
+    const result = await loadLocateReportingRecord(id);
+    return NextResponse.json({ record: result.record, rows: result.rows, report: result.record.parsed_payload });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message ?? "Report not found" }, { status: 404 });
   }
 }
 
-
-export async function DELETE(
-  _req: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supabase = await supabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
-
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await context.params;
-
   const { supabaseAdmin } = await import("@/shared/data/supabase/admin");
-  const admin = supabaseAdmin();
-
-  const { error } = await admin
-    .from("locate_reporting_record")
-    .delete()
-    .eq("locate_reporting_record_id", id)
-    .eq("report_type", "COTP");
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
+  const { error } = await supabaseAdmin().from("locate_reporting_record").delete().eq("locate_reporting_record_id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

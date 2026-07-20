@@ -31,7 +31,7 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString();
 }
 
-export function ReportingHelperHistoryClient() {
+export function CotpHistoryClient() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);

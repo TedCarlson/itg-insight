@@ -2,7 +2,8 @@ import Link from "next/link";
 
 const links = [
   { href: "/locate/reporting-helper", label: "Reporting Helper" },
-  { href: "/locate/reporting-helper/history", label: "Reporting History" },
+  { href: "/locate/reporting-helper/history/cotp", label: "COTP History" },
+  { href: "/locate/reporting-helper/history/ticket-receipt-audit", label: "Ticket Receipt Audit History" },
   { href: "/locate/reporting-helper/progress/cotp", label: "COTP Progress" },
 ];
 
