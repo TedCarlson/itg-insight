@@ -1,5 +1,6 @@
+import { generateMassachusettsSlaExposureReport } from "./massachusettsSlaExposureParser.server";
 import { generateCotpReport } from "./cotpParser.server";
-import { saveTicketReceiptAuditReportingRecord } from "./reportingHelperRepository.server";
+import { saveTicketReceiptAuditReportingRecord, saveMassachusettsSlaExposureReportingRecord } from "./reportingHelperRepository.server";
 import { saveCotpReportingRecord } from "./reportingHelperRepository.server";
 import { generateTicketReceiptAuditReport } from "./ticketReceiptAuditParser.server";
 
@@ -8,6 +9,7 @@ export function generateLocateReport(args: { reportType: string; rawText: string
 
   if (reportType === "COTP") return generateCotpReport(args.rawText);
   if (reportType === "TICKET_RECEIPT_AUDIT") return generateTicketReceiptAuditReport(args.rawText);
+  if (reportType === "MASSACHUSETTS_SLA_EXPOSURE") return generateMassachusettsSlaExposureReport(args.rawText);
 
   throw new Error("Unsupported report type.");
 }
@@ -39,6 +41,16 @@ export async function saveLocateReport(args: {
     });
 
     return { ...saved, report };
+  }
+
+  if (reportType === "MASSACHUSETTS_SLA_EXPOSURE") {
+    const report = generateMassachusettsSlaExposureReport(args.rawText);
+    const saved = await saveMassachusettsSlaExposureReportingRecord({
+      report,
+      sourceText: args.rawText,
+      createdByAuthUserId: args.createdByAuthUserId,
+    });
+    return saved;
   }
 
   throw new Error("Unsupported report type.");

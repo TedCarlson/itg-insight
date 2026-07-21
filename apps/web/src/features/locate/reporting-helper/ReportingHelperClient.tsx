@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { TicketReceiptAuditPreview } from "./TicketReceiptAuditPreview";
+import { MassachusettsSlaExposurePreview } from "./MassachusettsSlaExposurePreview";
 
 import { useSearchParams } from "next/navigation";
 type Report = any;
-type ReportType = "COTP" | "TICKET_RECEIPT_AUDIT";
+type ReportType = "COTP" | "TICKET_RECEIPT_AUDIT" | "MASSACHUSETTS_SLA_EXPOSURE";
 
 const samplePlaceholders: Record<ReportType, string> = {
   COTP: "Paste raw COTP update here...",
   TICKET_RECEIPT_AUDIT: "Paste the email source here...",
+  MASSACHUSETTS_SLA_EXPOSURE: "Paste the tab-delimited Massachusetts Ticket Summary here...",
 };
 
 function cotpRowClass(status: string) {
@@ -195,10 +197,7 @@ function tableText(report: Report) {
 export function ReportingHelperClient() {
   const searchParams = useSearchParams();
   const requestedReportType = searchParams.get("reportType");
-  const initialReportType: ReportType =
-    requestedReportType === "TICKET_RECEIPT_AUDIT"
-      ? "TICKET_RECEIPT_AUDIT"
-      : "COTP";
+  const initialReportType: ReportType = requestedReportType === "TICKET_RECEIPT_AUDIT" || requestedReportType === "MASSACHUSETTS_SLA_EXPOSURE" ? requestedReportType : "COTP";
 
   const [reportType, setReportType] =
     useState<ReportType>(initialReportType);
@@ -210,7 +209,7 @@ export function ReportingHelperClient() {
 
   useEffect(() => {
     const requestedType = new URLSearchParams(window.location.search).get("reportType");
-    if (requestedType === "COTP" || requestedType === "TICKET_RECEIPT_AUDIT") {
+    if (requestedType === "COTP" || requestedType === "TICKET_RECEIPT_AUDIT" || requestedType === "MASSACHUSETTS_SLA_EXPOSURE") {
       setReportType(requestedType);
     }
   }, []);
@@ -293,6 +292,7 @@ export function ReportingHelperClient() {
             >
               <option value="COTP">COTP</option>
               <option value="TICKET_RECEIPT_AUDIT">Ticket Receipt Audit</option>
+              <option value="MASSACHUSETTS_SLA_EXPOSURE">Massachusetts SLA Exposure</option>
             </select>
           </div>
 
@@ -341,7 +341,7 @@ export function ReportingHelperClient() {
               {busy === "save" ? "Saving…" : "Save Historical Record"}
             </button>
 
-            {recordId ? (
+            {recordId && reportType === "COTP" ? (
               <a
                 className="to-btn rounded-md border px-3 py-2 text-sm font-medium"
                 style={{ borderColor: "var(--to-border)" }}
@@ -468,6 +468,9 @@ export function ReportingHelperClient() {
 
       {report?.reportName === "TICKET_RECEIPT_AUDIT" ? (
         <TicketReceiptAuditPreview report={report} />
+      ) : null}
+      {report?.reportName === "MASSACHUSETTS_SLA_EXPOSURE" ? (
+        <MassachusettsSlaExposurePreview report={report} />
       ) : null}
     </div>
   );

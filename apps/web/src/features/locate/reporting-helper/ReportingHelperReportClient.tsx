@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { CotpReportDetail } from "./CotpReportDetail";
 import { TicketReceiptAuditReportClient } from "./TicketReceiptAuditReportClient";
+import { MassachusettsSlaExposurePreview } from "./MassachusettsSlaExposurePreview";
 import type { LocateGeneratedReport } from "@/shared/server/locate/reporting-helper/reportingHelperTypes";
 
 export function ReportingHelperReportClient({ recordId }: { recordId: string }) {
@@ -38,7 +39,7 @@ export function ReportingHelperReportClient({ recordId }: { recordId: string }) 
   }, [recordId]);
 
   async function removeRecord() {
-    const label = record?.report_type === "TICKET_RECEIPT_AUDIT" ? "Ticket Receipt Audit" : "COTP";
+    const label = record?.report_type === "TICKET_RECEIPT_AUDIT" ? "Ticket Receipt Audit" : record?.report_type === "MASSACHUSETTS_SLA_EXPOSURE" ? "Massachusetts SLA Exposure" : "COTP";
     if (!window.confirm(`Delete this saved ${label} report?`)) return;
     const res = await fetch(`/api/locate/reporting-helper/reports/${encodeURIComponent(recordId)}`, { method: "DELETE" });
     const json = await res.json().catch(() => ({}));
@@ -46,7 +47,7 @@ export function ReportingHelperReportClient({ recordId }: { recordId: string }) 
       setErr(json.error ?? "Delete failed");
       return;
     }
-    router.push(record?.report_type === "TICKET_RECEIPT_AUDIT" ? "/locate/reporting-helper/history/ticket-receipt-audit" : "/locate/reporting-helper/history/cotp");
+    router.push(record?.report_type === "TICKET_RECEIPT_AUDIT" ? "/locate/reporting-helper/history/ticket-receipt-audit" : record?.report_type === "MASSACHUSETTS_SLA_EXPOSURE" ? "/locate/reporting-helper/history/massachusetts-sla-exposure" : "/locate/reporting-helper/history/cotp");
   }
 
   if (loading) return <Card><div className="text-sm text-[var(--to-ink-muted)]">Loading saved report…</div></Card>;
@@ -58,6 +59,31 @@ export function ReportingHelperReportClient({ recordId }: { recordId: string }) 
 
   if (record.report_type === "COTP" && report.reportName === "COTP") {
     return <CotpReportDetail recordId={recordId} record={record} report={report} onDelete={() => void removeRecord()} />;
+  }
+
+  if (record.report_type === "MASSACHUSETTS_SLA_EXPOSURE" && report.reportName === "MASSACHUSETTS_SLA_EXPOSURE") {
+    return (
+      <div className="grid gap-4">
+        <div className="flex flex-wrap justify-end gap-2">
+          <a
+            className="to-btn rounded border px-3 py-2 text-sm font-medium"
+            style={{ borderColor: "var(--to-border)" }}
+            href={`/api/locate/reporting-helper/export/xlsx?record_id=${encodeURIComponent(recordId)}`}
+          >
+            Export Excel report
+          </a>
+          <button
+            type="button"
+            className="to-btn rounded border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--to-danger)", color: "var(--to-danger)" }}
+            onClick={() => void removeRecord()}
+          >
+            Delete report
+          </button>
+        </div>
+        <MassachusettsSlaExposurePreview report={report} />
+      </div>
+    );
   }
 
   return <Card><div className="text-sm text-[var(--to-danger)]">Unsupported saved report type.</div></Card>;

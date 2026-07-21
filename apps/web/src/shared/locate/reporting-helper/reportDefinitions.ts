@@ -21,6 +21,16 @@ export const LOCATE_REPORT_DEFINITIONS: Record<LocateReportType, LocateReportDef
     progressHref: "/locate/reporting-helper/progress/cotp",
     supportsExport: true,
   },
+  MASSACHUSETTS_SLA_EXPOSURE: {
+    reportType: "MASSACHUSETTS_SLA_EXPOSURE",
+    label: "Massachusetts SLA Exposure",
+    description:
+      "Convert the Massachusetts Ticket Summary into a live COTP penalty-risk view with overdue, near-due, response-evidence, duplicate-ticket, technician, place, division, and region exposure.",
+    workspaceHref: "/locate/reporting-helper?reportType=MASSACHUSETTS_SLA_EXPOSURE",
+    historyHref: "/locate/reporting-helper/history/massachusetts-sla-exposure",
+    progressHref: null,
+    supportsExport: false,
+  },
   TICKET_RECEIPT_AUDIT: {
     reportType: "TICKET_RECEIPT_AUDIT",
     label: "Ticket Receipt Audit",

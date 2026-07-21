@@ -1,4 +1,4 @@
-export type LocateReportType = "COTP" | "TICKET_RECEIPT_AUDIT";
+export type LocateReportType = "COTP" | "TICKET_RECEIPT_AUDIT" | "MASSACHUSETTS_SLA_EXPOSURE";
 
 export type CotpStatus =
   | "Excellent"
@@ -73,4 +73,23 @@ export type TicketReceiptAuditGeneratedReport = {
   };
 };
 
-export type LocateGeneratedReport = CotpGeneratedReport | TicketReceiptAuditGeneratedReport;
+export type LocateGeneratedReport = CotpGeneratedReport | TicketReceiptAuditGeneratedReport | MassachusettsSlaExposureGeneratedReport;
+
+
+export type MassachusettsSlaRisk = "OVERDUE" | "DUE_WITHIN_4_HOURS" | "DUE_WITHIN_24_HOURS" | "FUTURE" | "UNKNOWN";
+
+export type MassachusettsSlaExposureRow = {
+  ticketId: string; facility: string | null; receivedTime: string; receivedAt: string | null; code: string | null;
+  dueTime: string; dueAt: string | null; ticketType: string | null; workType: string | null; excavatorName: string | null;
+  state: string | null; place: string | null; status: string | null; lastResponse: string | null; lastResponseDate: string | null;
+  lastResponseAt: string | null; totalUnitsOfWork: number | null; assignedTo: string | null; division: string | null; region: string | null;
+  risk: MassachusettsSlaRisk; hoursUntilDue: number | null; hasResponseEvidence: boolean; duplicateOccurrenceCount: number;
+};
+
+export type MassachusettsSlaExposureGeneratedReport = {
+  reportName: "MASSACHUSETTS_SLA_EXPOSURE"; title: string; sourceAsOfLocal: string; sourceAsOfAt: string; reportDate: string;
+  rows: MassachusettsSlaExposureRow[];
+  summary: { totalRows: number; uniqueTickets: number; overdue: number; dueWithin4Hours: number; dueWithin24Hours: number; future: number; withoutResponseEvidence: number; duplicateTicketIds: number; emergencyTickets: number; renewTickets: number; sourceOverdueTickets?: number; newLateTickets?: number; previouslyReportedLateTickets?: number; };
+  exposure: { byTechnician: Array<{label:string;count:number}>; byPlace: Array<{label:string;count:number}>; byDivision: Array<{label:string;count:number}>; byRegion: Array<{label:string;count:number}>; byTicketType: Array<{label:string;count:number}>; };
+  duplicateTicketIds: string[]; warnings: string[]; skippedLines: string[];
+};

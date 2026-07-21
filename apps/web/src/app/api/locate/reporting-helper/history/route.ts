@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/shared/data/supabase/admin";
 import type { LocateReportType } from "@/shared/server/locate/reporting-helper/reportingHelperTypes";
 
 export const runtime = "nodejs";
-const SUPPORTED_REPORT_TYPES = new Set<LocateReportType>(["COTP", "TICKET_RECEIPT_AUDIT"]);
+const SUPPORTED_REPORT_TYPES = new Set<LocateReportType>(["COTP", "TICKET_RECEIPT_AUDIT", "MASSACHUSETTS_SLA_EXPOSURE"]);
 function num(v: string | null, fallback: number) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 
 export async function GET(req: NextRequest) {
@@ -48,6 +48,23 @@ export async function GET(req: NextRequest) {
         created_at: record.created_at,
       };
     }
+
+    if (reportType === "MASSACHUSETTS_SLA_EXPOSURE") {
+      return {
+        record_id: record.locate_reporting_record_id,
+        report_type: record.report_type,
+        report_date: record.report_date,
+        source_as_of_at: record.source_as_of_at,
+        total_rows: parsed.summary?.totalRows ?? 0,
+        unique_tickets: parsed.summary?.uniqueTickets ?? 0,
+        overdue: parsed.summary?.overdue ?? 0,
+        due_within_4_hours: parsed.summary?.dueWithin4Hours ?? 0,
+        without_response_evidence: parsed.summary?.withoutResponseEvidence ?? 0,
+        duplicate_ticket_ids: parsed.summary?.duplicateTicketIds ?? 0,
+        created_at: record.created_at,
+      };
+    }
+
     return {
       record_id: record.locate_reporting_record_id,
       report_type: record.report_type,
