@@ -49,6 +49,7 @@ function canAssignSubjectTech(accessPass: any) {
 
   return haystack.some(
     (value) =>
+      value.includes("support") ||
       value.includes("manage") ||
       value.includes("supervisor") ||
       value.includes("lead") ||

@@ -24,7 +24,9 @@ function resolveWorkflowMode(
   entrySource: FieldLogEntrySource,
 ): FieldLogWorkflowMode {
   if (entrySource === "TECH") return "tech_submission";
-  if (entrySource === "QC_AGENT") return "qc_event_entry";
+  if (entrySource === "QC_AGENT" || entrySource === "SUPPORT") {
+    return "qc_event_entry";
+  }
   if (SUPERVISOR_SOURCES.includes(entrySource)) return "supervisor_verdict";
   if (LEADERSHIP_SOURCES.includes(entrySource)) return "leadership_epi_entry";
   return "unavailable";

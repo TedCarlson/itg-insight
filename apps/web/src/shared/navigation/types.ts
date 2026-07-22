@@ -4,6 +4,7 @@ export type AppRole =
   | "APP_OWNER"
   | "ADMIN"
   | "DIRECTOR"
+  | "SUPPORT"
   | "TECH"
   | "ITG_SUPERVISOR"
   | "COMPANY_MANAGER"

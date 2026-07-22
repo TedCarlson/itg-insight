@@ -20,7 +20,12 @@ function resolvePrivilegedRole(boot: BootShape): AppRole | null {
   return null;
 }
 
-function resolveRole(assignments: Array<{ position_title?: string | null }>): AppRole {
+function resolveRole(
+  assignments: Array<{
+    position_title?: string | null;
+    role_type?: string | null;
+  }>,
+): AppRole {
   const titles = new Set(
     assignments
       .map((a) => (a.position_title ? String(a.position_title).trim() : null))
@@ -40,6 +45,19 @@ function resolveRole(assignments: Array<{ position_title?: string | null }>): Ap
     titles.has("Locate Supervisor")
   ) {
     return "ITG_SUPERVISOR";
+  }
+
+  if (titles.has("Support")) return "SUPPORT";
+  if (
+    titles.has("Support") ||
+    assignments.some(
+      (assignment) =>
+        String((assignment as { role_type?: string | null }).role_type ?? "")
+          .trim()
+          .toUpperCase() === "SUPPORT",
+    )
+  ) {
+    return "SUPPORT";
   }
 
   if (titles.has("Technician")) return "TECH";
@@ -95,12 +113,17 @@ export async function loadHomeUserContext(): Promise<HomeSurfaceContext> {
   const assignmentsPromise = selectedPcOrgId
     ? admin
         .from("company_profile_fact")
-        .select("position_title,active_flag,effective_end_date")
+        .select("position_title,role_type,active_flag,effective_end_date")
         .eq("person_id", boot.person_id)
         .eq("pc_org_id", selectedPcOrgId)
         .eq("active_flag", true)
         .is("effective_end_date", null)
-    : Promise.resolve({ data: [] as Array<{ position_title?: string | null }> });
+    : Promise.resolve({
+        data: [] as Array<{
+          position_title?: string | null;
+          role_type?: string | null;
+        }>,
+      });
 
   const orgLabelPromise = selectedPcOrgId ? loadOrgLabel(selectedPcOrgId) : Promise.resolve(null);
 

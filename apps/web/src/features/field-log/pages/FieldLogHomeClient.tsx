@@ -20,6 +20,7 @@ export function hasManagerUpFieldLogAccess(accessPass: any) {
 
   return haystack.some(
     (value) =>
+      value.includes("support") ||
       value.includes("manager") ||
       value.includes("director") ||
       value.includes("vp") ||

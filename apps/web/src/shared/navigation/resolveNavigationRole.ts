@@ -9,6 +9,7 @@ function isAppRole(value: unknown): value is AppRole {
     value === "APP_OWNER" ||
     value === "ADMIN" ||
     value === "DIRECTOR" ||
+    value === "SUPPORT" ||
     value === "TECH" ||
     value === "ITG_SUPERVISOR" ||
     value === "COMPANY_MANAGER" ||

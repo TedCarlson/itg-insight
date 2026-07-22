@@ -9,7 +9,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
     href: "/home",
     icon: "home",
     visibility: "default",
-    defaultRoles: ["APP_OWNER", "ADMIN", "COMPANY_MANAGER", "ITG_SUPERVISOR"],
+    defaultRoles: ["APP_OWNER", "ADMIN", "COMPANY_MANAGER", "ITG_SUPERVISOR", "SUPPORT"],
     sortOrder: 10,
   },
 
@@ -273,6 +273,7 @@ export const NAVIGATION_REGISTRY: NavigationItemDefinition[] = [
       "APP_OWNER",
       "ADMIN",
       "DIRECTOR",
+      "SUPPORT",
       "ITG_SUPERVISOR",
       "COMPANY_MANAGER",
       "BP_SUPERVISOR",
