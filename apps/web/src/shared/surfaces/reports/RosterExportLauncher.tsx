@@ -12,7 +12,7 @@ type Props = {
 
 type ExportRow = WorkforceRow & Record<string, unknown>;
 
-const COLUMNS = ["Name", "Tech ID", "BP ID", "CDG ID", "Office", "Leader"] as const;
+const COLUMNS = ["Location", "Workgroup", "Company", "Tech #", "First Name", "Last Name", "Position", "Status", "EPON", "BPID", "Notes"] as const;
 
 function clean(value: unknown) {
   return String(value ?? "").trim();
@@ -50,12 +50,17 @@ function buildCsv(rows: WorkforceRow[]) {
       const record = row as ExportRow;
 
       return [
-        clean(row.display_name || row.full_name || row.legal_name),
-        clean(row.tech_id),
-        pick(record, ["bp_id", "bpId", "bp_employee_id", "bpEmployeeId", "business_partner_id"]),
-        pick(record, ["cdg_id", "cdgId", "cdg", "csg_id", "csgId", "csg"]),
         clean(row.office),
-        clean(row.reports_to_name),
+        "",
+        clean(row.affiliation),
+        clean(row.tech_id),
+        clean(row.display_name || row.full_name || row.legal_name),
+        "",
+        clean(row.position_title),
+        clean(row.seat_type),
+        pick(record, ["epon", "EPON", "person_epon", "personEpon"]),
+        pick(record, ["nt_login", "ntLogin", "person_nt_login", "personNtLogin"]),
+        "",
       ];
     });
 
@@ -83,7 +88,7 @@ export function RosterExportLauncher({ rows, regionLabel, reportMonthLabel }: Pr
       type="button"
       onClick={downloadCsv}
       className="rounded-xl border px-4 py-2 text-sm"
-      title="Export active roster with name, tech ID, BP ID, CDG ID, office, and leader."
+      title="Export active roster with location, company, tech number, name, position, status, EPON, BPID, and notes."
     >
       Roster Export
     </button>
