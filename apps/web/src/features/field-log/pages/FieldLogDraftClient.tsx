@@ -73,6 +73,7 @@ type SelfTechResponse = {
 
 const NEW_DROP_CATEGORY_KEY = "new_drop";
 const CONDUIT_PULL_CATEGORY_KEY = "conduit_pull_install";
+const COMMERCIAL_BATTERY_CATEGORY_KEY = "commercial_battery_billing";
 const SERVICE_FOLLOWUP_CATEGORY_KEY = "post_call";
 const DEVICE_UPLOAD_UCODES = new Set(["U31", "U44"]);
 
@@ -161,6 +162,27 @@ const CONDUIT_PULL_EVIDENCE_REQUIREMENTS = [
     capture: true,
     helper: "Capture the conduit line exit point.",
   },
+ ] as const;
+
+const COMMERCIAL_BATTERY_EVIDENCE_REQUIREMENTS = [
+  {
+    photo_label_key: "workorder_screenshot",
+    label: "Work Order Screenshot",
+    required: true,
+    sort_order: 10,
+    accept: "image/*,application/pdf",
+    capture: false,
+    helper: "Select the work order screenshot from mobile files.",
+  },
+  {
+    photo_label_key: "battery_serial_number",
+    label: "Battery Serial Number",
+    required: true,
+    sort_order: 20,
+    accept: "image/*",
+    capture: true,
+    helper: "Capture a clear photo of the battery serial number.",
+  },
 ] as const;
 
 function isNewDropCategory(categoryKey: string) {
@@ -171,13 +193,22 @@ function isConduitPullCategory(categoryKey: string) {
   return categoryKey === CONDUIT_PULL_CATEGORY_KEY;
 }
 
+function isCommercialBatteryCategory(categoryKey: string) {
+  return categoryKey === COMMERCIAL_BATTERY_CATEGORY_KEY;
+}
+
 function isSpecialBillingCategory(categoryKey: string) {
-  return isNewDropCategory(categoryKey) || isConduitPullCategory(categoryKey);
+  return (
+    isNewDropCategory(categoryKey) ||
+    isConduitPullCategory(categoryKey) ||
+    isCommercialBatteryCategory(categoryKey)
+  );
 }
 
 function getSpecialEvidenceRequirements(categoryKey: string) {
   if (isNewDropCategory(categoryKey)) return NEW_DROP_EVIDENCE_REQUIREMENTS;
   if (isConduitPullCategory(categoryKey)) return CONDUIT_PULL_EVIDENCE_REQUIREMENTS;
+  if (isCommercialBatteryCategory(categoryKey)) return COMMERCIAL_BATTERY_EVIDENCE_REQUIREMENTS;
   return [];
 }
 

@@ -55,11 +55,16 @@ function packetPathFor(categoryKey: string) {
   if (categoryKey === "new_drop") {
     return "/api/field-log/new-drop/job-packet";
   }
+  if (categoryKey === "commercial_battery_billing") {
+    return "/api/field-log/commercial-battery/job-packet";
+  }
   return null;
 }
 
 function packetLabelFor(categoryKey: string) {
-  return categoryKey === "conduit_pull_install" ? "Conduit Pull" : "New Drop";
+  if (categoryKey === "conduit_pull_install") return "Conduit Pull";
+  if (categoryKey === "commercial_battery_billing") return "Commercial Battery";
+  return "New Drop";
 }
 
 function filenameFromDisposition(value: string | null, fallback: string) {
@@ -72,10 +77,11 @@ function hasManagerAccess(accessPass: any) {
   if (accessPass.is_admin || accessPass.is_app_owner || accessPass.is_owner) return true;
 
   const role = String(accessPass.role ?? accessPass.role_key ?? "").toLowerCase();
-  if (["manager", "director", "vp", "owner", "admin"].includes(role)) return true;
+  if (["manager", "supervisor", "itg supervisor", "director", "vp", "owner", "admin"].includes(role)) return true;
 
   const perms = Array.isArray(accessPass.permissions) ? accessPass.permissions : [];
   return (
+    role.includes("supervisor") ||
     perms.includes("field_log_manage") ||
     perms.includes("leadership_manage") ||
     perms.includes("permissions_manage")
@@ -178,7 +184,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (sendMode === "manual_resend" && !hasManagerAccess(accessPass)) {
-    return json(403, { ok: false, error: "Only managers can manually resend billing packets." });
+    return json(403, { ok: false, error: "Only managers or ITG supervisors can manually resend billing packets." });
   }
 
   const { data: existingAutoSent, error: existingError } = await admin

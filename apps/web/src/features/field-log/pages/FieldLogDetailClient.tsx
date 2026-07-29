@@ -54,13 +54,19 @@ function canViewTimeline(accessPass: any) {
 
 
 const SERVICE_FOLLOWUP_CATEGORY_KEY = "post_call";
-const SPECIAL_BILLING_CATEGORIES = new Set(["new_drop", "conduit_pull_install"]);
+const SPECIAL_BILLING_CATEGORIES = new Set([
+  "new_drop",
+  "conduit_pull_install",
+  "commercial_battery_billing",
+]);
 
 async function prepareSpecialBillingPacket(reportId: string, categoryKey: string) {
   const packetPath =
     categoryKey === "conduit_pull_install"
       ? "/api/field-log/conduit-pull/job-packet"
-      : "/api/field-log/new-drop/job-packet";
+      : categoryKey === "commercial_battery_billing"
+        ? "/api/field-log/commercial-battery/job-packet"
+        : "/api/field-log/new-drop/job-packet";
 
   const packetRes = await fetch(
     `${packetPath}?report_id=${encodeURIComponent(reportId)}`,
@@ -96,7 +102,9 @@ async function prepareSpecialBillingPacket(reportId: string, categoryKey: string
   const markPath =
     categoryKey === "conduit_pull_install"
       ? "/api/field-log/conduit-pull/mark-prepared"
-      : "/api/field-log/new-drop/mark-prepared";
+      : categoryKey === "commercial_battery_billing"
+        ? "/api/field-log/commercial-battery/mark-prepared"
+        : "/api/field-log/new-drop/mark-prepared";
 
   const markRes = await fetch(markPath, {
     method: "POST",

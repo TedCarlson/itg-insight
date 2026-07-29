@@ -48,6 +48,7 @@ function labelForCategory(key: string | null | undefined) {
   if (key === "u_code_applied") return "U-Code";
   if (key === "new_drop") return "New Drop";
   if (key === "conduit_pull_install") return "Conduit Pull";
+  if (key === "commercial_battery_billing") return "Commercial Battery Billing";
   if (key === "post_call") return "Service Follow Up";
   return key ?? "Field Log";
 }
@@ -215,6 +216,7 @@ export function FieldLogAuditClient() {
             <option value="u_code_applied">U-Code</option>
             <option value="new_drop">New Drop</option>
             <option value="conduit_pull_install">Conduit Pull</option>
+            <option value="commercial_battery_billing">Commercial Battery Billing</option>
             <option value="post_call">Service Follow Up</option>
           </select>
 

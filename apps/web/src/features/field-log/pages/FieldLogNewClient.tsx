@@ -21,6 +21,7 @@ function cls(...parts: Array<string | false | undefined>) {
 }
 
 const CONDUIT_PULL_CATEGORY_KEY = "conduit_pull_install";
+const COMMERCIAL_BATTERY_CATEGORY_KEY = "commercial_battery_billing";
 
 function isConduitPullCategory(categoryKey: string | null) {
   return categoryKey === CONDUIT_PULL_CATEGORY_KEY;
@@ -28,6 +29,7 @@ function isConduitPullCategory(categoryKey: string | null) {
 
 function requiredPhotoCountForCategory(categoryKey: string | null, fallback: number) {
   if (isConduitPullCategory(categoryKey)) return 5;
+  if (categoryKey === COMMERCIAL_BATTERY_CATEGORY_KEY) return 2;
   return fallback;
 }
 

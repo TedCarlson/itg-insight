@@ -124,7 +124,10 @@ export async function GET(req: NextRequest) {
       : rawRows.filter(
           (row) =>
             FIELD_LOG_ACTIVE_STATUSES.includes(row.status as any) ||
-            ((row.category_key === "new_drop" || row.category_key === "conduit_pull_install") &&
+            (row.category_key != null &&
+              ["new_drop", "conduit_pull_install", "commercial_battery_billing"].includes(
+                row.category_key,
+              ) &&
               row.status === "approved"),
         );
 
@@ -181,7 +184,13 @@ export async function GET(req: NextRequest) {
   }
 
   const billingReportIds = enrichedRows
-    .filter((row) => row.category_key === "new_drop" || row.category_key === "conduit_pull_install")
+    .filter(
+      (row) =>
+        row.category_key != null &&
+        ["new_drop", "conduit_pull_install", "commercial_battery_billing"].includes(
+          row.category_key,
+        ),
+    )
     .map((row) => row.report_id);
 
   if (billingReportIds.length > 0) {

@@ -78,6 +78,16 @@ export const FIELD_LOG_OUTCOME_PROFILES: Record<
     ],
   },
 
+  commercial_battery_billing: {
+    primaryActions: [
+      {
+        action: "pass",
+        label: "Approve Commercial Battery",
+        tone: "success",
+      },
+    ],
+  },
+
   epi: {
     primaryActions: [
       {
