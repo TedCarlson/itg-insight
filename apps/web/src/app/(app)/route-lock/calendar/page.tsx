@@ -142,7 +142,7 @@ export default async function RouteLockCalendarPage({ searchParams }: Props) {
   return (
     <PageShell>
       <RouteLockCalendarClient
-        fiscal={res.fiscal}
+        fiscal={activeFm}
         days={res.days}
         todayIso={today}
         prevHref={showPrev ? prevHref : null}

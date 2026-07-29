@@ -11,10 +11,30 @@ import { DirectorWorkspaceSelector } from "@/shared/surfaces/navigation/Director
 
 import RouteLockSubnav from "@/features/route-lock/components/RouteLockSubnav";
 import { todayInNY } from "@/features/route-lock/calendar/lib/fiscalMonth";
-import { getRouteLockDaysForCurrentFiscalMonth } from "@/features/route-lock/calendar/lib/getRouteLockDays.server";
+import { getRouteLockDaysForRange } from "@/features/route-lock/calendar/lib/getRouteLockDays.server";
 import { RouteLockSevenDayClient } from "@/features/route-lock/landing/RouteLockSevenDayClient";
 
-export default async function DirectorRouteLockPageShell() {
+function addDaysISO(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function nextSaturdayOnOrAfter(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const offset = (6 - d.getUTCDay() + 7) % 7;
+  return addDaysISO(iso, offset);
+}
+
+function validSaturday(iso: string | undefined): iso is string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.getUTCDay() === 6;
+}
+
+export default async function DirectorRouteLockPageShell(props: {
+  weekEnding?: string;
+}) {
   noStore();
 
   const scope = await requireSelectedPcOrgServer();
@@ -25,14 +45,14 @@ export default async function DirectorRouteLockPageShell() {
 
   const sb = supabaseAdmin();
   const pc_org_id = scope.selected_pc_org_id;
-
-  const res = await getRouteLockDaysForCurrentFiscalMonth(sb, pc_org_id);
-
   const today = todayInNY();
+  const weekEnd = validSaturday(props.weekEnding)
+    ? props.weekEnding
+    : nextSaturdayOnOrAfter(today);
+  const weekStart = addDaysISO(weekEnd, -6);
 
-  const next7 = res.ok
-    ? res.days.filter((d) => d.date >= today).slice(0, 7)
-    : [];
+  const res = await getRouteLockDaysForRange(sb, pc_org_id, weekStart, weekEnd);
+  const days = res.ok ? res.days : [];
 
   return (
     <PageShell>
@@ -52,7 +72,7 @@ export default async function DirectorRouteLockPageShell() {
           <RouteLockSubnav />
         </div>
 
-        <RouteLockSevenDayClient days={next7} todayIso={today} />
+        <RouteLockSevenDayClient days={days} weekStart={weekStart} weekEnd={weekEnd} />
       </div>
     </PageShell>
   );

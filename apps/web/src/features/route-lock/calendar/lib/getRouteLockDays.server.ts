@@ -38,10 +38,19 @@ export type CalendarDayRow = {
   trvl_count: number;
   bptrl_count: number;
 
+  built_routes: number | null;
+  built_techs: number | null;
+  built_units: number | null;
+  built_hours: number | null;
+
+  actual_routes: number | null;
   actual_techs: number | null;
   actual_units: number | null;
   actual_hours: number | null;
   actual_jobs: number | null;
+
+  actual_tech_ids: string[];
+  travel_tech_ids: string[];
 };
 
 const DEBUG = false;
@@ -516,22 +525,12 @@ async function computeCheckInActuals(
   return byDay;
 }
 
-export async function getRouteLockDaysForFiscalMonth(
+export async function getRouteLockDaysForRange(
   sb: Sb,
   pc_org_id: string,
-  fiscal_month_id: string
+  start: string,
+  end: string
 ) {
-  const fm = await resolveFiscalMonthById(sb, fiscal_month_id);
-
-  if (!fm) {
-    return {
-      ok: false as const,
-      error: "Could not resolve fiscal month (fiscal_month_dim by id)",
-    };
-  }
-
-  const start = fm.start_date;
-  const end = fm.end_date;
   const days = eachDayISO(start, end);
 
   const [headcountByDay, scheduleByDay, quotaByDay, svByDay, actualByDay] =
@@ -542,6 +541,29 @@ export async function getRouteLockDaysForFiscalMonth(
       computeShiftValidationAgg(sb, pc_org_id, start, end),
       computeCheckInActuals(sb, pc_org_id, start, end),
     ]);
+
+  const allTravelTechsByDay = new Map<string, Set<string>>();
+
+  const { data: travelRows, error: travelRowsError } = await sb
+    .from("shift_validation_row")
+    .select("shift_date,tech_num,is_trvl,is_bptrl")
+    .eq("pc_org_id", pc_org_id)
+    .gte("shift_date", start)
+    .lte("shift_date", end);
+
+  if (travelRowsError) {
+    console.warn("shift_validation_row travel tech query failed:", travelRowsError.message);
+  } else {
+    for (const row of (travelRows ?? []) as any[]) {
+      if (!row.is_trvl && !row.is_bptrl) continue;
+      const date = String(row.shift_date ?? "").slice(0, 10);
+      const tech = String(row.tech_num ?? "").trim();
+      if (!date || !tech) continue;
+      const set = allTravelTechsByDay.get(date) ?? new Set<string>();
+      set.add(tech);
+      allTravelTechsByDay.set(date, set);
+    }
+  }
 
   const out: CalendarDayRow[] = days.map((d) => {
     const sched = scheduleByDay.get(d);
@@ -600,14 +622,50 @@ export async function getRouteLockDaysForFiscalMonth(
       trvl_count,
       bptrl_count,
 
-      actual_techs: has_check_in ? actual!.techs.size : has_sv ? sv!.techs.size : null,
-      actual_units: has_check_in ? actual!.units : has_sv ? sv!.builtUnits : null,
-      actual_hours: has_check_in ? actual!.hours : has_sv ? sv!.totalHours : null,
+      built_routes: has_sv ? sv!.total : null,
+      built_techs: has_sv ? sv!.techs.size : null,
+      built_units: has_sv ? sv!.builtUnits : null,
+      built_hours: has_sv ? sv!.totalHours : null,
+
+      actual_routes: has_check_in ? actual!.techs.size : null,
+      actual_techs: has_check_in ? actual!.techs.size : null,
+      actual_units: has_check_in ? actual!.units : null,
+      actual_hours: has_check_in ? actual!.hours : null,
       actual_jobs: has_check_in ? actual!.jobs : null,
+
+      actual_tech_ids: actual ? Array.from(actual.techs) : [],
+      travel_tech_ids: sv
+        ? Array.from(
+            new Set(
+              Array.from(sv.techs).filter((tech) => {
+                return allTravelTechsByDay.get(d)?.has(tech) ?? false;
+              })
+            )
+          )
+        : [],
     };
   });
 
-  return { ok: true as const, fiscal: fm, days: out };
+  return { ok: true as const, start, end, days: out };
+}
+
+export async function getRouteLockDaysForFiscalMonth(
+  sb: Sb,
+  pc_org_id: string,
+  fiscal_month_id: string
+) {
+  const fm = await resolveFiscalMonthById(sb, fiscal_month_id);
+
+  if (!fm) {
+    return {
+      ok: false as const,
+      error: "Could not resolve fiscal month (fiscal_month_dim by id)",
+    };
+  }
+
+  const result = await getRouteLockDaysForRange(sb, pc_org_id, fm.start_date, fm.end_date);
+  if (!result.ok) return result;
+  return { ...result, fiscal: fm };
 }
 
 export async function getRouteLockDaysForCurrentFiscalMonth(sb: Sb, pc_org_id: string) {
