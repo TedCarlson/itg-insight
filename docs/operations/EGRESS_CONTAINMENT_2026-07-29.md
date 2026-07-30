@@ -20,6 +20,14 @@
   `NEXT_PUBLIC_ENABLE_BACKGROUND_POLLING=true`.
 - The empty Home feed endpoint no longer loads unused home/session context.
 - The "My Logs" RPC and route now cap responses at 50 records.
+- The Field Log landing page no longer downloads 30 days of raw reports.
+  `field_log_dashboard_batch` performs the rollup in PostgreSQL and returns
+  compact totals plus no more than 25 lightweight work items.
+- Technician dashboard scope is forced to the authenticated user's records.
+  Elevated users are constrained to the selected organization, and the server
+  derives the effective scope from the access pass.
+- Dashboard interests are explicit (`review`, `follow_up`, `cases`, `billing`,
+  `aging`, and `history`) and load as one bounded batch.
 
 ## Deployment order
 

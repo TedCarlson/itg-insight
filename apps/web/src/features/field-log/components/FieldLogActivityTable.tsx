@@ -1,275 +1,225 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/state/org";
 
-type SnapshotRow = {
-  report_id: string;
-  status: string;
-  category_key: string | null;
-  subcategory_key?: string | null;
-  submitted_at: string | null;
-  updated_at?: string | null;
-  approved_at?: string | null;
-  billing_prepared_at?: string | null;
-  billing_email_sent_at?: string | null;
-  billing_email_last_error?: string | null;
+type Interest =
+  | "my_work"
+  | "review"
+  | "follow_up"
+  | "cases"
+  | "billing"
+  | "aging"
+  | "history";
+
+type Summary = {
+  submitted: number;
+  handled: number;
+  open: number;
+  follow_up: number;
+  aging: number;
+  billing_pending: number;
 };
 
-type SnapshotResponse = {
-  ok: boolean;
-  data?: SnapshotRow[];
-  error?: string;
-};
-
-type LogSummary = {
+type CategoryRollup = {
   key: string;
-  label: string;
   submitted: number;
   approved: number;
   rejected: number;
-  unresolved: number;
-  agingRisk: number;
-  followup: number;
-  openCases: number;
-  tnpsOpen: number;
-  billingPending: number;
-  billingSent: number;
+  open: number;
+  follow_up: number;
+  aging: number;
+  open_cases: number;
+  tnps_open: number;
+  billing_pending: number;
 };
 
-const ORDER = [
-  "qc",
-  "not_done",
-  "u_code_applied",
-  "new_drop",
-  "conduit_pull_install",
-  "post_call",
+type WorkItem = {
+  report_id: string;
+  status: string;
+  category_key: string;
+  subcategory_key: string | null;
+  job_number: string;
+  subject_full_name: string | null;
+  subject_tech_id: string | null;
+  submitted_at: string | null;
+  updated_at: string | null;
+  case_status: string | null;
+};
+
+type DashboardBatch = {
+  summary: Summary;
+  categories: CategoryRollup[];
+  work_items: WorkItem[];
+  meta: {
+    interest: Interest;
+    scope_mode: "self" | "org";
+    window_days: number;
+    limit: number;
+  };
+};
+
+type DashboardResponse = {
+  ok: boolean;
+  scope?: {
+    role: "technician" | "elevated";
+    pc_org_id: string;
+    mode: "self" | "org";
+  };
+  data?: DashboardBatch;
+  error?: string;
+};
+
+const EMPTY_SUMMARY: Summary = {
+  submitted: 0,
+  handled: 0,
+  open: 0,
+  follow_up: 0,
+  aging: 0,
+  billing_pending: 0,
+};
+
+const INTERESTS: Array<{ key: Interest; label: string }> = [
+  { key: "review", label: "Review" },
+  { key: "follow_up", label: "Follow-up" },
+  { key: "cases", label: "Cases" },
+  { key: "billing", label: "Billing" },
+  { key: "aging", label: "Aging" },
+  { key: "history", label: "History" },
 ];
 
-function labelFor(key: string) {
+function categoryLabel(key: string) {
   if (key === "qc") return "QC";
   if (key === "not_done") return "Not Done";
   if (key === "u_code_applied") return "U-Code";
   if (key === "new_drop") return "New Drop";
   if (key === "conduit_pull_install") return "Conduit Pull";
+  if (key === "commercial_battery_billing") return "Commercial Battery";
   if (key === "post_call") return "Service Follow Up";
   return key.replaceAll("_", " ");
 }
 
-function isClosedStatus(status: string | null | undefined) {
-  return status === "approved" || status === "closed" || status === "resolved" || status === "rejected";
+function formatDate(value: string | null) {
+  if (!value) return "No timestamp";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
-function isPacketType(key: string) {
-  return key === "new_drop" || key === "conduit_pull_install";
-}
-
-function isServiceFollowUp(row: SnapshotRow) {
-  return row.category_key === "post_call";
-}
-
-function isTnps(row: SnapshotRow) {
-  const sub = String(row.subcategory_key ?? "").toLowerCase();
-  return isServiceFollowUp(row) && sub.includes("tnps");
-}
-
-function ageCalendarDays(value: string | null | undefined) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-
-  const then = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-  return Math.max(0, Math.floor((today - then) / 86400000));
-}
-
-function num(value: number) {
-  return value > 0 ? String(value) : "—";
-}
-
-function rate(summary: LogSummary) {
-  if (summary.submitted <= 0) return "—";
-  const handled = summary.approved + summary.rejected;
-  return `${Math.round((handled / summary.submitted) * 100)}%`;
-}
-
-function hrefFor(summary: LogSummary) {
-  if (summary.key === "post_call") return "/field-log/cases";
-  if (isPacketType(summary.key)) return "/field-log/new-drop-report";
-  return "/field-log/review";
+function niceStatus(value: string) {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function FieldLogActivityTable() {
   const { selectedOrgId } = useOrg();
-  const [rows, setRows] = useState<SnapshotRow[]>([]);
+  const [interest, setInterest] = useState<Interest>("review");
+  const [batch, setBatch] = useState<DashboardBatch | null>(null);
+  const [scopeMode, setScopeMode] = useState<"self" | "org" | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!selectedOrgId) {
-      setRows([]);
+      setBatch(null);
+      setScopeMode(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    setError(null);
 
     try {
-      const params = new URLSearchParams();
-      params.set("pc_org_id", selectedOrgId);
-      params.set("days", "30");
-
-      const res = await fetch(`/api/field-log/snapshot?${params.toString()}`, {
+      const params = new URLSearchParams({
+        pc_org_id: selectedOrgId,
+        interest,
+      });
+      const res = await fetch(`/api/field-log/dashboard-batch?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
       });
+      const json = (await res.json()) as DashboardResponse;
 
-      const json = (await res.json()) as SnapshotResponse;
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Failed to load Field Log snapshot.");
+      if (!res.ok || !json.ok || !json.data) {
+        throw new Error(json.error || "Failed to load Field Log dashboard.");
       }
 
-      setRows(json.data ?? []);
-      setError(null);
+      setBatch(json.data);
+      setScopeMode(json.scope?.mode ?? json.data.meta.scope_mode);
+      if (json.data.meta.interest !== interest) {
+        setInterest(json.data.meta.interest);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load Field Log snapshot.");
+      setBatch(null);
+      setError(err instanceof Error ? err.message : "Failed to load Field Log dashboard.");
     } finally {
       setLoading(false);
     }
-  }, [selectedOrgId]);
+  }, [interest, selectedOrgId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const summaries = useMemo(() => {
-    const map = new Map<string, LogSummary>();
-
-    function getSummary(row: SnapshotRow) {
-      const key = row.category_key ?? "field_log";
-      const existing = map.get(key);
-      if (existing) return existing;
-
-      const next: LogSummary = {
-        key,
-        label: labelFor(key),
-        submitted: 0,
-        approved: 0,
-        rejected: 0,
-        unresolved: 0,
-        agingRisk: 0,
-        followup: 0,
-        openCases: 0,
-        tnpsOpen: 0,
-        billingPending: 0,
-        billingSent: 0,
-      };
-
-      map.set(key, next);
-      return next;
-    }
-
-    for (const row of rows) {
-      const summary = getSummary(row);
-      const key = row.category_key ?? "field_log";
-
-      summary.submitted += 1;
-
-      if (row.status === "approved" || row.status === "closed" || row.status === "resolved") {
-        summary.approved += 1;
-      }
-
-      if (row.status === "rejected") summary.rejected += 1;
-      if (!isClosedStatus(row.status)) summary.unresolved += 1;
-
-      if (row.status === "tech_followup_required" || row.status === "sup_followup_required") {
-        summary.followup += 1;
-      }
-
-      const age = ageCalendarDays(row.submitted_at ?? row.updated_at);
-      if (!isClosedStatus(row.status) && age != null && age >= 2) summary.agingRisk += 1;
-
-      if (key === "post_call" && !isClosedStatus(row.status)) {
-        summary.openCases += 1;
-        if (isTnps(row)) summary.tnpsOpen += 1;
-      }
-
-      if (isPacketType(key) && row.status === "approved") {
-        if (row.billing_email_sent_at) {
-          summary.billingSent += 1;
-        } else {
-          summary.billingPending += 1;
-        }
-      }
-    }
-
-    return Array.from(map.values())
-      .filter((summary) => summary.submitted > 0)
-      .sort((a, b) => {
-        const ai = ORDER.indexOf(a.key);
-        const bi = ORDER.indexOf(b.key);
-        if (ai !== -1 || bi !== -1) {
-          return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-        }
-        return a.label.localeCompare(b.label);
-      });
-  }, [rows]);
-
-  const totals = useMemo(() => {
-    const submitted = summaries.reduce((sum, item) => sum + item.submitted, 0);
-    const handled = summaries.reduce((sum, item) => sum + item.approved + item.rejected, 0);
-    const unresolved = summaries.reduce((sum, item) => sum + item.unresolved, 0);
-    const followup = summaries.reduce((sum, item) => sum + item.followup + item.tnpsOpen, 0);
-    const aging = summaries.reduce((sum, item) => sum + item.agingRisk, 0);
-    return { submitted, handled, unresolved, followup, aging };
-  }, [summaries]);
+  const summary = batch?.summary ?? EMPTY_SUMMARY;
+  const totals = useMemo(
+    () => [
+      ["Submitted", summary.submitted],
+      ["Handled", summary.handled],
+      ["Open", summary.open],
+      ["Follow-up", summary.follow_up],
+      ["Aging 2d+", summary.aging],
+      ["Billing", summary.billing_pending],
+    ],
+    [summary],
+  );
 
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
-      <div className="flex items-start justify-between gap-3">
-        <div className="px-4 pt-4">
-          <div className="text-base font-semibold">Field Log Snapshot</div>
+      <div className="flex flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-base font-semibold">Field Log Dashboard</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            Last 30 days · select a workflow to open its queue
+            {scopeMode === "self" ? "My records" : "Selected organization"} · last 30 days · maximum 25 work items
           </div>
         </div>
 
         <button
           type="button"
           onClick={() => void load()}
-          className="mr-4 mt-4 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          disabled={loading || !selectedOrgId}
+          className="rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
         >
-          Refresh
+          {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
 
+      {scopeMode !== "self" ? (
+        <div className="mt-3 flex flex-wrap gap-1.5 px-4">
+          {INTERESTS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setInterest(item.key)}
+              className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
+                interest === item.key ? "border-blue-400 bg-blue-50 text-blue-800" : "hover:bg-muted"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {!selectedOrgId ? (
-        <div className="p-4 text-sm text-muted-foreground">
-          Select a PC scope to load the snapshot.
-        </div>
-      ) : loading ? (
-        <div className="p-4 text-sm text-muted-foreground">Loading snapshot…</div>
+        <div className="p-4 text-sm text-muted-foreground">Select a PC scope to load Field Log.</div>
       ) : error ? (
-        <div className="m-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      ) : summaries.length === 0 ? (
-        <div className="p-4 text-sm text-muted-foreground">
-          No Field Log activity in the last 30 days.
-        </div>
+        <div className="m-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
       ) : (
         <div className="mt-4">
-          <div className="grid grid-cols-2 border-y bg-muted/20 sm:grid-cols-5">
-            {[
-              ["Submitted", totals.submitted],
-              ["Handled", totals.handled],
-              ["Open", totals.unresolved],
-              ["Follow-up", totals.followup],
-              ["Aging 2d+", totals.aging],
-            ].map(([label, value]) => (
+          <div className="grid grid-cols-2 border-y bg-muted/20 sm:grid-cols-6">
+            {totals.map(([label, value]) => (
               <div key={label} className="border-r px-4 py-2 last:border-r-0">
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
                 <div className="text-lg font-semibold tabular-nums">{value}</div>
@@ -277,48 +227,60 @@ export function FieldLogActivityTable() {
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="border-b bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Workflow</th>
-                  <th className="px-3 py-2 text-right font-medium">Submitted</th>
-                  <th className="px-3 py-2 text-right font-medium">Handled</th>
-                  <th className="px-3 py-2 text-right font-medium">Open</th>
-                  <th className="px-3 py-2 text-right font-medium">Follow-up</th>
-                  <th className="px-3 py-2 text-right font-medium">Aging 2d+</th>
-                  <th className="px-3 py-2 text-right font-medium">Billing / tNPS</th>
-                  <th className="px-4 py-2 text-right font-medium">Rate</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {summaries.map((summary) => {
-                  const handled = summary.approved + summary.rejected;
-                  const special = summary.key === "post_call"
-                    ? `${summary.tnpsOpen} tNPS open`
-                    : isPacketType(summary.key)
-                      ? `${summary.billingPending} pending`
-                      : "—";
+          <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.85fr)]">
+            <div className="overflow-hidden rounded-xl border">
+              <div className="border-b bg-muted/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide">
+                Workflow totals
+              </div>
+              {batch?.categories.length ? (
+                <div className="divide-y">
+                  {batch.categories.map((category) => (
+                    <div key={category.key} className="grid grid-cols-[minmax(0,1fr)_repeat(3,64px)] gap-2 px-3 py-2 text-sm">
+                      <div className="font-medium">{categoryLabel(category.key)}</div>
+                      <div className="text-right tabular-nums" title="Submitted">{category.submitted}</div>
+                      <div className="text-right tabular-nums" title="Open">{category.open}</div>
+                      <div className="text-right tabular-nums text-amber-700" title="Aging">{category.aging}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 text-sm text-muted-foreground">No activity in this scope.</div>
+              )}
+            </div>
 
-                  return (
-                    <tr key={summary.key} className="transition hover:bg-muted/30">
-                      <td className="px-4 py-3">
-                        <Link href={hrefFor(summary)} className="font-semibold hover:underline">
-                          {summary.label}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">{summary.submitted}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{num(handled)}</td>
-                      <td className={`px-3 py-3 text-right tabular-nums ${summary.unresolved ? "font-semibold" : ""}`}>{num(summary.unresolved)}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{num(summary.followup)}</td>
-                      <td className={`px-3 py-3 text-right tabular-nums ${summary.agingRisk ? "text-amber-700" : ""}`}>{num(summary.agingRisk)}</td>
-                      <td className="px-3 py-3 text-right text-xs text-muted-foreground">{special}</td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums">{rate(summary)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="overflow-hidden rounded-xl border">
+              <div className="border-b bg-muted/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide">
+                {scopeMode === "self" ? "My work" : INTERESTS.find((item) => item.key === interest)?.label} items
+              </div>
+              {batch?.work_items.length ? (
+                <div className="divide-y">
+                  {batch.work_items.map((item) => (
+                    <Link
+                      key={item.report_id}
+                      href={`/field-log/${item.report_id}`}
+                      className="block px-3 py-2 transition hover:bg-muted/30"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{item.job_number || "Field Log"}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {item.subject_full_name || item.subject_tech_id || categoryLabel(item.category_key)}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px]">
+                          {niceStatus(item.status)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {formatDate(item.submitted_at ?? item.updated_at)}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 text-sm text-muted-foreground">No matching work items.</div>
+              )}
+            </div>
           </div>
         </div>
       )}
