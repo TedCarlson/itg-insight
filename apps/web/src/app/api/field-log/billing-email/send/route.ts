@@ -18,6 +18,7 @@ export const runtime = "nodejs";
 // - duplicate policy
 // - resend/manual resend permissions
 const FALLBACK_BILLING_TO = "Comcast_Billing@itgcomm.com";
+const PACKET_BUCKET = "field-log-billing-packets";
 
 async function loadBillingRecipients(admin: any, pcOrgId: string): Promise<string[]> {
   const { data, error } = await admin
@@ -70,6 +71,144 @@ function packetLabelFor(categoryKey: string) {
 function filenameFromDisposition(value: string | null, fallback: string) {
   const match = String(value ?? "").match(/filename="([^"]+)"/i);
   return match?.[1] ?? fallback;
+}
+
+type BillingPacket = {
+  buffer: Buffer;
+  filename: string;
+  sha256: string;
+  sizeBytes: number;
+  cacheHit: boolean;
+};
+
+function packetObjectPath(reportId: string, sourceUpdatedAt: string, sha256: string) {
+  const version = sourceUpdatedAt.replace(/[^0-9]/g, "");
+  return `billing-packets/${reportId}/${version}-${sha256.slice(0, 16)}.pdf`;
+}
+
+async function generatePacket(args: {
+  origin: string;
+  cookie: string;
+  packetPath: string;
+  reportId: string;
+  categoryKey: string;
+  jobNumber: string | null;
+}) {
+  const packetRes = await fetch(
+    `${args.origin}${args.packetPath}?report_id=${encodeURIComponent(args.reportId)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      headers: args.cookie ? { cookie: args.cookie } : undefined,
+    },
+  );
+
+  if (!packetRes.ok) {
+    let message = "Failed to generate billing packet PDF.";
+    try {
+      const errorJson = await packetRes.json();
+      message = errorJson?.error || message;
+    } catch {}
+    throw new Error(message);
+  }
+
+  const buffer = Buffer.from(await packetRes.arrayBuffer());
+  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  const filename = filenameFromDisposition(
+    packetRes.headers.get("content-disposition"),
+    `${packetLabelFor(args.categoryKey).replace(/\s+/g, "")}_${args.jobNumber ?? args.reportId}.pdf`,
+  );
+
+  return { buffer, sha256, filename, sizeBytes: buffer.byteLength };
+}
+
+async function loadOrGeneratePacket(args: {
+  admin: any;
+  origin: string;
+  cookie: string;
+  packetPath: string;
+  reportId: string;
+  categoryKey: string;
+  jobNumber: string | null;
+  sourceUpdatedAt: string;
+  requestedByUserId: string;
+}): Promise<BillingPacket> {
+  const { data: cached, error: cacheReadError } = await args.admin
+    .from("field_log_billing_packet_cache")
+    .select(
+      "source_updated_at,storage_bucket,storage_path,packet_filename,packet_sha256,packet_size_bytes,generation_count",
+    )
+    .eq("report_id", args.reportId)
+    .maybeSingle();
+
+  if (cacheReadError) throw new Error(cacheReadError.message);
+
+  if (
+    cached &&
+    new Date(cached.source_updated_at).getTime() === new Date(args.sourceUpdatedAt).getTime()
+  ) {
+    const { data: cachedFile, error: downloadError } = await args.admin.storage
+      .from(cached.storage_bucket)
+      .download(cached.storage_path);
+
+    if (!downloadError && cachedFile) {
+      const buffer = Buffer.from(await cachedFile.arrayBuffer());
+      const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+
+      if (
+        sha256 === cached.packet_sha256 &&
+        buffer.byteLength === Number(cached.packet_size_bytes)
+      ) {
+        return {
+          buffer,
+          filename: cached.packet_filename,
+          sha256,
+          sizeBytes: buffer.byteLength,
+          cacheHit: true,
+        };
+      }
+    }
+  }
+
+  const generated = await generatePacket(args);
+  const storagePath = packetObjectPath(
+    args.reportId,
+    args.sourceUpdatedAt,
+    generated.sha256,
+  );
+  const { error: uploadError } = await args.admin.storage
+    .from(PACKET_BUCKET)
+    .upload(storagePath, generated.buffer, {
+      contentType: "application/pdf",
+      cacheControl: "31536000",
+      upsert: true,
+    });
+
+  if (uploadError) throw new Error(`Failed to cache billing packet: ${uploadError.message}`);
+
+  const previousGenerationCount = Number(cached?.generation_count ?? 0);
+  const { error: cacheWriteError } = await args.admin
+    .from("field_log_billing_packet_cache")
+    .upsert(
+      {
+        report_id: args.reportId,
+        category_key: args.categoryKey,
+        source_updated_at: args.sourceUpdatedAt,
+        storage_bucket: PACKET_BUCKET,
+        storage_path: storagePath,
+        packet_filename: generated.filename,
+        packet_sha256: generated.sha256,
+        packet_size_bytes: generated.sizeBytes,
+        generated_at: new Date().toISOString(),
+        generated_by_user_id: args.requestedByUserId,
+        generation_count: previousGenerationCount + 1,
+      },
+      { onConflict: "report_id" },
+    );
+
+  if (cacheWriteError) throw new Error(`Failed to record billing packet cache: ${cacheWriteError.message}`);
+
+  return { ...generated, cacheHit: false };
 }
 
 function hasManagerAccess(accessPass: any) {
@@ -155,7 +294,7 @@ export async function POST(req: NextRequest) {
 
   const { data: report, error: reportError } = await admin
     .from("field_log_report")
-    .select("report_id,pc_org_id,category_key,status,job_number,subject_full_name,subject_tech_id,approved_at")
+    .select("report_id,pc_org_id,category_key,status,job_number,subject_full_name,subject_tech_id,approved_at,updated_at")
     .eq("report_id", reportId)
     .maybeSingle();
 
@@ -249,31 +388,17 @@ export async function POST(req: NextRequest) {
   const cookie = req.headers.get("cookie") ?? "";
 
   try {
-    const packetRes = await fetch(
-      `${origin}${packetPath}?report_id=${encodeURIComponent(reportId)}`,
-      {
-        method: "GET",
-        cache: "no-store",
-        headers: cookie ? { cookie } : undefined,
-      },
-    );
-
-    if (!packetRes.ok) {
-      let message = "Failed to generate billing packet PDF.";
-      try {
-        const errorJson = await packetRes.json();
-        message = errorJson?.error || message;
-      } catch {}
-      throw new Error(message);
-    }
-
-    const arrayBuffer = await packetRes.arrayBuffer();
-    const pdfBuffer = Buffer.from(arrayBuffer);
-    const packetSha256 = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
-    const packetFilename = filenameFromDisposition(
-      packetRes.headers.get("content-disposition"),
-      `${packetLabelFor(categoryKey).replace(/\s+/g, "")}_${report.job_number ?? reportId}.pdf`,
-    );
+    const packet = await loadOrGeneratePacket({
+      admin,
+      origin,
+      cookie,
+      packetPath,
+      reportId,
+      categoryKey,
+      jobNumber: report.job_number ?? null,
+      sourceUpdatedAt: report.updated_at,
+      requestedByUserId: user.id,
+    });
 
     const resendKey = process.env.RESEND_API_KEY;
     if (!resendKey) {
@@ -308,8 +433,8 @@ export async function POST(req: NextRequest) {
       `,
       attachments: [
         {
-          filename: packetFilename,
-          content: pdfBuffer,
+          filename: packet.filename,
+          content: packet.buffer,
         },
       ],
     });
@@ -325,8 +450,10 @@ export async function POST(req: NextRequest) {
       .from("field_log_billing_email_log")
       .update({
         status: "sent",
-        packet_filename: packetFilename,
-        packet_sha256: packetSha256,
+        packet_filename: packet.filename,
+        packet_sha256: packet.sha256,
+        packet_size_bytes: packet.sizeBytes,
+        packet_cache_hit: packet.cacheHit,
         provider_message_id: providerMessageId,
         sent_at: sentAt,
       })
@@ -339,7 +466,9 @@ export async function POST(req: NextRequest) {
       status: "sent",
       sendMode,
       providerMessageId,
-      packetFilename,
+      packetFilename: packet.filename,
+      packetSizeBytes: packet.sizeBytes,
+      packetCacheHit: packet.cacheHit,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to send billing email.";
