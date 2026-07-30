@@ -3,442 +3,280 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 
-type Week = {
+type Column = {
   key: string;
-  week_ending_date: string;
-  base_label?: string;
-  week_label: string;
+  label: string;
+  week_ending_date: string | null;
   record_id: string | null;
-  overall_performance: number | null;
-  created_at?: string | null;
-  as_of_at?: string | null;
-  as_of_date?: string | null;
-  is_latest?: boolean;
-};
-
-type Snapshot = {
-  value: number;
-  prior_week_value: number;
-  current_week_trend: number;
-  change_points: number;
-  status: string;
+  created_at: string | null;
 };
 
 type StateRow = {
   state: string;
-  snapshots: Record<string, Snapshot>;
-  latest_value: number | null;
-  previous_value: number | null;
-  movement_vs_prior_snapshot: number | null;
-  direction: string;
-  current_week_trend: number | null;
-  latest_status: string | null;
-  is_active_latest: boolean;
-  weeks_tracked: number;
+  values: Record<string, number>;
+  reported_latest_day: boolean;
 };
 
 type Payload = {
-  weeks: Week[];
+  from: string;
+  to: string;
+  columns: Column[];
   state_rows: StateRow[];
   summary: {
-    latest_week: Week | null;
-    active_states: number;
-    historical_states: number;
-    improved_count: number;
-    declined_count: number;
-    neutral_count: number;
-    needs_attention_count: number;
-    watch_closely_count: number;
+    states: number;
+    days: number;
+    latest_day: string | null;
+    latest_day_reported_states: number;
   };
 };
 
-function pct(v: number | null | undefined) {
-  return v == null ? "—" : `${v}%`;
+type ReportingFilter = "ALL" | "REPORTED_LATEST" | "MISSING_LATEST";
+
+function nyDate(offsetDays = 0) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  const base = new Date(`${year}-${month}-${day}T12:00:00-04:00`);
+  base.setDate(base.getDate() + offsetDays);
+  const shifted = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(base);
+  const shiftedYear = shifted.find((part) => part.type === "year")?.value;
+  const shiftedMonth = shifted.find((part) => part.type === "month")?.value;
+  const shiftedDay = shifted.find((part) => part.type === "day")?.value;
+  return `${shiftedYear}-${shiftedMonth}-${shiftedDay}`;
 }
 
-function move(v: number | null | undefined) {
-  if (v == null) return "—";
-  if (v > 0) return `▲ +${v}`;
-  if (v < 0) return `▼ ${v}`;
-  return "— 0";
+function pct(value: number | null | undefined) {
+  return value == null ? "—" : `${value}%`;
 }
 
-function cls(...parts: Array<string | false | undefined>) {
-  return parts.filter(Boolean).join(" ");
+function escapeCsv(value: unknown) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-function latestRowClass(status: string | null) {
-  const normalized = String(status ?? "").toLowerCase();
-  if (normalized === "needs attention") return "bg-red-700 text-white";
-  if (normalized === "watch closely") return "bg-yellow-300 text-yellow-950";
-  return "";
-}
-
-function cellClass(snapshot: Snapshot | undefined) {
-  const status = String(snapshot?.status ?? "").toLowerCase();
-  if (status === "needs attention") return "bg-red-700 text-white font-semibold";
-  if (status === "watch closely") return "bg-yellow-300 text-yellow-950 font-semibold";
-  return "";
-}
-
-function matrixText(payload: Payload) {
-  const weeks = payload.weeks;
-  const header = [
-    "State",
-    ...weeks.map((w) => w.week_label ?? w.week_ending_date),
-    "Latest",
-    "Δ vs Prior Snapshot",
-    "Current Trend",
-    "Status",
+function matrixRows(payload: Payload, rows: StateRow[]) {
+  return [
+    ["State", ...payload.columns.map((column) => column.label)],
+    ...rows.map((row) => [row.state, ...payload.columns.map((column) => pct(row.values[column.key]))]),
   ];
-
-  const rows = payload.state_rows.map((row) => [
-    row.state,
-    ...weeks.map((week) => pct(row.snapshots[week.key ?? week.week_ending_date]?.value)),
-    pct(row.latest_value),
-    move(row.movement_vs_prior_snapshot),
-    pct(row.current_week_trend),
-    row.latest_status ?? "—",
-  ]);
-
-  return [header, ...rows].map((r) => r.join("\\t")).join("\\n");
 }
 
-function copyText(value: string) {
-  void navigator.clipboard.writeText(value);
-}
-
-async function copyRichClipboard(args: { html: string; text: string }) {
-  const clipboardItem = typeof ClipboardItem !== "undefined"
-    ? new ClipboardItem({
-        "text/html": new Blob([args.html], { type: "text/html" }),
-        "text/plain": new Blob([args.text], { type: "text/plain" }),
-      })
-    : null;
-
-  if (clipboardItem && navigator.clipboard?.write) {
-    await navigator.clipboard.write([clipboardItem]);
-    return;
-  }
-
-  await navigator.clipboard.writeText(args.text);
-}
-
-function escapeHtml(value: unknown) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function htmlCellStyle(snapshot: Snapshot | undefined) {
-  const status = String(snapshot?.status ?? "").toLowerCase();
-
-  if (status === "needs attention") {
-    return "background:#b91c1c;color:#ffffff;font-weight:700;";
-  }
-
-  if (status === "watch closely") {
-    return "background:#fde047;color:#422006;font-weight:700;";
-  }
-
-  return "";
-}
-
-function cotpMatrixHtml(payload: Payload) {
-  const th =
-    "border:1px solid #d1d5db;padding:8px;background:#f8fafc;color:#111827;font-weight:700;text-align:left;white-space:nowrap;";
-  const td =
-    "border:1px solid #d1d5db;padding:8px;color:inherit;white-space:nowrap;";
-  const num = `${td}text-align:right;`;
-
-  const headerWeeks = payload.weeks
-    .map((week) => `<th style="${th}text-align:right;">${escapeHtml(week.week_label)}</th>`)
-    .join("");
-
-  const rows = payload.state_rows
-    .map((row) => {
-      const latestStyle = rowStyleForHtml(row.latest_status);
-
-      const weekCells = payload.weeks
-        .map((week) => {
-          const snap = row.snapshots[week.key ?? week.week_ending_date];
-          return `<td style="${num}${htmlCellStyle(snap)}">${escapeHtml(pct(snap?.value))}</td>`;
-        })
-        .join("");
-
-      return `<tr style="${latestStyle}">
-        <td style="${td}font-weight:700;">${escapeHtml(row.state)}</td>
-        ${weekCells}
-        <td style="${num}font-weight:700;">${escapeHtml(pct(row.latest_value))}</td>
-        <td style="${num}font-weight:700;">${escapeHtml(move(row.movement_vs_prior_snapshot))}</td>
-        <td style="${num}">${escapeHtml(pct(row.current_week_trend))}</td>
-        <td style="${td}font-weight:700;">${escapeHtml(row.latest_status ?? "—")}</td>
-      </tr>`;
-    })
-    .join("");
-
-  return `<div style="font-family:Arial,sans-serif;color:#111827;">
-    <h3 style="margin:0 0 8px 0;">COTP Weekly Snapshot Matrix</h3>
-    <p style="margin:0 0 12px 0;color:#4b5563;">
-      Latest Week: ${escapeHtml(payload.summary.latest_week?.week_label ?? "—")} |
-      Overall: ${escapeHtml(pct(payload.summary.latest_week?.overall_performance))} |
-      Improved: ${escapeHtml(payload.summary.improved_count)} |
-      Declined: ${escapeHtml(payload.summary.declined_count)} |
-      Needs Attention: ${escapeHtml(payload.summary.needs_attention_count)}
-    </p>
-    <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;">
-      <thead>
-        <tr>
-          <th style="${th}">State</th>
-          ${headerWeeks}
-          <th style="${th}text-align:right;">Latest</th>
-          <th style="${th}text-align:right;">Δ</th>
-          <th style="${th}text-align:right;">Current Trend</th>
-          <th style="${th}">Status</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
-}
-
-function rowStyleForHtml(status: string | null) {
-  const normalized = String(status ?? "").toLowerCase();
-
-  if (normalized === "needs attention") {
-    return "background:#b91c1c;color:#ffffff;font-weight:700;";
-  }
-
-  if (normalized === "watch closely") {
-    return "background:#fde047;color:#422006;font-weight:700;";
-  }
-
-  return "";
+function downloadBlob(contents: BlobPart, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export function CotpProgressClient() {
+  const [from, setFrom] = useState(() => nyDate(-13));
+  const [to, setTo] = useState(() => nyDate());
+  const [appliedFrom, setAppliedFrom] = useState(() => nyDate(-13));
+  const [appliedTo, setAppliedTo] = useState(() => nyDate());
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [stateFilter, setStateFilter] = useState("");
-  const [range, setRange] = useState("CURRENT_WEEK");
+  const [reportingFilter, setReportingFilter] = useState<ReportingFilter>("ALL");
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
-      setErr(null);
-
+      setError(null);
       try {
-        const sp = new URLSearchParams();
-        sp.set("range", range);
-
-        const res = await fetch(`/api/locate/reporting-helper/progress/cotp?${sp.toString()}`);
-        const json = await res.json();
-
-        if (!res.ok) throw new Error(json.error ?? "Failed to load COTP progress");
-
+        const params = new URLSearchParams({ from: appliedFrom, to: appliedTo });
+        const response = await fetch(`/api/locate/reporting-helper/progress/cotp?${params.toString()}`);
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error ?? "Failed to load COTP day-by-day report");
         if (!cancelled) setPayload(json);
-      } catch (error: any) {
-        if (!cancelled) setErr(error?.message ?? "Failed to load progress");
+      } catch (loadError: any) {
+        if (!cancelled) setError(loadError?.message ?? "Failed to load report");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
     void load();
-
     return () => {
       cancelled = true;
     };
-  }, [range]);
+  }, [appliedFrom, appliedTo]);
 
   const visibleRows = useMemo(() => {
-    const rows = payload?.state_rows ?? [];
-    const filter = stateFilter.trim().toUpperCase();
-    if (!filter) return rows;
-    return rows.filter((row) => row.state.includes(filter));
-  }, [payload, stateFilter]);
+    const normalized = stateFilter.trim().toUpperCase();
+    return (payload?.state_rows ?? []).filter((row) => {
+      if (normalized && !row.state.includes(normalized)) return false;
+      if (reportingFilter === "REPORTED_LATEST" && !row.reported_latest_day) return false;
+      if (reportingFilter === "MISSING_LATEST" && row.reported_latest_day) return false;
+      return true;
+    });
+  }, [payload, stateFilter, reportingFilter]);
 
-  const latestWeek = payload?.summary.latest_week;
+  function applyRange() {
+    if (from > to) {
+      setError("From date must be on or before To date");
+      return;
+    }
+    setAppliedFrom(from);
+    setAppliedTo(to);
+  }
+
+  function copyMatrix() {
+    if (!payload) return;
+    const text = matrixRows(payload, visibleRows).map((row) => row.join("\t")).join("\n");
+    void navigator.clipboard.writeText(text);
+  }
+
+  function exportCsv() {
+    if (!payload) return;
+    const csv = matrixRows(payload, visibleRows)
+      .map((row) => row.map(escapeCsv).join(","))
+      .join("\n");
+    downloadBlob(csv, "text/csv;charset=utf-8", `cotp-day-by-day-${appliedFrom}-to-${appliedTo}.csv`);
+  }
+
+  function exportXlsx() {
+    if (!payload) return;
+    const params = new URLSearchParams({
+      from: appliedFrom,
+      to: appliedTo,
+      reporting: reportingFilter,
+      states: visibleRows.map((row) => row.state).join(","),
+    });
+    window.location.href = `/api/locate/reporting-helper/progress/cotp/export/xlsx?${params.toString()}`;
+  }
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">COTP Progress</h2>
-          <p className="text-sm text-[var(--to-ink-muted)]">
-            Snapshot-over-snapshot COTP movement by state.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <select
-            value={range}
-            onChange={(e) => setRange(e.target.value)}
-            className="rounded-md border px-3 py-2 text-sm"
-            style={{ borderColor: "var(--to-border)" }}
-          >
-            <option value="CURRENT_WEEK">Current Week</option>
-            <option value="ALL">All History</option>
-            <option value="14D">Last 14 Days</option>
-            <option value="30D">Last 30 Days</option>
-          </select>
-
-          <input
-            value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value)}
-            placeholder="Filter state..."
-            className="rounded-md border px-3 py-2 text-sm"
-            style={{ borderColor: "var(--to-border)" }}
-          />
-
-          {payload ? (
-            <button
-              type="button"
-              className="to-btn rounded-md border px-3 py-2 text-sm font-medium"
+      <Card>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium">From Date</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+              className="rounded-md border px-3 py-2"
               style={{ borderColor: "var(--to-border)" }}
-              onClick={() =>
-                void copyRichClipboard({
-                  html: cotpMatrixHtml(payload),
-                  text: matrixText(payload),
-                })
-              }
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium">To Date</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              className="rounded-md border px-3 py-2"
+              style={{ borderColor: "var(--to-border)" }}
+            />
+          </label>
+
+          <button type="button" onClick={applyRange} className="to-btn rounded-md border px-4 py-2 text-sm font-medium" style={{ borderColor: "var(--to-border)" }}>
+            Apply
+          </button>
+
+          <label className="grid min-w-40 gap-1 text-sm">
+            <span className="font-medium">State</span>
+            <input
+              value={stateFilter}
+              onChange={(event) => setStateFilter(event.target.value)}
+              placeholder="All states"
+              className="rounded-md border px-3 py-2"
+              style={{ borderColor: "var(--to-border)" }}
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium">Reporting</span>
+            <select
+              value={reportingFilter}
+              onChange={(event) => setReportingFilter(event.target.value as ReportingFilter)}
+              className="rounded-md border px-3 py-2"
+              style={{ borderColor: "var(--to-border)" }}
             >
-              Copy Matrix
+              <option value="ALL">All states</option>
+              <option value="REPORTED_LATEST">Reported latest day</option>
+              <option value="MISSING_LATEST">Missing latest day</option>
+            </select>
+          </label>
+
+          <div className="ml-auto flex flex-wrap gap-2">
+            <button type="button" disabled={!payload} onClick={copyMatrix} className="to-btn rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--to-border)" }}>
+              Copy
             </button>
-          ) : null}
+            <button type="button" disabled={!payload} onClick={exportCsv} className="to-btn rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--to-border)" }}>
+              CSV
+            </button>
+            <button type="button" disabled={!payload} onClick={exportXlsx} className="to-btn rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--to-border)" }}>
+              Excel
+            </button>
+          </div>
         </div>
-      </div>
+      </Card>
 
-      {err ? (
+      {error ? <Card><div className="text-sm text-[var(--to-danger)]">{error}</div></Card> : null}
+
+      <div className="grid gap-3 md:grid-cols-3">
         <Card>
-          <div className="text-sm text-[var(--to-danger)]">{err}</div>
+          <div className="text-sm text-[var(--to-ink-muted)]">Selected Range</div>
+          <div className="mt-2 text-xl font-semibold">{appliedFrom} → {appliedTo}</div>
         </Card>
-      ) : null}
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <Card>
-          <div className="text-sm text-[var(--to-ink-muted)]">Latest Week</div>
-          <div className="mt-2 text-2xl font-semibold">
-            {latestWeek?.week_label ?? "—"}
-          </div>
+          <div className="text-sm text-[var(--to-ink-muted)]">Report Days</div>
+          <div className="mt-2 text-3xl font-semibold">{payload?.summary.days ?? "—"}</div>
         </Card>
-
         <Card>
-          <div className="text-sm text-[var(--to-ink-muted)]">As Of</div>
-          <div className="mt-2 text-2xl font-semibold">
-            {latestWeek?.as_of_date ?? "—"}
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-sm text-[var(--to-ink-muted)]">Active States</div>
-          <div className="mt-2 text-3xl font-semibold">
-            {payload?.summary.active_states ?? "—"}
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-sm text-[var(--to-ink-muted)]">Up / Down / Neutral</div>
-          <div className="mt-2 text-2xl font-semibold">
-            {payload ? `${payload.summary.improved_count} / ${payload.summary.declined_count} / ${payload.summary.neutral_count}` : "—"}
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-sm text-[var(--to-ink-muted)]">Needs Attention</div>
-          <div className="mt-2 text-3xl font-semibold text-[var(--to-danger)]">
-            {payload?.summary.needs_attention_count ?? "—"}
-          </div>
+          <div className="text-sm text-[var(--to-ink-muted)]">States Shown</div>
+          <div className="mt-2 text-3xl font-semibold">{payload ? visibleRows.length : "—"}</div>
         </Card>
       </div>
 
       <Card>
         <div className="mb-3">
-          <div className="text-base font-semibold">Weekly Snapshot Matrix</div>
+          <div className="text-base font-semibold">COTP Day by Day</div>
           <div className="text-sm text-[var(--to-ink-muted)]">
-            Each week column represents the latest saved snapshot inside that week-ending bucket. Closed weeks display as Final; the latest bucket displays as As Of.
+            Each column is the report-created date. Each value is that day&apos;s latest available week-end actual.
           </div>
         </div>
 
         <div className="overflow-auto rounded border" style={{ borderColor: "var(--to-border)" }}>
           <table className="w-full text-sm">
             <thead className="bg-[var(--to-surface-2)]">
-              <tr className="text-left">
-                <th className="sticky left-0 z-10 bg-[var(--to-surface-2)] px-3 py-2">
-                  State
-                </th>
-
-                {(payload?.weeks ?? []).map((week) => (
-                  <th key={week.key ?? week.week_ending_date} className="px-3 py-2 text-right">
-                    {week.week_label}
-                  </th>
+              <tr>
+                <th className="sticky left-0 z-10 bg-[var(--to-surface-2)] px-3 py-2 text-left">State</th>
+                {(payload?.columns ?? []).map((column) => (
+                  <th key={column.key} className="px-3 py-2 text-right whitespace-nowrap">{column.label}</th>
                 ))}
-
-                <th className="px-3 py-2 text-right">Latest</th>
-                <th className="px-3 py-2 text-right">Δ</th>
-                <th className="px-3 py-2 text-right">Current Trend</th>
-                <th className="px-3 py-2">Status</th>
               </tr>
             </thead>
-
             <tbody>
-              {visibleRows.length ? (
-                visibleRows.map((row) => (
-                  <tr
-                    key={row.state}
-                    className={cls("border-t", latestRowClass(row.latest_status))}
-                    style={{ borderColor: "var(--to-border)" }}
-                  >
-                    <td className="sticky left-0 z-10 bg-inherit px-3 py-2 font-semibold">
-                      {row.state}
-                      {!row.is_active_latest ? (
-                        <span className="ml-2 text-xs font-normal opacity-70">(inactive)</span>
-                      ) : null}
-                    </td>
-
-                    {(payload?.weeks ?? []).map((week) => {
-                      const snap = row.snapshots[week.key ?? week.week_ending_date];
-
-                      return (
-                        <td
-                          key={week.key ?? week.week_ending_date}
-                          className={cls("px-3 py-2 text-right", cellClass(snap))}
-                        >
-                          {pct(snap?.value)}
-                        </td>
-                      );
-                    })}
-
-                    <td className="px-3 py-2 text-right font-semibold">
-                      {pct(row.latest_value)}
-                    </td>
-
-                    <td className="px-3 py-2 text-right font-semibold">
-                      {move(row.movement_vs_prior_snapshot)}
-                    </td>
-
-                    <td className="px-3 py-2 text-right">
-                      {row.direction ?? "—"}
-                    </td>
-
-                    <td className="px-3 py-2 font-semibold">
-                      {row.latest_status ?? (row.is_active_latest ? "—" : "Inactive / no latest report")}
-                    </td>
-                  </tr>
-                ))
-              ) : (
+              {visibleRows.length ? visibleRows.map((row) => (
+                <tr key={row.state} className="border-t" style={{ borderColor: "var(--to-border)" }}>
+                  <td className="sticky left-0 z-10 bg-[var(--to-surface-1)] px-3 py-2 font-semibold">{row.state}</td>
+                  {(payload?.columns ?? []).map((column) => (
+                    <td key={column.key} className="px-3 py-2 text-right">{pct(row.values[column.key])}</td>
+                  ))}
+                </tr>
+              )) : (
                 <tr>
-                  <td
-                    colSpan={(payload?.weeks?.length ?? 0) + 5}
-                    className="px-3 py-8 text-center text-sm text-[var(--to-ink-muted)]"
-                  >
-                    {loading ? "Loading..." : "No COTP progress records found."}
+                  <td colSpan={(payload?.columns.length ?? 0) + 1} className="px-3 py-8 text-center text-[var(--to-ink-muted)]">
+                    {loading ? "Loading..." : "No COTP observations found for this range and filter."}
                   </td>
                 </tr>
               )}

@@ -7,7 +7,6 @@ import { useOrg } from "@/state/org";
 import { useAccessPass } from "@/state/access";
 import { createClient } from "@/shared/data/supabase/client";
 import { FieldLogTimelineCard } from "../components/FieldLogTimelineCard";
-import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { getStatusChip, niceStatus } from "../lib/statusStyles";
 import { FieldLogReviewActionsCard } from "../components/FieldLogReviewActionsCard";
 import { FieldLogReassignFollowupCard } from "../components/FieldLogReassignFollowupCard";
@@ -240,12 +239,6 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
   const isTechFollowup = data.status === "tech_followup_required";
   const canResubmit = isTechFollowup && data.edit_unlocked && data.created_by_user_id === userId;
 
-  const shouldPollDetail =
-    data.status === "pending_review" ||
-    data.status === "tech_followup_required" ||
-    data.status === "sup_followup_required" ||
-    (isServiceFollowUp && !serviceCaseClosed);
-
   const canUseSupervisorProxyUpload =
     ALLOW_SUPERVISOR_PROXY_UPLOAD && fromReview && canApprove;
 
@@ -303,17 +296,6 @@ export function FieldLogDetailClient(props: { initialData: FieldLogDetailPayload
     setTimelineLoading(showTimeline);
     void loadTimeline();
   }, [loadTimeline, showTimeline]);
-
-  useFieldLogPolling({
-    enabled: shouldPollDetail,
-    intervalMs: 15000,
-    onTick: async () => {
-      await refreshDetail();
-      if (showTimeline) {
-        await loadTimeline();
-      }
-    },
-  });
 
   async function approve() {
     if (!userId) {

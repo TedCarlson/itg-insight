@@ -6,12 +6,10 @@ export default function CotpProgressPage() {
   return (
     <PageShell>
       <LocateReportingNav />
-
       <PageHeader
-        title="COTP Progress"
-        subtitle="Canonical operational progress and trend intelligence."
+        title="COTP Day by Day"
+        subtitle="Select a date range and review each day&apos;s latest week-end actual by state."
       />
-
       <CotpProgressClient />
     </PageShell>
   );

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOrg } from "@/state/org";
 import { FieldLogLiveHeader } from "../components/FieldLogLiveHeader";
-import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { formatFreshness } from "../lib/freshness";
 import { FieldLogDetailClient } from "./FieldLogDetailClient";
 import type { FieldLogDetailPayload } from "../lib/fieldLogDetail.types";
@@ -171,14 +170,6 @@ export function FieldLogReviewClient(props: {
   useEffect(() => {
     void load(true);
   }, [load]);
-
-  useFieldLogPolling({
-    enabled: !!selectedOrgId,
-    intervalMs: 20000,
-    onTick: async () => {
-      await load(false);
-    },
-  });
 
   useEffect(() => {
     const id = window.setInterval(() => {

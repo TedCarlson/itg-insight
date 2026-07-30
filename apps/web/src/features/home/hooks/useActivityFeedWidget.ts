@@ -21,6 +21,8 @@ type FeedApiResponse = {
 
 export function useActivityFeedWidget(args: Args) {
   const { initialItems, pollMs = 300_000 } = args;
+  const backgroundPollingEnabled =
+    process.env.NEXT_PUBLIC_ENABLE_BACKGROUND_POLLING === "true";
 
   const [items, setItems] = useState<ActivityFeedItem[]>(() => initialItems);
   const [filter, setFilter] = useState<ActivityFeedFilter>("ALL");
@@ -71,14 +73,18 @@ export function useActivityFeedWidget(args: Args) {
   }, []);
 
   useEffect(() => {
+    if (!backgroundPollingEnabled) return;
+
     const id = window.setInterval(() => {
-      void refresh();
+      if (!document.hidden) {
+        void refresh();
+      }
     }, pollMs);
 
     return () => {
       window.clearInterval(id);
     };
-  }, [pollMs, refresh]);
+  }, [backgroundPollingEnabled, pollMs, refresh]);
 
   const filteredItems = useMemo(() => {
     if (filter === "ALL") return items;

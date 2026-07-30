@@ -21,6 +21,7 @@ export async function GET(_req: NextRequest) {
 
   const { data, error } = await supabase.rpc("field_log_get_my_submissions", {
     p_created_by_user_id: String(user.id),
+    p_limit: 50,
   });
 
   if (error) {

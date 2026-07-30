@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "@/state/session";
 import { FieldLogLiveHeader } from "../components/FieldLogLiveHeader";
-import { useFieldLogPolling } from "../hooks/useFieldLogPolling";
 import { formatFreshness } from "../lib/freshness";
 import {
   getStatusBorder,
@@ -104,14 +103,6 @@ export function TechFieldLogMineClient() {
   useEffect(() => {
     void load(true);
   }, [load]);
-
-  useFieldLogPolling({
-    enabled: !!userId,
-    intervalMs: 30000,
-    onTick: async () => {
-      await load(false);
-    },
-  });
 
   useEffect(() => {
     const id = window.setInterval(() => {
