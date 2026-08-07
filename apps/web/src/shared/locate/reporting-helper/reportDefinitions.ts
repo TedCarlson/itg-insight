@@ -39,7 +39,7 @@ export const LOCATE_REPORT_DEFINITIONS: Record<LocateReportType, LocateReportDef
     workspaceHref: "/locate/reporting-helper?reportType=TICKET_RECEIPT_AUDIT",
     historyHref: "/locate/reporting-helper/history/ticket-receipt-audit",
     progressHref: null,
-    supportsExport: false,
+    supportsExport: true,
   },
 };
 

@@ -90,6 +90,9 @@ export function TicketReceiptAuditHistoryClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <a href="/api/locate/reporting-helper/history/ticket-receipt-audit/export/xlsx" className="to-btn rounded-md border px-3 py-2 text-sm font-semibold" style={{ borderColor: "var(--to-info)", color: "var(--to-info)" }}>
+            Export Comprehensive Report
+          </a>
           <Link href="/locate/reporting-helper" className="to-btn rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--to-border)" }}>
             New Report
           </Link>
@@ -100,6 +103,13 @@ export function TicketReceiptAuditHistoryClient() {
       </div>
 
       {err ? <Card><div className="text-sm text-[var(--to-danger)]">{err}</div></Card> : null}
+
+      <Card variant="subtle">
+        <div className="text-sm font-semibold">Comprehensive reporting</div>
+        <p className="mt-1 text-sm text-[var(--to-ink-muted)]">
+          Export the full audit history as a leadership-ready Excel workbook with effort metrics, monthly activity, family breakdowns, and a filterable record ledger.
+        </p>
+      </Card>
 
       <Card>
         <div className="overflow-auto rounded border" style={{ borderColor: "var(--to-border)" }}>
