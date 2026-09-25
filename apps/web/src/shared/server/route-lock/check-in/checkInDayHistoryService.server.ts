@@ -126,7 +126,7 @@ export async function getTechCheckInDayHistory(input: Input) {
   if (!shiftDate) badRequest("Missing/invalid shift_date");
 
   const { data: techRow, error: techErr } = await input.admin
-    .from("route_lock_roster_v")
+    .from("route_lock_history_roster_v")
     .select("assignment_id,person_id,tech_id,full_name,co_name")
     .eq("pc_org_id", input.pcOrgId)
     .eq("assignment_id", assignmentId)

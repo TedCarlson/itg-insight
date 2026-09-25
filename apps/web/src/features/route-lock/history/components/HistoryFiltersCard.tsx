@@ -1,94 +1,106 @@
 // path: apps/web/src/features/route-lock/history/components/HistoryFiltersCard.tsx
 
-"use client";
+'use client'
 
-import { useEffect, useRef } from "react";
-import type { TechSearchItem } from "../lib/history.types";
+import { useEffect, useRef } from 'react'
+import type { TechSearchItem } from '../lib/history.types'
 
 type Props = {
-  techQuery: string;
-  setTechQuery: (value: string) => void;
-  fromDate: string;
-  setFromDate: (value: string) => void;
-  toDate: string;
-  setToDate: (value: string) => void;
-  selectedTech: TechSearchItem | null;
-  onPickTech: (item: TechSearchItem) => void;
-  onClearTech: () => void;
-  onClearedSelectionByTyping: () => void;
-  canSearch: boolean;
-  searchOpen: boolean;
-  setSearchOpen: (value: boolean) => void;
-  searchBusy: boolean;
-  searchError: string | null;
-  searchItems: TechSearchItem[];
-};
+  techQuery: string
+  setTechQuery: (value: string) => void
+  fromDate: string
+  setFromDate: (value: string) => void
+  toDate: string
+  setToDate: (value: string) => void
+  selectedTech: TechSearchItem | null
+  onPickTech: (item: TechSearchItem) => void
+  onClearTech: () => void
+  onClearedSelectionByTyping: () => void
+  canSearch: boolean
+  searchOpen: boolean
+  setSearchOpen: (value: boolean) => void
+  searchBusy: boolean
+  searchError: string | null
+  searchItems: TechSearchItem[]
+}
 
 function toDateOnly(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return d.toISOString().slice(0, 10)
 }
 
 function addDays(dateOnly: string, days: number) {
-  const d = new Date(`${dateOnly}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return toDateOnly(d);
+  const d = new Date(`${dateOnly}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return toDateOnly(d)
 }
 
 function weekStartFromSaturday(weekEndingSaturday: string) {
-  return addDays(weekEndingSaturday, -6);
+  return addDays(weekEndingSaturday, -6)
 }
 
 function isSaturday(dateOnly: string) {
-  const d = new Date(`${dateOnly}T00:00:00`);
-  return !Number.isNaN(d.getTime()) && d.getDay() === 6;
+  const d = new Date(`${dateOnly}T00:00:00`)
+  return !Number.isNaN(d.getTime()) && d.getDay() === 6
 }
 
 function normalizeToSaturday(dateOnly: string) {
-  const d = new Date(`${dateOnly}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateOnly;
+  const d = new Date(`${dateOnly}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return dateOnly
 
-  const day = d.getDay();
-  const daysUntilSaturday = 6 - day;
-  d.setDate(d.getDate() + daysUntilSaturday);
+  const day = d.getDay()
+  const daysUntilSaturday = 6 - day
+  d.setDate(d.getDate() + daysUntilSaturday)
 
-  return toDateOnly(d);
+  return toDateOnly(d)
 }
 
 function formatRange(fromDate: string, toDate: string) {
-  return `${fromDate} → ${toDate}`;
+  return `${fromDate} → ${toDate}`
+}
+
+function assignmentLabel(item: TechSearchItem) {
+  if (item.assignment_active) {
+    return item.start_date ? `Active since ${item.start_date}` : 'Active'
+  }
+
+  if (item.end_date) {
+    return `Ended ${item.end_date}`
+  }
+
+  return 'Inactive'
 }
 
 export default function HistoryFiltersCard(props: Props) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     function onDocClick(event: MouseEvent) {
-      if (!rootRef.current) return;
+      if (!rootRef.current) return
       if (!rootRef.current.contains(event.target as Node)) {
-        props.setSearchOpen(false);
+        props.setSearchOpen(false)
       }
     }
 
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [props]);
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [props])
 
-  const weekEnding = props.toDate;
-  const isValidSaturday = isSaturday(weekEnding);
+  const weekEnding = props.toDate
+  const isValidSaturday = isSaturday(weekEnding)
 
   function applyWeekEnding(nextRaw: string) {
-    if (!nextRaw) return;
+    if (!nextRaw) return
 
-    const nextSaturday = normalizeToSaturday(nextRaw);
-    props.setToDate(nextSaturday);
-    props.setFromDate(weekStartFromSaturday(nextSaturday));
+    const nextSaturday = normalizeToSaturday(nextRaw)
+    props.setToDate(nextSaturday)
+    props.setFromDate(weekStartFromSaturday(nextSaturday))
   }
 
   function moveWeek(deltaWeeks: number) {
-    const base = isValidSaturday ? weekEnding : normalizeToSaturday(weekEnding);
-    const nextSaturday = addDays(base, deltaWeeks * 7);
-    props.setToDate(nextSaturday);
-    props.setFromDate(weekStartFromSaturday(nextSaturday));
+    const base = isValidSaturday ? weekEnding : normalizeToSaturday(weekEnding)
+    const nextSaturday = addDays(base, deltaWeeks * 7)
+    props.setToDate(nextSaturday)
+    props.setFromDate(weekStartFromSaturday(nextSaturday))
   }
 
   return (
@@ -104,18 +116,18 @@ export default function HistoryFiltersCard(props: Props) {
               type="text"
               value={props.techQuery}
               onChange={(e) => {
-                const next = e.target.value;
-                props.setTechQuery(next);
+                const next = e.target.value
+                props.setTechQuery(next)
 
                 if (
                   props.selectedTech &&
                   next !== `${props.selectedTech.full_name} • ${props.selectedTech.tech_id}`
                 ) {
-                  props.onClearedSelectionByTyping();
+                  props.onClearedSelectionByTyping()
                 }
               }}
               onFocus={() => {
-                if (props.searchItems.length || props.searchError) props.setSearchOpen(true);
+                if (props.searchItems.length || props.searchError) props.setSearchOpen(true)
               }}
               placeholder="Name or Tech ID"
               className="h-9 w-full rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 text-sm outline-none focus:border-[rgba(59,130,246,0.65)]"
@@ -154,7 +166,8 @@ export default function HistoryFiltersCard(props: Props) {
                       </span>
                       <span className="text-xs text-[var(--to-ink-muted)]">
                         Tech ID: {item.tech_id}
-                        {item.co_name ? ` • ${item.co_name}` : ""}
+                        {item.co_name ? ` • ${item.co_name}` : ''}
+                        {` • ${assignmentLabel(item)}`}
                       </span>
                     </button>
                   ))}
@@ -183,7 +196,7 @@ export default function HistoryFiltersCard(props: Props) {
             className="h-9 rounded-lg border border-[var(--to-border)] bg-[var(--to-surface-2)] px-3 text-sm outline-none focus:border-[rgba(59,130,246,0.65)]"
           />
           <div className="text-[11px] text-[var(--to-ink-muted)]">
-            {isValidSaturday ? "Sunday–Saturday window" : "Auto-adjusts to Saturday"}
+            {isValidSaturday ? 'Sunday–Saturday window' : 'Auto-adjusts to Saturday'}
           </div>
         </div>
 
@@ -213,5 +226,5 @@ export default function HistoryFiltersCard(props: Props) {
         </div>
       </div>
     </div>
-  );
+  )
 }
