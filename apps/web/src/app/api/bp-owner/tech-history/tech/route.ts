@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
   const admin = supabaseAdmin();
 
   const { data: techRow } = await admin
-    .from("route_lock_roster_v")
+    .from("route_lock_history_roster_v")
     .select("assignment_id,tech_id,full_name,co_name")
     .eq("assignment_id", assignment_id)
     .maybeSingle();
