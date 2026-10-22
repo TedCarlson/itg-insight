@@ -143,10 +143,8 @@ export default async function CompanyManagerWorkforcePageShell(props: Props) {
 
           <div className="flex flex-wrap gap-2">
             <ExhibitLauncher
-              rows={payload.rows}
               affiliations={affiliations}
               regionLabel={regionLabel}
-              reportMonthLabel={reportMonthLabel}
             />
 
             <WorkforceReportLauncher

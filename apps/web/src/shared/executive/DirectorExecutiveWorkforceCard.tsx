@@ -401,10 +401,8 @@ function WorkforceReportsArtifact({
       {workforceReports ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <ExhibitLauncher
-            rows={workforceReports.rows}
             affiliations={workforceReports.affiliations}
             regionLabel={workforceReports.regionLabel}
-            reportMonthLabel={workforceReports.reportMonthLabel}
           />
 
           <WorkforceReportLauncher

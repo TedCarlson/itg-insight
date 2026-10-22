@@ -2,16 +2,18 @@
 
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
-import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
+import type {
+  ExhibitFiscalMonth,
+  ExhibitPayload,
+  ExhibitTechRow,
+} from "@/shared/types/reports/exhibit.types";
 
 type Props = {
   open: boolean;
-  rows: WorkforceRow[];
   affiliations: WorkforceAffiliationOption[];
   regionLabel: string;
-  reportMonthLabel: string;
   onClose: () => void;
 };
 
@@ -26,92 +28,53 @@ type ExhibitLine = {
   contractor: number;
 };
 
-const CONTRIBUTING_LEADERSHIP_TECH_IDS = new Set(["7109"]);
+type EntityGroup = {
+  entity: string;
+  techs: ExhibitTechRow[];
+  daysWorked: number;
+};
+
+const ITG_LABEL = "Integrated Tech Group";
+const NOT_IN_PEOPLE = "Not in People";
 
 function normalize(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function isLeadershipTitle(row: WorkforceRow) {
-  const title = normalize(row.position_title).toLowerCase();
-
-  return (
-    title.includes("supervisor") ||
-    title.includes("manager") ||
-    title.includes("owner") ||
-    title.includes("lead") ||
-    title.includes("director")
-  );
+function entityLabel(row: ExhibitTechRow) {
+  return normalize(row.entity) || NOT_IN_PEOPLE;
 }
 
-function hasDerivedFieldContribution(row: WorkforceRow) {
-  const techId = normalize(row.tech_id);
-  return techId ? CONTRIBUTING_LEADERSHIP_TECH_IDS.has(techId) : false;
-}
+function isMduDrop(row: ExhibitTechRow) {
+  if (normalize(row.role_type).toUpperCase() === "DROP_BURY") return true;
 
-function isTechnician(row: WorkforceRow) {
-  const title = normalize(row.position_title).toLowerCase();
-
-  if (!row.is_active) return false;
-  if (row.seat_type === "SUPPORT" || row.seat_type === "FMLA") return false;
-
-  if (hasDerivedFieldContribution(row)) return true;
-
-  if (row.seat_type === "LEADERSHIP" || isLeadershipTitle(row)) return false;
-
-  return (
-    row.seat_type === "FIELD" ||
-    row.seat_type === "TRAVEL" ||
-    row.seat_type === "DROP_BURY" ||
-    title.includes("technician")
-  );
-}
-
-function isMduDrop(row: WorkforceRow) {
-  if (row.seat_type === "DROP_BURY") return true;
-
-  const text = `${row.position_title ?? ""} ${row.affiliation ?? ""}`.toLowerCase();
+  const text = `${row.position_title ?? ""} ${row.entity ?? ""}`.toLowerCase();
   return text.includes("mdu") || text.includes("drop");
 }
 
 function getAffiliationMeta(
-  row: WorkforceRow,
+  row: ExhibitTechRow,
   affiliations: WorkforceAffiliationOption[]
 ) {
-  const rowLabel = normalize(row.affiliation);
-  const rowLabelUpper = rowLabel.toUpperCase();
+  const label = normalize(row.entity);
+  if (!label) return undefined;
+
+  const labelUpper = label.toUpperCase();
 
   return affiliations.find((option) => {
     const optionLabel = normalize(option.affiliation_label);
     const optionCode = normalize(option.affiliation_code);
 
-    return (
-      option.affiliation_id === row.affiliation_id ||
-      optionLabel === rowLabel ||
-      optionCode.toUpperCase() === rowLabelUpper
-    );
+    return optionLabel === label || optionCode.toUpperCase() === labelUpper;
   });
 }
 
-function getAffiliationLabel(
-  row: WorkforceRow,
-  affiliations: WorkforceAffiliationOption[]
-): string {
-  const meta = getAffiliationMeta(row, affiliations);
-
-  return (
-    normalize(meta?.affiliation_label) ||
-    normalize(row.affiliation) ||
-    "Unassigned"
-  );
-}
-
 function getWorkerClass(
-  row: WorkforceRow,
+  row: ExhibitTechRow,
   affiliations: WorkforceAffiliationOption[]
 ): WorkerClass {
   const meta = getAffiliationMeta(row, affiliations);
-  const label = getAffiliationLabel(row, affiliations).toLowerCase();
+  const label = entityLabel(row).toLowerCase();
 
   if (meta?.affiliation_type === "COMPANY") return "W2";
   if (label.includes("integrated tech group") || label === "itg") return "W2";
@@ -119,19 +82,26 @@ function getWorkerClass(
   return "1099";
 }
 
+function compareEntity(a: string, b: string) {
+  if (a === b) return 0;
+  if (a === ITG_LABEL) return -1;
+  if (b === ITG_LABEL) return 1;
+  if (a === NOT_IN_PEOPLE) return 1;
+  if (b === NOT_IN_PEOPLE) return -1;
+  return a.localeCompare(b);
+}
+
 function buildExhibitRows(
-  rows: WorkforceRow[],
+  techs: ExhibitTechRow[],
   affiliations: WorkforceAffiliationOption[]
 ): ExhibitLine[] {
   const map = new Map<string, ExhibitLine>();
 
-  for (const row of rows.filter(isTechnician)) {
+  for (const row of techs) {
     const type: ExhibitType = isMduDrop(row) ? "MDU / DROP" : "FULFILLMENT";
     const workerClass = getWorkerClass(row, affiliations);
-    const meta = getAffiliationMeta(row, affiliations);
-    const area = getAffiliationLabel(row, affiliations);
-    const affiliationKey = meta?.affiliation_id ?? row.affiliation_id ?? area;
-    const key = `${type}::${workerClass}::${affiliationKey}`;
+    const area = entityLabel(row);
+    const key = `${type}::${workerClass}::${area}`;
 
     const existing =
       map.get(key) ??
@@ -155,10 +125,31 @@ function buildExhibitRows(
   return Array.from(map.values()).sort((a, b) => {
     if (a.type !== b.type) return a.type.localeCompare(b.type);
     if (a.workerClass !== b.workerClass) return a.workerClass === "W2" ? -1 : 1;
-    if (a.area === "Integrated Tech Group") return -1;
-    if (b.area === "Integrated Tech Group") return 1;
-    return a.area.localeCompare(b.area);
+    return compareEntity(a.area, b.area);
   });
+}
+
+function buildEntityGroups(techs: ExhibitTechRow[]): EntityGroup[] {
+  const map = new Map<string, ExhibitTechRow[]>();
+
+  for (const row of techs) {
+    const entity = entityLabel(row);
+    const list = map.get(entity) ?? [];
+    list.push(row);
+    map.set(entity, list);
+  }
+
+  return Array.from(map.entries())
+    .map(([entity, rows]) => ({
+      entity,
+      techs: [...rows].sort((a, b) =>
+        normalize(a.full_name || a.tech_id).localeCompare(
+          normalize(b.full_name || b.tech_id)
+        )
+      ),
+      daysWorked: rows.reduce((sum, row) => sum + row.days_worked, 0),
+    }))
+    .sort((a, b) => compareEntity(a.entity, b.entity));
 }
 
 function csvEscape(value: string | number) {
@@ -171,9 +162,19 @@ function displayCount(value: number) {
   return value === 0 ? "" : String(value);
 }
 
-function buildCsv(lines: ExhibitLine[], regionLabel: string) {
-  const rows = [
+function fiscalWindowLabel(month: ExhibitFiscalMonth) {
+  return `${month.start_date} – ${month.end_date}`;
+}
+
+function buildCsv(
+  lines: ExhibitLine[],
+  groups: EntityGroup[],
+  regionLabel: string,
+  month: ExhibitFiscalMonth
+) {
+  const rows: (string | number)[][] = [
     [regionLabel],
+    [month.label, fiscalWindowLabel(month)],
     ["Type", "Area", "W2", "1099", "Total"],
     ...lines.map((line) => [
       line.type,
@@ -182,6 +183,18 @@ function buildCsv(lines: ExhibitLine[], regionLabel: string) {
       displayCount(line.contractor),
       displayCount(line.w2 + line.contractor),
     ]),
+    [],
+    ["Entity", "Tech ID", "Name", "Days Worked", "First Worked", "Last Worked"],
+    ...groups.flatMap((group) =>
+      group.techs.map((row) => [
+        group.entity,
+        row.tech_id,
+        normalize(row.full_name),
+        row.days_worked,
+        row.first_worked,
+        row.last_worked,
+      ])
+    ),
   ];
 
   return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
@@ -201,18 +214,66 @@ function total(lines: ExhibitLine[], type?: ExhibitType) {
 
 export default function ExhibitModal({
   open,
-  rows,
   affiliations,
   regionLabel,
-  reportMonthLabel,
   onClose,
 }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
+  const [fiscalMonthId, setFiscalMonthId] = useState<string | null>(null);
+  const [payload, setPayload] = useState<ExhibitPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const params = new URLSearchParams();
+        if (fiscalMonthId) params.set("fiscal_month_id", fiscalMonthId);
+
+        const res = await fetch(
+          `/api/reports/exhibit${params.toString() ? `?${params.toString()}` : ""}`,
+          { cache: "no-store" }
+        );
+
+        const json = await res.json().catch(() => null);
+
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setError(json?.error ?? "Unable to load exhibit");
+          return;
+        }
+
+        setPayload(json as ExhibitPayload);
+      } catch {
+        if (!cancelled) setError("Unable to load exhibit");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, fiscalMonthId]);
+
+  const techs = useMemo(() => payload?.techs ?? [], [payload]);
 
   const exhibitRows = useMemo(
-    () => buildExhibitRows(rows, affiliations),
-    [rows, affiliations]
+    () => buildExhibitRows(techs, affiliations),
+    [techs, affiliations]
   );
+
+  const entityGroups = useMemo(() => buildEntityGroups(techs), [techs]);
 
   const fulfillmentTotal = total(exhibitRows, "FULFILLMENT");
   const mduTotal = total(exhibitRows, "MDU / DROP");
@@ -220,10 +281,17 @@ export default function ExhibitModal({
 
   if (!open) return null;
 
+  const fiscalMonth = payload?.fiscalMonth ?? null;
+  const reportMonthLabel = fiscalMonth?.label ?? "";
+  const canExport = Boolean(fiscalMonth) && !loading;
+
   function downloadCsv() {
-    const blob = new Blob([buildCsv(exhibitRows, regionLabel)], {
-      type: "text/csv;charset=utf-8",
-    });
+    if (!fiscalMonth) return;
+
+    const blob = new Blob(
+      [buildCsv(exhibitRows, entityGroups, regionLabel, fiscalMonth)],
+      { type: "text/csv;charset=utf-8" }
+    );
 
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -247,7 +315,7 @@ export default function ExhibitModal({
           <title>Exhibit - ${regionLabel} - ${reportMonthLabel}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 24px; }
-            table { border-collapse: collapse; width: 100%; }
+            table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
             th, td { border: 1px solid #444; padding: 6px 8px; font-size: 12px; }
             th { background: #eee; }
             .total { font-weight: bold; }
@@ -264,7 +332,7 @@ export default function ExhibitModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-4xl rounded-2xl border bg-background p-5 shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border bg-background p-5 shadow-xl">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -272,15 +340,33 @@ export default function ExhibitModal({
             </div>
             <h2 className="mt-1 text-lg font-semibold">Exhibit</h2>
             <div className="mt-1 text-sm text-muted-foreground">
-              {regionLabel} • {reportMonthLabel}
+              {regionLabel}
+              {fiscalMonth
+                ? ` • ${fiscalMonth.label} (${fiscalWindowLabel(fiscalMonth)}) • ${techs.length} techs with activity`
+                : ""}
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <select
+              value={fiscalMonth?.fiscal_month_id ?? ""}
+              onChange={(event) => setFiscalMonthId(event.target.value || null)}
+              disabled={!payload || loading}
+              className="rounded-lg border bg-background px-3 py-1.5 text-sm"
+              aria-label="Fiscal month"
+            >
+              {(payload?.fiscalMonths ?? []).map((month) => (
+                <option key={month.fiscal_month_id} value={month.fiscal_month_id}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+
             <button
               type="button"
               onClick={downloadCsv}
-              className="rounded-lg border px-3 py-1.5 text-sm"
+              disabled={!canExport}
+              className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
             >
               CSV
             </button>
@@ -288,7 +374,8 @@ export default function ExhibitModal({
             <button
               type="button"
               onClick={printPdf}
-              className="rounded-lg border px-3 py-1.5 text-sm"
+              disabled={!canExport}
+              className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50"
             >
               PDF
             </button>
@@ -303,12 +390,28 @@ export default function ExhibitModal({
           </div>
         </div>
 
-        <div ref={printRef} className="mt-4 overflow-x-auto">
+        {error ? (
+          <div className="mt-4 rounded-lg border px-3 py-2 text-sm text-red-600">
+            {error}
+          </div>
+        ) : null}
+
+        {loading && !payload ? (
+          <div className="mt-4 text-sm text-muted-foreground">Loading…</div>
+        ) : null}
+
+        <div
+          ref={printRef}
+          className={["mt-4 overflow-auto", loading ? "opacity-60" : ""].join(" ")}
+        >
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
                 <th className="border px-3 py-2 text-left" colSpan={5}>
                   {regionLabel}
+                  {fiscalMonth
+                    ? ` — ${fiscalMonth.label} (${fiscalWindowLabel(fiscalMonth)})`
+                    : ""}
                 </th>
               </tr>
               <tr>
@@ -388,6 +491,39 @@ export default function ExhibitModal({
                   {displayCount(regionTotal.w2 + regionTotal.contractor)}
                 </td>
               </tr>
+            </tbody>
+          </table>
+
+          <table className="mt-4 w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="border px-3 py-2 text-left" colSpan={3}>
+                  Techs with activity by entity
+                </th>
+              </tr>
+              <tr>
+                <th className="border px-3 py-2 text-left">Tech ID</th>
+                <th className="border px-3 py-2 text-left">Name</th>
+                <th className="border px-3 py-2 text-right">Days Worked</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {entityGroups.map((group) => [
+                <tr key={`${group.entity}-header`} className="font-semibold">
+                  <td className="border px-3 py-2" colSpan={2}>
+                    {group.entity} ({group.techs.length})
+                  </td>
+                  <td className="border px-3 py-2 text-right">{group.daysWorked}</td>
+                </tr>,
+                ...group.techs.map((row) => (
+                  <tr key={`${group.entity}-${row.tech_id}`}>
+                    <td className="border px-3 py-2">{row.tech_id}</td>
+                    <td className="border px-3 py-2">{normalize(row.full_name)}</td>
+                    <td className="border px-3 py-2 text-right">{row.days_worked}</td>
+                  </tr>
+                )),
+              ])}
             </tbody>
           </table>
         </div>
