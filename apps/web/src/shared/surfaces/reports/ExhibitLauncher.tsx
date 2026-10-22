@@ -4,22 +4,14 @@
 
 import { useState } from "react";
 import type { WorkforceAffiliationOption } from "@/shared/types/workforce/surfacePayload";
-import type { WorkforceRow } from "@/shared/types/workforce/workforce.types";
 import ExhibitModal from "./ExhibitModal";
 
 type Props = {
-  rows: WorkforceRow[];
   affiliations: WorkforceAffiliationOption[];
   regionLabel: string;
-  reportMonthLabel: string;
 };
 
-export function ExhibitLauncher({
-  rows,
-  affiliations,
-  regionLabel,
-  reportMonthLabel,
-}: Props) {
+export function ExhibitLauncher({ affiliations, regionLabel }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -34,10 +26,8 @@ export function ExhibitLauncher({
 
       <ExhibitModal
         open={open}
-        rows={rows}
         affiliations={affiliations}
         regionLabel={regionLabel}
-        reportMonthLabel={reportMonthLabel}
         onClose={() => setOpen(false)}
       />
     </>

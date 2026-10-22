@@ -163,10 +163,8 @@ export default async function DirectorWorkforcePageShell() {
 
             <div className="flex flex-wrap gap-2">
               <ExhibitLauncher
-                rows={payload.rows}
                 affiliations={affiliations}
                 regionLabel={regionLabel}
-                reportMonthLabel={reportMonthLabel}
               />
 
               <WorkforceReportLauncher
